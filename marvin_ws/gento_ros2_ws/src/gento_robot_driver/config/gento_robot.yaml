@@ -1,0 +1,19 @@
+gento_robot_driver:
+  ros__parameters:
+    robot_ip: "6.6.7.190"
+    left_velocity_ratio: 10
+    right_velocity_ratio: 10
+    state_publish_hz: 100.0
+    connect_on_startup: true
+    left_joint_order: [0, 1, 2, 3, 4, 5, 6]
+    right_joint_order: [0, 1, 2, 3, 4, 5, 6]
+    left_joint_signs: [1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0]
+    right_joint_signs: [1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0]
+    left_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    right_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    left_joint_limits_min: [-3.1067, -2.01, -3.1067, -1.0472, -3.1067, -1.0472, -1.5708]
+    left_joint_limits_max: [3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708]
+    right_joint_limits_min: [-3.1067, -2.01, -3.1067, -1.0472, -3.1067, -1.0472, -1.5708]
+    right_joint_limits_max: [3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708]
+    max_delta_per_cycle: 0.05
+    command_timeout_s: 0.20

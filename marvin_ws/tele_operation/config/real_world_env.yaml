@@ -1,0 +1,91 @@
+robot_name: 'marvin'
+robot_server:
+  host_ip: &host_ip "192.168.1.165"
+  port: &port 8092
+  robot_ip: "6.6.7.190"
+  use_arm: &use_arm ['A','B'] # ['A','B']
+publisher:
+  # realsense cameras
+  realsense_camera_publisher:
+    # top camera(third view) D415
+    - camera_serial_number: '327322061084' # 348122073375, up-down camera: 327322061084
+      camera_type: 'D400'
+      camera_name: 'external_camera'
+      rgb_resolution: [640, 480]
+      depth_resolution: [640, 480]
+      random_sample_point_num: 3000
+      fps: 30
+      decimate: 2  # (0-4) decimation_filter magnitude for point cloud
+      cpu_core_id: # modified for each camera
+        - 0
+        - 1
+        - 2
+    # left camera(camera on robot arm A)
+#    - camera_serial_number:
+#      camera_type: 'D400'
+#      camera_name: 'left_camera'
+#      rgb_resolution: [ 320, 240 ]
+#      depth_resolution: [ 320, 240 ]
+#      random_sample_point_num: 3000
+#      fps: 24
+#      decimate: 2  # (0-4) decimation_filter magnitude for point cloud
+#      cpu_core_id: # modified for each camera
+#        - 3
+#        - 4
+#        - 5
+
+    # right camera(camera on robot arm B) D435
+    - camera_serial_number: '347622072737'
+      camera_type: 'D400'
+      camera_name: 'right_wrist_camera'
+      rgb_resolution: [ 640, 480 ]
+      depth_resolution: [ 640, 480 ]
+      random_sample_point_num: 3000
+      fps: 30
+      decimate: 2  # (0-4) decimation_filter magnitude for point cloud
+      cpu_core_id: # modified for each camera
+        - 6
+        - 7
+        - 8
+
+    # left camera(camera on robot arm A) D435  
+    - camera_serial_number: '348122073375'
+      camera_type: 'D400'
+      camera_name: 'left_wrist_camera'
+      rgb_resolution: [ 640, 480 ]
+      depth_resolution: [ 640, 480 ]
+      random_sample_point_num: 3000
+      fps: 30
+      decimate: 2  # (0-4) decimation_filter magnitude for point cloud
+      cpu_core_id: # modified for each camera
+        - 15
+        - 16
+        - 17
+
+  # tactile sensors
+  tactile_sensor_publisher:
+    - sensor_name: 'right_gripper_sensor_1'
+      sensor_type: 'GF225'
+      sensor_sn: "GF2251386F6E6" 
+      fps: 30
+      marker_dimension: 3
+      cpu_core_id:
+        - 9
+        - 10
+        - 11
+    - sensor_name: 'right_gripper_sensor_2'
+      sensor_type: 'GF225'
+      sensor_sn: "GF225135972E9"
+      fps: 30
+      marker_dimension: 3
+      cpu_core_id:
+        - 12
+        - 13
+        - 14
+device_mapping_server:
+  host_ip: '127.0.0.1'
+  port: 8062
+logger:
+  level: DEBUG
+
+# python -c "import pyrealsense2 as rs; ctx=rs.context(); [print(f'\nDevice {i}: {dev.get_info(rs.camera_info.name)} serial={dev.get_info(rs.camera_info.serial_number)}') or [print(f'  {s.get_info(rs.camera_info.name)} | {p.stream_type()} | {p.format()} | {p.fps()}fps | {p.as_video_stream_profile().width()}x{p.as_video_stream_profile().height()}') for s in dev.query_sensors() for p in s.get_stream_profiles() if p.is_video_stream_profile()] for i, dev in enumerate(ctx.query_devices())]"

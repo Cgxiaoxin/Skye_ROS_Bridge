@@ -1,0 +1,52 @@
+宿主机一个窗口启动图像类传感器（相机+触觉）
+sudo -E bash
+cd /home/wsj/pycode/marvin_ws_humble_add_impedance/marvin_ws
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+export ROS_LOCALHOST_ONLY=0
+conda activate vitacsdk
+python tele_operation/camera_node_launcher.py
+
+
+宿主机启动录制，pkl保存到本地，交互式录制：
+sudo -E bash
+cd /home/wsj/pycode/marvin_ws_humble_add_impedance/marvin_ws
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+export ROS_LOCALHOST_ONLY=0
+conda activate vitacsdk
+python record_live_vis.py --output-dir /home/wsj/marvin_records --visualize
+按键逻辑：
+5 开始录制
+6 保存当前 episode
+7 不保存当前episode并结束当前episode
+q 保存并退出
+
+
+
+保存后的可视化
+（1）所有信息可视化
+conda activate vitacsdk
+cd /home/wsj/pycode/marvin_ws_humble_add_impedance
+python visualize_pkl.py   --input /home/wsj/marvin_records/new/episode_0007.pkl   --output-dir /home/wsj/pycode/marvin_ws/data_convert/visualizations/episode_0007
+
+（2）可视化dashboard
+conda activate vitacsdk
+cd /home/wsj/pycode/marvin_ws_humble_add_impedance
+python visualize_pkl.py \
+  --input /home/wsj/marvin_records/0612_new/episode_0037.pkl \
+  --output-dir /home/wsj/pycode/episode_0037 \
+  --no-topic-videos \
+  --no-combined-video \
+  --no-state-plots
+  
+replay
+sudo -E bash
+
+cd /home/wsj/pycode/marvin_ws_humble_add_impedance/marvin_ws
+source install/setup.bash
+export ROS_DOMAIN_ID=42
+export ROS_LOCALHOST_ONLY=0
+conda activate vitacsdk
+python replay_pkl_slow_sync.py   --index 37   --start 0   --end 1500   --speed 0.3   --sync-to-first-state   --require-subscribers   --execute
+

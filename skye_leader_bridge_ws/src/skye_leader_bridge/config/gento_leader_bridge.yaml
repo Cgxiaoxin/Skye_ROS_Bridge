@@ -1,0 +1,42 @@
+# DISABLED for Gento teleop (2026-07-24).
+# Do not launch skye_leader_bridge with this config for the Gento dual-arm path.
+# Gento teleop must not go through skye_leader_bridge; keep this file only as
+# historical reference of the abandoned mapping/rate-limit route.
+#
+# arms:
+#   left:
+#     enabled: true
+#     input_topic: /left_joint_control
+#     output_topic: /gento/left_joint_control
+#     output_type: joint_state
+#     joint_order: [0, 1, 2, 3, 4, 5, 6]
+#     signs: [1, 1, 1, -1, 1, -1, -1]
+#     offsets: [0, 0, 0, 0, 0, 0, 0]
+#     limits_min: [-3.1067, -2.01, -3.1067, -1.0472, -3.1067, -1.0472, -1.5708]
+#     limits_max: [3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708]
+#   right:
+#     enabled: true
+#     input_topic: /right_joint_control
+#     output_topic: /gento/right_joint_control
+#     output_type: joint_state
+#     joint_order: [0, 1, 2, 3, 4, 5, 6]
+#     signs: [1, 1, 1, -1, 1, -1, -1]
+#     offsets: [0, 0, 0, 0, 0, 0, 0]
+#     limits_min: [-3.1067, -2.01, -3.1067, -1.0472, -3.1067, -1.0472, -1.5708]
+#     limits_max: [3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708]
+#
+# mode:
+#   sync_topic: /mode/switch_sync
+#   teleop_topic: /mode/switch_teleop
+#   stop_topic: /mode/switch_stop
+#
+# safety:
+#   require_enable: true
+#   leader_timeout_s: 0.2
+#   max_delta_per_cycle: 0.05
+#   publish_rate_hz: 250
+#   allow_existing_joint_publishers: false
+#   existing_publisher_check_delay_s: 1.0
+
+disabled: true
+reason: "Gento teleop must not use skye_leader_bridge"
