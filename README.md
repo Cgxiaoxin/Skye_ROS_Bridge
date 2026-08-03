@@ -1,41 +1,42 @@
 # Skye_ROS_Bridge
 
-Skye / Gento 双臂 **C++ ROS2** 遥操桥接（本机开发；Orin / Thor 换对应架构的 SDK `.so` 后重编本仓库即可）。
+Skye / Gento 双臂 **C++ ROS2** 遥操驱动（本机开发；Orin/Thor 换 `lib/aarch64/libGentoSDK.so` 后重编即可）。
 
 ## 目录
 
 ```text
 Skye_ROS_Bridge/
-├── third_party/gento_sdk/     # 厂商 SDK：头文件 + lib/<arch>/libGentoSDK.so
-├── skye_ros2_ws/              # ROS2 工作区（主线）
-│   └── src/skye_robot_driver/ # 唯一驱动包
-├── scripts/                   # 同步 SDK 等工具
-├── marvin_ws/                 # 旧工程（参考，勿作新主线）
-└── 遥操高频优化路线.md
+├── docs/
+│   ├── dev_plan.md          # 开发顺序 + 与 marvin 对齐清单 ★
+│   ├── ros_interfaces.md    # topic / service 速查
+│   └── teleop_sop.md        # 现场启停
+├── third_party/gento_sdk/   # headers + lib/<arch>/libGentoSDK.so
+├── skye_ros2_ws/            # 主线工作区
+│   └── src/skye_robot_driver/
+├── scripts/sync_gento_sdk.sh
+├── marvin_ws/               # 旧工程（参考，非主线）
+└── 遥操高频优化路线.md      # QoS / 高频优化参考
 ```
 
-## 本机构建
+## 当前阶段
+
+按 `docs/dev_plan.md`：**P0 能编过 → P1 最小 PD 闭环 → P2 真机冒烟 → P3 安全层 → P4 主手 → P5 夹爪**。
+
+对外接口尽量兼容旧链路 `/gento/*`，方便本地小臂（FACTR）少改直接对接大臂。
+
+## 构建
 
 ```bash
+./scripts/sync_gento_sdk.sh   # 可选：刷新 vendor
 cd skye_ros2_ws
-source /opt/ros/humble/setup.bash   # 按实际 ROS 发行版调整
+source /opt/ros/humble/setup.bash
 colcon build --packages-select skye_robot_driver
 source install/setup.bash
+ros2 launch skye_robot_driver skye_robot_driver.launch.py
 ```
 
-## Orin / Thor
+## 安全
 
-1. 在目标架构上（或交叉）编译 `libGentoSDK.so`，放入 `third_party/gento_sdk/lib/aarch64/`
-2. 本机同样 `colcon build`（在目标板上编更稳妥）
-3. **无需改业务代码**；CMake 按 `uname -m` 选 `lib/x86_64` 或 `lib/aarch64`
-
-同步 SDK 头文件与 so（从本机 SDK 源仓）：
-
-```bash
-./scripts/sync_gento_sdk.sh
-```
-
-## 说明
-
-- 链接的是 **`libGentoSDK.so`（C++）**，不是 `libGentoSDKPY.so`
-- 控制器默认 IP：`6.6.7.190`；勿与旧 Marvin 驱动同时连同一台控制器
+- IP 默认 `6.6.7.190`；UDP `50000–50010`
+- 只用 `libGentoSDK.so`（不要 PY so）
+- 同一控制器同时只允许一个驱动连接
