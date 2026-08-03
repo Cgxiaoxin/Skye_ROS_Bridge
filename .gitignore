@@ -21,6 +21,15 @@ bin-release/
 build/
 install/
 log/
+skye_ros2_ws/build/
+skye_ros2_ws/install/
+skye_ros2_ws/log/
+
+# Editor / OS
+.vscode/
+.idea/
+*.user
+.DS_Store
 
 # Python
 *.pyc

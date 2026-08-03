@@ -1,0 +1,4 @@
+/** Skye robot driver defaults */
+skye_robot_driver:
+  ros__parameters:
+    robot_ip: "6.6.7.190"
