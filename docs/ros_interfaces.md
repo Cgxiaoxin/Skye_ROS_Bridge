@@ -1,7 +1,9 @@
 # ROS 接口（与 marvin `/gento/*` 对齐）
 
-单位：**rad**。控制流 QoS：`KeepLast(1)` + `BEST_EFFORT`。  
-细节与开发顺序见 `dev_plan.md`。
+单位：**rad**。  
+指令 QoS：`KeepLast(1)` + `BEST_EFFORT`。  
+状态 QoS：`KeepLast(1)` + `RELIABLE`（供 FACTR sync）。  
+细节与开发顺序见 `dev_plan.md`；FACTR 对接见 `p4_factr_teleop.md`。
 
 ## 控制模式（对齐 Gento `FXStateType`）
 
@@ -18,7 +20,7 @@
 ```bash
 ros2 service call /gento/set_mode skye_robot_driver/srv/SetMode "{mode: 1}"
 ros2 service call /gento/set_mode skye_robot_driver/srv/SetMode "{mode: 2}"
-ros2 topic echo --once /gento/robot_state --qos-reliability best_effort
+ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 ```
 
 注意：旧 Apex `/control/set_mode data:3` 表示其「阻抗遥操」枚举，对应本驱动 **mode=2（IMP_JOINT）**，不是 FX 的 IMP_CART=3。

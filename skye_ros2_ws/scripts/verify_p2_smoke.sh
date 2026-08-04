@@ -25,8 +25,8 @@ ros2 topic list | grep -q '/gento/robot_state' || { echo "FAIL: missing robot_st
 ros2 service list | grep -q '/gento/set_mode' || { echo "FAIL: missing set_mode service"; exit 1; }
 
 echo "== P2: robot_state (expect left/right FX_STATE_IMP_JOINT=2) =="
-# Best-effort QoS on publisher; use matching reliability when possible.
-STATE="$(ros2 topic echo --once /gento/robot_state --qos-reliability best_effort 2>/dev/null || true)"
+# State publishers use RELIABLE (FACTR sync); CLI must match.
+STATE="$(ros2 topic echo --once /gento/robot_state --qos-reliability reliable 2>/dev/null || true)"
 echo "$STATE"
 echo "$STATE" | grep -q 'data:' || { echo "FAIL: no robot_state data (is hardware linked?)"; exit 1; }
 
@@ -51,7 +51,7 @@ grep -E 'average rate:' /tmp/skye_p2_hz.txt | head -1 || {
 }
 
 echo "== P2: feedback sample =="
-ros2 topic echo --once /gento/joint_states --qos-reliability best_effort | head -40
+ros2 topic echo --once /gento/joint_states --qos-reliability reliable | head -40
 
 echo "P2 VERIFY OK (feedback + mode path). Motion smoke: manually nudge one joint ±0.03 rad."
 echo "  See docs/teleop_sop.md"

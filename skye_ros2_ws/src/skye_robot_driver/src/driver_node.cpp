@@ -34,8 +34,17 @@ const std::array<std::string, 14> kJointNames{
     "r_j1", "r_j2", "r_j3", "r_j4", "r_j5", "r_j6", "r_j7"};
 
 rclcpp::QoS control_qos() {
+  // Accepts FACTR (typically RELIABLE) publishers; drops old cmds.
   rclcpp::QoS qos(rclcpp::KeepLast(1));
   qos.best_effort();
+  qos.durability_volatile();
+  return qos;
+}
+
+rclcpp::QoS state_qos() {
+  // FACTR sync subscribes with default RELIABLE; BEST_EFFORT state would not match.
+  rclcpp::QoS qos(rclcpp::KeepLast(1));
+  qos.reliable();
   qos.durability_volatile();
   return qos;
 }
@@ -122,17 +131,18 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
     }
   }
 
-  const auto qos = control_qos();
-  state_publisher_ = create_publisher<JointState>("/joint_states", qos);
+  const auto cmd_qos = control_qos();
+  const auto st_qos = state_qos();
+  state_publisher_ = create_publisher<JointState>("/joint_states", st_qos);
   robot_state_publisher_ =
-      create_publisher<std_msgs::msg::Int16MultiArray>("/robot_state", qos);
+      create_publisher<std_msgs::msg::Int16MultiArray>("/robot_state", st_qos);
   left_command_subscription_ = create_subscription<JointState>(
-      "/left_joint_control", qos,
+      "/left_joint_control", cmd_qos,
       [this](JointState::SharedPtr message) {
         handle_command(DriverCore::Arm::kLeft, std::move(message));
       });
   right_command_subscription_ = create_subscription<JointState>(
-      "/right_joint_control", qos,
+      "/right_joint_control", cmd_qos,
       [this](JointState::SharedPtr message) {
         handle_command(DriverCore::Arm::kRight, std::move(message));
       });

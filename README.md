@@ -20,14 +20,11 @@ Skye_ROS_Bridge/
 
 ## 当前阶段
 
-按 `docs/dev_plan.md`：**P0/P1/P2(模式+脚本)/P3 已完成** → 现场补齐 P2 小幅运动确认 → **P4 主手** → P5 夹爪。
+按 `docs/dev_plan.md`：**P0–P3 完成**；**P4 代码已对齐**（待实机 sync/teleop）→ P5 夹爪。
 
-默认遥操模式：**关节阻抗 mode=2**（`imp_joint`）。模式切换用 service：
-
-```bash
-ros2 service call /gento/set_mode skye_robot_driver/srv/SetMode "{mode: 1}"  # position
-ros2 service call /gento/set_mode skye_robot_driver/srv/SetMode "{mode: 2}"  # imp_joint
-```
+FACTR 对接文档：`docs/p4_factr_teleop.md`  
+主机起驱动：`./scripts/start_skye_for_factr.sh`  
+小臂 Docker：`./scripts/run_marvin_m6_impedance.sh`（挂载 `marvin_ws`）
 
 核验：
 - P1：`skye_ros2_ws/scripts/verify_p1_interfaces.sh`

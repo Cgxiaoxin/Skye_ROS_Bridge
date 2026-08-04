@@ -40,8 +40,12 @@
 - [x] 核验脚本：`scripts/verify_p3_safety.sh`
 
 ### P4 — 主手对接
-- [ ] 确认 FACTR 仍 remap 到 `/gento/*`（见下表）→ **驱动对齐后主手可少改或不改**
-- [ ] 若主手 topic/单位不同，再加薄 `teleop_bridge`；否则直接订
+- [x] FACTR remap 对齐 `/gento/*`：`start_teleop_m6_dual_gento.launch.py`
+- [x] Docker 挂载改为 `marvin_ws`（`scripts/run_marvin_m6_impedance.sh`）
+- [x] 主机启动脚本：`scripts/start_skye_for_factr.sh`（不起旧 gento 驱动）
+- [x] `/gento/joint_states` 改为 **RELIABLE**（FACTR sync 可订阅）
+- [x] 文档：`docs/p4_factr_teleop.md`
+- [ ] 实机：Docker 小臂 + 主机驱动，键 `1` sync → `2` teleop
 
 ### P5 — 夹爪（后续）
 - [ ] 对齐 `/left|right_teleop_gripper/ctrl` 与 state；不进 v0.1
@@ -135,8 +139,8 @@ left/right_velocity_ratio: 10
 
 | 项 | marvin `gento_robot_driver` | 新 `skye_robot_driver` |
 |----|----------------------------|-------------------------|
-| 模式 | Position + `SetJointPosCmd` | **PD** + `SetJointPosPDCmd` |
-| QoS | 默认 Reliable，depth 10 | 控制流 **KeepLast(1)+BEST_EFFORT** |
+| 模式 | Position + `SetJointPosCmd` | 默认 **ImpJoint** + `SetJointPosCmd`（可切 Position/PD） |
+| QoS | 默认 Reliable，depth 10 | 指令 **BEST_EFFORT** KeepLast(1)；**状态 RELIABLE** KeepLast(1)（FACTR sync） |
 | SDK 路径 | 外链绝对路径 | `third_party/gento_sdk` |
 | 工作区 | `marvin_ws/gento_ros2_ws` | `skye_ros2_ws` |
 

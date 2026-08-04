@@ -12,7 +12,7 @@
    ros2 launch skye_robot_driver skye_robot_driver.launch.py
    ```
 3. 确认 Link 成功；默认 **`control_mode:=imp_joint`（mode=2）**。
-4. 查模式：`ros2 topic echo --once /gento/robot_state --qos-reliability best_effort`  
+4. 查模式：`ros2 topic echo --once /gento/robot_state --qos-reliability reliable`  
    期望左右为 **`2, 2`**（`FX_STATE_IMP_JOINT`）。切换：
    ```bash
    # 位置模式
@@ -46,6 +46,17 @@
 - 主线：`skye_ros2_ws`
 - `marvin_ws` 仅参考；勿与本驱动同时启动连同一 IP。
 
-## 备注：rqt 看不到数据
+## 主手（FACTR）对接
 
-控制流为 BEST_EFFORT；rqt 默认 RELIABLE 会 QoS 不兼容。用 `ros2 topic echo/hz` 验收即可。
+见 **`docs/p4_factr_teleop.md`**。摘要：
+
+1. 主机：`./scripts/start_skye_for_factr.sh`
+2. Docker：`./scripts/run_marvin_m6_impedance.sh` → 容器内  
+   `ros2 launch factr_teleop start_teleop_m6_dual_gento.launch.py use_keyboard:=true`
+3. 键 `1` sync → `2` teleop → `3` stop  
+
+**不要**用旧的 `start_teleop_m6_dual.launch.py`（反馈 topic 未指向 `/gento/joint_states`）。
+
+## 备注：rqt 看不到指令/状态
+
+指令为 BEST_EFFORT；状态为 RELIABLE。rqt 默认 Reliable 一般能看 `joint_states`；CLI 验收最稳。
