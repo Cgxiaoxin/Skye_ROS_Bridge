@@ -20,9 +20,9 @@ Skye_ROS_Bridge/
 
 ## 当前阶段
 
-按 `docs/dev_plan.md`：**P0 能编过 → P1 最小 PD 闭环 → P2 真机冒烟 → P3 安全层 → P4 主手 → P5 夹爪**。
+按 `docs/dev_plan.md`：**P0/P1 已完成** → 下一步 **P2 真机冒烟** → P3 安全精调 → P4 主手 → P5 夹爪。
 
-对外接口尽量兼容旧链路 `/gento/*`，方便本地小臂（FACTR）少改直接对接大臂。
+无硬件接口核验：`skye_ros2_ws/scripts/verify_p1_interfaces.sh`。
 
 ## 构建
 

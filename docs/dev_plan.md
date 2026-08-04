@@ -9,18 +9,19 @@
 ## 开发顺序
 
 ### P0 — 先能编过
-- [ ] `cd skye_ros2_ws && source /opt/ros/humble/setup.bash`
-- [ ] `colcon build --packages-select skye_robot_driver`
-- [ ] 修好 CMake / include / `CMPL_LIN` / RPATH（`third_party/gento_sdk/lib/x86_64`）
-- [ ] `./scripts/check_sdk_abi.sh`（或手工 `file` / `ldd` / `nm -D`）
+- [x] `cd skye_ros2_ws && source /opt/ros/humble/setup.bash`
+- [x] `colcon build --packages-select skye_robot_driver`（`./scripts/build.sh`，避开 conda Python）
+- [x] 修好 CMake / include / `CMPL_LIN` / RPATH（`third_party/gento_sdk/lib/x86_64`）
+- [x] `./scripts/check_sdk_abi.sh`（或手工 `file` / `ldd` / `nm -D`）
 
 ### P1 — 最小可跑闭环（v0.1）
-- [ ] 启动：Link →（Error 则 ResetError）→ Idle → **PD**
-- [ ] 定时 `GetRT` → 发 `/gento/joint_states`（14 轴，**rad**）
-- [ ] 订 `/gento/left_joint_control`、`/gento/right_joint_control` → `SetJointPosPDCmd`
-- [ ] `/gento/emergency_stop`（或沿用 `/gento/stop_motion`）+ 析构 `Unlink`
-- [ ] QoS：控制流 `KeepLast(1)` + `BEST_EFFORT`
-- [ ] 逻辑迁移自 `gento_robot_driver`，控制模式 Position → PD
+- [x] 启动：Link →（Error 则 ResetError）→ Idle → **PD**
+- [x] 定时 `GetRT` → 发 `/gento/joint_states`（14 轴，**rad**）
+- [x] 订 `/gento/left_joint_control`、`/gento/right_joint_control` → `SetJointPosPDCmd`
+- [x] `/gento/emergency_stop` + `/gento/stop_motion` / `/gento/hold_current` + 析构 `Unlink`
+- [x] QoS：控制流 `KeepLast(1)` + `BEST_EFFORT`
+- [x] 逻辑迁移自 `gento_robot_driver`，控制模式 Position → PD
+- [x] 无真机接口核验：`scripts/verify_p1_interfaces.sh`（`connect_on_startup:=false`）
 
 ### P2 — 真机冒烟
 - [ ] 低速、小幅、**单臂**先测
