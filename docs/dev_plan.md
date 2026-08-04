@@ -1,7 +1,7 @@
 # 开发计划与 marvin 对齐
 
 当前主线：`skye_ros2_ws/src/skye_robot_driver`（C++ + `libGentoSDK.so`）。  
-参考实现：`marvin_ws/gento_ros2_ws/src/gento_robot_driver`（Position）；本驱动改为 **PD**。  
+参考实现：`marvin_ws/gento_ros2_ws/src/gento_robot_driver`（Position）；本驱动默认 **ImpJoint 阻抗遥操**（可选 PD）。  
 夹爪后续补齐，本计划不挡臂控闭环。
 
 ---
@@ -20,20 +20,24 @@
 - [x] 订 `/gento/left_joint_control`、`/gento/right_joint_control` → `SetJointPosPDCmd`
 - [x] `/gento/emergency_stop` + `/gento/stop_motion` / `/gento/hold_current` + 析构 `Unlink`
 - [x] QoS：控制流 `KeepLast(1)` + `BEST_EFFORT`
-- [x] 逻辑迁移自 `gento_robot_driver`，控制模式 Position → PD
+- [x] 逻辑迁移自 `gento_robot_driver`，默认控制模式 **Position → ImpJoint**（可选 PD）
 - [x] 无真机接口核验：`scripts/verify_p1_interfaces.sh`（`connect_on_startup:=false`）
 
 ### P2 — 真机冒烟
-- [ ] 低速、小幅、**单臂**先测
-- [ ] 确认 `/gento/joint_states` 与实机动作一致
-- [ ] 再开双臂；`vel_ratio` 先 10（与旧 yaml 一致）
+- [x] 默认控制模式改为 **关节阻抗 ImpJoint**（对齐 Apex `set_mode=3`）
+- [x] `/gento/robot_state` + `/gento/set_mode`（3→ImpJoint）
+- [x] 核验脚本：`scripts/verify_p2_smoke.sh`（反馈 + 模式；小幅运动仍需人工确认）
+- [ ] 低速、小幅、**单臂**人工运动确认（现场）
+- [ ] 确认 `/gento/joint_states` 与实机动作一致（现场）
+- [ ] 再开双臂；`vel_ratio` 先 10（现场）
 
 ### P3 — 安全层
-- [ ] 关节限位（rad）
-- [ ] `max_delta_per_cycle`（建议 0.05 rad）
-- [ ] `vel_ratio` / `acc_ratio`
-- [ ] `SetPDCmdCycleTime`（与控制频率匹配，如 250 Hz → 4 ms）
-- [ ] `command_timeout` → hold（停流后保持当前姿）
+- [x] 关节限位（rad）— 超限拒绝下发
+- [x] `max_delta_per_cycle`（默认 0.05 rad）
+- [x] `vel_ratio` / `acc_ratio`（独立参数）
+- [x] `SetPDCmdCycleTime`（默认 4 ms @ 250 Hz）
+- [x] `command_timeout` → hold
+- [x] 核验脚本：`scripts/verify_p3_safety.sh`
 
 ### P4 — 主手对接
 - [ ] 确认 FACTR 仍 remap 到 `/gento/*`（见下表）→ **驱动对齐后主手可少改或不改**

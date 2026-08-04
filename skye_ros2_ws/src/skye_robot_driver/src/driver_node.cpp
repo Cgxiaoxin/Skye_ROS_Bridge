@@ -20,10 +20,14 @@ constexpr DriverCore::JointArray kDefaultSigns{
 constexpr DriverCore::JointArray kDefaultOffsets{
     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 constexpr std::array<int, 7> kDefaultOrder{0, 1, 2, 3, 4, 5, 6};
-constexpr DriverCore::JointArray kDefaultPdK{
+constexpr DriverCore::JointArray kDefaultJointK{
     100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0};
-constexpr DriverCore::JointArray kDefaultPdD{
+constexpr DriverCore::JointArray kDefaultJointD{
     10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0};
+constexpr DriverCore::JointArray kDefaultCartK{
+    2000.0, 2000.0, 2000.0, 100.0, 100.0, 100.0, 50.0};
+constexpr DriverCore::JointArray kDefaultCartD{
+    0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 1.0};
 
 const std::array<std::string, 14> kJointNames{
     "l_j1", "l_j2", "l_j3", "l_j4", "l_j5", "l_j6", "l_j7",
@@ -41,14 +45,19 @@ rclcpp::QoS control_qos() {
 DriverNode::DriverNode(const rclcpp::NodeOptions &options)
     : Node("skye_robot_driver", options) {
   const auto robot_ip = declare_parameter<std::string>("robot_ip", "6.6.7.190");
-  const auto left_ratio_parameter =
-      declare_parameter<int>("left_velocity_ratio", 10);
-  const auto right_ratio_parameter =
-      declare_parameter<int>("right_velocity_ratio", 10);
+  const auto left_vel = declare_parameter<int>("left_velocity_ratio", 10);
+  const auto right_vel = declare_parameter<int>("right_velocity_ratio", 10);
+  const auto left_acc =
+      declare_parameter<int>("left_acceleration_ratio", left_vel);
+  const auto right_acc =
+      declare_parameter<int>("right_acceleration_ratio", right_vel);
   const auto state_publish_hz =
       declare_parameter<double>("state_publish_hz", 250.0);
   const auto connect_on_startup =
       declare_parameter<bool>("connect_on_startup", true);
+  const auto control_mode_str =
+      declare_parameter<std::string>("control_mode", "imp_joint");
+  const auto cmd_cycle_time_ms = declare_parameter<int>("cmd_cycle_time_ms", 4);
   max_delta_per_cycle_ = declare_parameter<double>("max_delta_per_cycle", 0.05);
   command_timeout_s_ = declare_parameter<double>("command_timeout_s", 0.20);
 
@@ -70,9 +79,21 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   right_maximum_ =
       load_joint_array(*this, "right_joint_limits_max", kDefaultMaximum);
 
-  DriverCore::PdGains gains;
-  gains.k = load_joint_array(*this, "pd_stiffness", kDefaultPdK);
-  gains.d = load_joint_array(*this, "pd_damping", kDefaultPdD);
+  DriverCore::ConnectConfig connect_config;
+  connect_config.mode = parse_control_mode(control_mode_str);
+  connect_config.left_vel_ratio = left_vel;
+  connect_config.right_vel_ratio = right_vel;
+  connect_config.left_acc_ratio = left_acc;
+  connect_config.right_acc_ratio = right_acc;
+  connect_config.cmd_cycle_time_ms = cmd_cycle_time_ms;
+  connect_config.joint_gains.k =
+      load_joint_array(*this, "impedance_stiffness", kDefaultJointK);
+  connect_config.joint_gains.d =
+      load_joint_array(*this, "impedance_damping", kDefaultJointD);
+  connect_config.cart_gains.k =
+      load_joint_array(*this, "cartesian_stiffness", kDefaultCartK);
+  connect_config.cart_gains.d =
+      load_joint_array(*this, "cartesian_damping", kDefaultCartD);
 
   if (state_publish_hz <= 0.0 || !std::isfinite(state_publish_hz)) {
     throw std::invalid_argument(
@@ -86,12 +107,14 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
     throw std::invalid_argument(
         "command_timeout_s must be finite and greater than zero");
   }
-  if (left_ratio_parameter < 1 || left_ratio_parameter > 100 ||
-      right_ratio_parameter < 1 || right_ratio_parameter > 100) {
-    throw std::invalid_argument("velocity ratios must be in the range 1..100");
+  if (cmd_cycle_time_ms <= 0) {
+    throw std::invalid_argument("cmd_cycle_time_ms must be > 0");
   }
-  const int left_ratio = left_ratio_parameter;
-  const int right_ratio = right_ratio_parameter;
+  auto ratio_ok = [](int value) { return value >= 1 && value <= 100; };
+  if (!ratio_ok(left_vel) || !ratio_ok(right_vel) || !ratio_ok(left_acc) ||
+      !ratio_ok(right_acc)) {
+    throw std::invalid_argument("velocity/acceleration ratios must be 1..100");
+  }
   for (std::size_t i = 0; i < DriverCore::JointArray{}.size(); ++i) {
     if (left_minimum_[i] > left_maximum_[i] ||
         right_minimum_[i] > right_maximum_[i]) {
@@ -101,6 +124,8 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
 
   const auto qos = control_qos();
   state_publisher_ = create_publisher<JointState>("/joint_states", qos);
+  robot_state_publisher_ =
+      create_publisher<std_msgs::msg::Int16MultiArray>("/robot_state", qos);
   left_command_subscription_ = create_subscription<JointState>(
       "/left_joint_control", qos,
       [this](JointState::SharedPtr message) {
@@ -112,6 +137,13 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
         handle_command(DriverCore::Arm::kRight, std::move(message));
       });
 
+  set_mode_service_ = create_service<SetMode>(
+      "/set_mode",
+      [this](
+          const std::shared_ptr<SetMode::Request> request,
+          std::shared_ptr<SetMode::Response> response) {
+        handle_set_mode(request, response);
+      });
   hold_current_service_ = create_service<Trigger>(
       "/hold_current",
       [this](
@@ -143,14 +175,18 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
 
   if (connect_on_startup) {
     const auto ip = parse_ipv4(robot_ip);
-    if (!core_.connect_and_enable(ip, left_ratio, right_ratio, gains)) {
+    if (!core_.connect_and_enable(ip, connect_config)) {
       throw std::runtime_error(
-          "Gento SDK failed to connect or enter PD mode");
+          "Gento SDK failed to connect or enter control mode");
     }
     RCLCPP_INFO(
         get_logger(),
-        "Connected to controller %s; PD mode; left/right speed ratios: %d/%d",
-        robot_ip.c_str(), left_ratio, right_ratio);
+        "Connected to controller %s; mode=%s(%d); vel L/R=%d/%d; acc L/R=%d/%d; "
+        "cmd_cycle=%dms",
+        robot_ip.c_str(), DriverCore::mode_name(connect_config.mode),
+        static_cast<int>(connect_config.mode), connect_config.left_vel_ratio,
+        connect_config.right_vel_ratio, connect_config.left_acc_ratio,
+        connect_config.right_acc_ratio, connect_config.cmd_cycle_time_ms);
   } else {
     RCLCPP_INFO(
         get_logger(),
@@ -159,6 +195,27 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
 }
 
 DriverNode::~DriverNode() { core_.shutdown(); }
+
+DriverCore::ControlMode DriverNode::parse_control_mode(
+    const std::string &value) {
+  if (value == "idle" || value == "0") {
+    return DriverCore::ControlMode::kIdle;
+  }
+  if (value == "position" || value == "1") {
+    return DriverCore::ControlMode::kPosition;
+  }
+  if (value == "imp_joint" || value == "impedance" || value == "2") {
+    return DriverCore::ControlMode::kImpJoint;
+  }
+  if (value == "imp_cart" || value == "3") {
+    return DriverCore::ControlMode::kImpCart;
+  }
+  if (value == "pd" || value == "11") {
+    return DriverCore::ControlMode::kPd;
+  }
+  throw std::invalid_argument(
+      "control_mode must be idle|position|imp_joint|imp_cart|pd (or 0/1/2/3/11)");
+}
 
 std::array<unsigned char, 4> DriverNode::parse_ipv4(const std::string &value) {
   std::array<unsigned char, 4> result{};
@@ -220,6 +277,50 @@ std::array<int, 7> DriverNode::load_joint_order(
   return result;
 }
 
+void DriverNode::handle_set_mode(
+    const std::shared_ptr<SetMode::Request> request,
+    std::shared_ptr<SetMode::Response> response) {
+  const auto mapped = DriverCore::mode_from_int(request->mode);
+  response->left_state =
+      static_cast<int16_t>(core_.current_state(DriverCore::Arm::kLeft));
+  response->right_state =
+      static_cast<int16_t>(core_.current_state(DriverCore::Arm::kRight));
+
+  if (!mapped) {
+    response->success = false;
+    response->message =
+        "unsupported mode (use 0=idle, 1=position, 2=imp_joint, 3=imp_cart, 11=pd)";
+    return;
+  }
+
+  if (!core_.switch_control_mode(*mapped)) {
+    response->success = false;
+    response->message =
+        std::string("failed to switch to ") + DriverCore::mode_name(*mapped);
+    response->left_state =
+        static_cast<int16_t>(core_.current_state(DriverCore::Arm::kLeft));
+    response->right_state =
+        static_cast<int16_t>(core_.current_state(DriverCore::Arm::kRight));
+    return;
+  }
+
+  response->success = true;
+  response->message =
+      std::string("switched to ") + DriverCore::mode_name(*mapped);
+  response->left_state =
+      static_cast<int16_t>(core_.current_state(DriverCore::Arm::kLeft));
+  response->right_state =
+      static_cast<int16_t>(core_.current_state(DriverCore::Arm::kRight));
+  left_streaming_ = false;
+  right_streaming_ = false;
+  left_last_command_.reset();
+  right_last_command_.reset();
+  RCLCPP_INFO(
+      get_logger(), "set_mode -> %s (%d); feedback L/R=%d/%d",
+      DriverCore::mode_name(*mapped), static_cast<int>(*mapped),
+      response->left_state, response->right_state);
+}
+
 void DriverNode::handle_command(
     DriverCore::Arm arm, const JointState::SharedPtr message) {
   const char *arm_name = arm == DriverCore::Arm::kLeft ? "left" : "right";
@@ -265,13 +366,15 @@ void DriverNode::handle_command(
   if (!last_command) {
     last_command = mapped;
   } else {
-    mapped = DriverCore::limit_delta(mapped, *last_command, max_delta_per_cycle_);
+    mapped =
+        DriverCore::limit_delta(mapped, *last_command, max_delta_per_cycle_);
   }
 
-  if (!core_.send_pd_position(arm, mapped)) {
+  if (!core_.send_position(arm, mapped)) {
     RCLCPP_ERROR(
         get_logger(),
-        "%s command failed: SDK is not ready or returned an error", arm_name);
+        "%s command failed: SDK not ready / idle / mode rejected command",
+        arm_name);
     return;
   }
 
@@ -324,8 +427,7 @@ void DriverNode::handle_stop_motion(
     std::shared_ptr<Trigger::Response> response) {
   const bool ok = core_.stop_motion();
   response->success = ok;
-  response->message = ok ? "motion stopped; commands rejected until hold_current"
-                         : "stop_motion failed";
+  response->message = ok ? "motion stopped; now IDLE" : "stop_motion failed";
   left_streaming_ = false;
   right_streaming_ = false;
   left_last_command_.reset();
@@ -337,7 +439,7 @@ void DriverNode::handle_emergency_stop(
     std::shared_ptr<Trigger::Response> response) {
   const bool ok = core_.emergency_stop();
   response->success = ok;
-  response->message = ok ? "emergency stop issued" : "emergency_stop failed";
+  response->message = ok ? "emergency stop issued; now IDLE" : "emergency_stop failed";
   left_streaming_ = false;
   right_streaming_ = false;
   left_last_command_.reset();
@@ -346,28 +448,32 @@ void DriverNode::handle_emergency_stop(
 
 void DriverNode::publish_state() {
   const auto state = core_.read_state();
-  if (!state) {
-    return;
+  if (state) {
+    JointState message;
+    message.header.stamp = now();
+    message.name.assign(kJointNames.begin(), kJointNames.end());
+    message.position.reserve(kJointNames.size());
+    message.velocity.reserve(kJointNames.size());
+    message.position.insert(
+        message.position.end(), state->left_position.begin(),
+        state->left_position.end());
+    message.position.insert(
+        message.position.end(), state->right_position.begin(),
+        state->right_position.end());
+    message.velocity.insert(
+        message.velocity.end(), state->left_velocity.begin(),
+        state->left_velocity.end());
+    message.velocity.insert(
+        message.velocity.end(), state->right_velocity.begin(),
+        state->right_velocity.end());
+    state_publisher_->publish(message);
   }
 
-  JointState message;
-  message.header.stamp = now();
-  message.name.assign(kJointNames.begin(), kJointNames.end());
-  message.position.reserve(kJointNames.size());
-  message.velocity.reserve(kJointNames.size());
-  message.position.insert(
-      message.position.end(), state->left_position.begin(),
-      state->left_position.end());
-  message.position.insert(
-      message.position.end(), state->right_position.begin(),
-      state->right_position.end());
-  message.velocity.insert(
-      message.velocity.end(), state->left_velocity.begin(),
-      state->left_velocity.end());
-  message.velocity.insert(
-      message.velocity.end(), state->right_velocity.begin(),
-      state->right_velocity.end());
-  state_publisher_->publish(message);
+  std_msgs::msg::Int16MultiArray robot_state;
+  robot_state.data = {
+      static_cast<int16_t>(core_.current_state(DriverCore::Arm::kLeft)),
+      static_cast<int16_t>(core_.current_state(DriverCore::Arm::kRight))};
+  robot_state_publisher_->publish(robot_state);
 }
 
 }  // namespace skye_robot_driver

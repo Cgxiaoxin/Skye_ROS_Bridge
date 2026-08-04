@@ -1,0 +1,8 @@
+# FX_STATE-aligned control mode (dual-arm).
+# 0=IDLE, 1=POSITION, 2=IMP_JOINT, 3=IMP_CART; also accept 11=PD.
+int16 mode
+---
+bool success
+string message
+int16 left_state
+int16 right_state

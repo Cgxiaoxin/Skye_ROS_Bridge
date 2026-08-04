@@ -3,6 +3,7 @@
 #include <array>
 #include <mutex>
 #include <optional>
+#include <string>
 
 #include "L1Robot.h"
 
@@ -12,6 +13,16 @@ namespace skye_robot_driver {
 class DriverCore {
  public:
   enum class Arm { kLeft, kRight };
+
+  // Aligned with FXStateType for 0..3; PD kept as optional escape hatch.
+  enum class ControlMode {
+    kIdle = 0,
+    kPosition = 1,
+    kImpJoint = 2,
+    kImpCart = 3,
+    kPd = 11,
+  };
+
   using JointArray = std::array<double, 7>;
 
   struct DualArmState {
@@ -21,9 +32,20 @@ class DriverCore {
     JointArray right_velocity{};
   };
 
-  struct PdGains {
+  struct ImpedanceGains {
     JointArray k{{100, 100, 100, 100, 100, 100, 100}};
     JointArray d{{10, 10, 10, 10, 10, 10, 10}};
+  };
+
+  struct ConnectConfig {
+    ControlMode mode{ControlMode::kImpJoint};
+    int left_vel_ratio{10};
+    int left_acc_ratio{10};
+    int right_vel_ratio{10};
+    int right_acc_ratio{10};
+    int cmd_cycle_time_ms{4};
+    ImpedanceGains joint_gains{};
+    ImpedanceGains cart_gains{};
   };
 
   DriverCore() = default;
@@ -31,6 +53,8 @@ class DriverCore {
   DriverCore &operator=(const DriverCore &) = delete;
 
   static FXObjType sdk_object_for_arm(Arm arm);
+  static const char *mode_name(ControlMode mode);
+  static std::optional<ControlMode> mode_from_int(int value);
   static bool validate_target(
       const JointArray &target, const JointArray &minimum,
       const JointArray &maximum);
@@ -44,14 +68,17 @@ class DriverCore {
   static JointArray sdk_degrees_to_ros_radians(const JointArray &degrees);
 
   bool connect_and_enable(
-      const std::array<unsigned char, 4> &ip, int left_ratio, int right_ratio,
-      const PdGains &gains);
+      const std::array<unsigned char, 4> &ip, const ConnectConfig &config);
+  bool switch_control_mode(ControlMode mode);
   bool command_allowed() const;
+  ControlMode control_mode() const;
+  FXStateType current_state(Arm arm) const;
   bool hold_current();
   bool stop_motion();
   bool emergency_stop();
-  bool send_pd_position(Arm arm, const JointArray &target_rad);
+  bool send_position(Arm arm, const JointArray &target_rad);
   std::optional<DualArmState> read_state() const;
+  std::optional<int> get_cmd_cycle_time_ms() const;
   void shutdown();
 
  private:
@@ -59,14 +86,14 @@ class DriverCore {
   static constexpr unsigned int kModeTimeoutMs = 3000;
 
   bool reset_errors_unlocked();
-  bool enter_pd_unlocked(int left_ratio, int right_ratio, const PdGains &gains);
+  bool enter_mode_unlocked(ControlMode mode);
+  bool send_position_unlocked(Arm arm, const JointArray &target_rad);
 
   mutable std::mutex mutex_;
   bool linked_{false};
-  bool pd_ready_{false};
-  int left_ratio_{10};
-  int right_ratio_{10};
-  PdGains gains_{};
+  bool control_ready_{false};
+  ControlMode mode_{ControlMode::kImpJoint};
+  ConnectConfig config_{};
 };
 
 }  // namespace skye_robot_driver

@@ -21,6 +21,8 @@ ros2 run skye_robot_driver skye_robot_driver --ros-args \
   -r /joint_states:=/gento/joint_states \
   -r /left_joint_control:=/gento/left_joint_control \
   -r /right_joint_control:=/gento/right_joint_control \
+  -r /robot_state:=/gento/robot_state \
+  -r /set_mode:=/gento/set_mode \
   -r /hold_current:=/gento/hold_current \
   -r /stop_motion:=/gento/stop_motion \
   -r /emergency_stop:=/gento/emergency_stop \

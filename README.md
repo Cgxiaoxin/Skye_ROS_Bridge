@@ -20,9 +20,19 @@ Skye_ROS_Bridge/
 
 ## 当前阶段
 
-按 `docs/dev_plan.md`：**P0/P1 已完成** → 下一步 **P2 真机冒烟** → P3 安全精调 → P4 主手 → P5 夹爪。
+按 `docs/dev_plan.md`：**P0/P1/P2(模式+脚本)/P3 已完成** → 现场补齐 P2 小幅运动确认 → **P4 主手** → P5 夹爪。
 
-无硬件接口核验：`skye_ros2_ws/scripts/verify_p1_interfaces.sh`。
+默认遥操模式：**关节阻抗 mode=2**（`imp_joint`）。模式切换用 service：
+
+```bash
+ros2 service call /gento/set_mode skye_robot_driver/srv/SetMode "{mode: 1}"  # position
+ros2 service call /gento/set_mode skye_robot_driver/srv/SetMode "{mode: 2}"  # imp_joint
+```
+
+核验：
+- P1：`skye_ros2_ws/scripts/verify_p1_interfaces.sh`
+- P2：`skye_ros2_ws/scripts/verify_p2_smoke.sh`（需真机已 Link）
+- P3：`skye_ros2_ws/scripts/verify_p3_safety.sh`
 
 ## 构建
 

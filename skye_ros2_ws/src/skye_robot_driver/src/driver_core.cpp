@@ -9,6 +9,39 @@ FXObjType DriverCore::sdk_object_for_arm(Arm arm) {
   return arm == Arm::kLeft ? FX_OBJ_ARM0 : FX_OBJ_ARM1;
 }
 
+const char *DriverCore::mode_name(ControlMode mode) {
+  switch (mode) {
+    case ControlMode::kIdle:
+      return "idle";
+    case ControlMode::kPosition:
+      return "position";
+    case ControlMode::kImpJoint:
+      return "imp_joint";
+    case ControlMode::kImpCart:
+      return "imp_cart";
+    case ControlMode::kPd:
+      return "pd";
+  }
+  return "unknown";
+}
+
+std::optional<DriverCore::ControlMode> DriverCore::mode_from_int(int value) {
+  switch (value) {
+    case 0:
+      return ControlMode::kIdle;
+    case 1:
+      return ControlMode::kPosition;
+    case 2:
+      return ControlMode::kImpJoint;
+    case 3:
+      return ControlMode::kImpCart;
+    case 11:
+      return ControlMode::kPd;
+    default:
+      return std::nullopt;
+  }
+}
+
 bool DriverCore::validate_target(
     const JointArray &target, const JointArray &minimum,
     const JointArray &maximum) {
@@ -72,60 +105,135 @@ DriverCore::JointArray DriverCore::sdk_degrees_to_ros_radians(
 
 bool DriverCore::reset_errors_unlocked() {
   unsigned int code = 0;
-  // Best-effort clear for both arms (ResetError takes FXObjType, not mask).
   FX_L1_State_ResetError(FX_OBJ_ARM0, kModeTimeoutMs, &code);
   FX_L1_State_ResetError(FX_OBJ_ARM1, kModeTimeoutMs, &code);
   return true;
 }
 
-bool DriverCore::enter_pd_unlocked(
-    int left_ratio, int right_ratio, const PdGains &gains) {
-  double left_k[7];
-  double left_d[7];
-  double right_k[7];
-  double right_d[7];
+bool DriverCore::enter_mode_unlocked(ControlMode mode) {
+  double joint_k_l[7];
+  double joint_d_l[7];
+  double joint_k_r[7];
+  double joint_d_r[7];
+  double cart_k_l[7];
+  double cart_d_l[7];
+  double cart_k_r[7];
+  double cart_d_r[7];
   for (std::size_t i = 0; i < 7; ++i) {
-    left_k[i] = gains.k[i];
-    left_d[i] = gains.d[i];
-    right_k[i] = gains.k[i];
-    right_d[i] = gains.d[i];
+    joint_k_l[i] = config_.joint_gains.k[i];
+    joint_d_l[i] = config_.joint_gains.d[i];
+    joint_k_r[i] = config_.joint_gains.k[i];
+    joint_d_r[i] = config_.joint_gains.d[i];
+    cart_k_l[i] = config_.cart_gains.k[i];
+    cart_d_l[i] = config_.cart_gains.d[i];
+    cart_k_r[i] = config_.cart_gains.k[i];
+    cart_d_r[i] = config_.cart_gains.d[i];
   }
 
+  // Always park in Idle before switching (except when target is Idle).
   FX_L1_State_SwitchToIdle(FX_OBJ_ARM0, kModeTimeoutMs);
   FX_L1_State_SwitchToIdle(FX_OBJ_ARM1, kModeTimeoutMs);
 
-  if (FX_L1_State_SwitchToPDMode(
-          FX_OBJ_ARM0, kModeTimeoutMs, left_ratio, left_ratio, left_k,
-          left_d) != 0) {
+  if (mode == ControlMode::kIdle) {
+    mode_ = ControlMode::kIdle;
+    control_ready_ = false;
+    return true;
+  }
+
+  const double left_vel = static_cast<double>(config_.left_vel_ratio);
+  const double left_acc = static_cast<double>(config_.left_acc_ratio);
+  const double right_vel = static_cast<double>(config_.right_vel_ratio);
+  const double right_acc = static_cast<double>(config_.right_acc_ratio);
+
+  bool ok = false;
+  switch (mode) {
+    case ControlMode::kPosition:
+      ok = FX_L1_State_SwitchToPositionMode(
+               FX_OBJ_ARM0, kModeTimeoutMs, left_vel, left_acc) == 0 &&
+           FX_L1_State_SwitchToPositionMode(
+               FX_OBJ_ARM1, kModeTimeoutMs, right_vel, right_acc) == 0;
+      break;
+    case ControlMode::kImpJoint:
+      ok = FX_L1_State_SwitchToImpJointMode(
+               FX_OBJ_ARM0, kModeTimeoutMs, left_vel, left_acc, joint_k_l,
+               joint_d_l) == 0 &&
+           FX_L1_State_SwitchToImpJointMode(
+               FX_OBJ_ARM1, kModeTimeoutMs, right_vel, right_acc, joint_k_r,
+               joint_d_r) == 0;
+      break;
+    case ControlMode::kImpCart:
+      ok = FX_L1_State_SwitchToImpCartMode(
+               FX_OBJ_ARM0, kModeTimeoutMs, left_vel, left_acc, cart_k_l,
+               cart_d_l) == 0 &&
+           FX_L1_State_SwitchToImpCartMode(
+               FX_OBJ_ARM1, kModeTimeoutMs, right_vel, right_acc, cart_k_r,
+               cart_d_r) == 0;
+      break;
+    case ControlMode::kPd:
+      ok = FX_L1_State_SwitchToPDMode(
+               FX_OBJ_ARM0, kModeTimeoutMs, left_vel, left_acc, joint_k_l,
+               joint_d_l) == 0 &&
+           FX_L1_State_SwitchToPDMode(
+               FX_OBJ_ARM1, kModeTimeoutMs, right_vel, right_acc, joint_k_r,
+               joint_d_r) == 0;
+      break;
+    case ControlMode::kIdle:
+      ok = true;
+      break;
+  }
+  if (!ok) {
     return false;
   }
-  if (FX_L1_State_SwitchToPDMode(
-          FX_OBJ_ARM1, kModeTimeoutMs, right_ratio, right_ratio, right_k,
-          right_d) != 0) {
-    return false;
+
+  if (mode != ControlMode::kIdle) {
+    if (FX_L1_Runtime_SetSpeedRatio(
+            kThreadId, FX_OBJ_ARM0, left_vel, left_acc) != 0) {
+      return false;
+    }
+    if (FX_L1_Runtime_SetSpeedRatio(
+            kThreadId, FX_OBJ_ARM1, right_vel, right_acc) != 0) {
+      return false;
+    }
   }
-  if (FX_L1_Runtime_SetSpeedRatio(
-          kThreadId, FX_OBJ_ARM0, left_ratio, left_ratio) != 0) {
-    return false;
-  }
-  if (FX_L1_Runtime_SetSpeedRatio(
-          kThreadId, FX_OBJ_ARM1, right_ratio, right_ratio) != 0) {
-    return false;
-  }
+
+  mode_ = mode;
+  control_ready_ = (mode != ControlMode::kIdle);
   return true;
 }
 
+bool DriverCore::send_position_unlocked(Arm arm, const JointArray &target_rad) {
+  auto command = ros_radians_to_sdk_degrees(target_rad);
+  switch (mode_) {
+    case ControlMode::kIdle:
+      return false;
+    case ControlMode::kPd:
+      return FX_L1_Runtime_SetJointPosPDCmd(
+                 kThreadId, sdk_object_for_arm(arm), command.data()) == 0;
+    case ControlMode::kPosition:
+    case ControlMode::kImpJoint:
+    case ControlMode::kImpCart:
+      // Joint teleop path. ImpCart typically wants Cartesian targets; joint
+      // cmds remain available for nullspace / interim use.
+      return FX_L1_Runtime_SetJointPosCmd(
+                 kThreadId, sdk_object_for_arm(arm), command.data()) == 0;
+  }
+  return false;
+}
+
 bool DriverCore::connect_and_enable(
-    const std::array<unsigned char, 4> &ip, int left_ratio, int right_ratio,
-    const PdGains &gains) {
-  if (left_ratio < 1 || left_ratio > 100 || right_ratio < 1 ||
-      right_ratio > 100) {
+    const std::array<unsigned char, 4> &ip, const ConnectConfig &config) {
+  auto ratio_ok = [](int value) { return value >= 1 && value <= 100; };
+  if (!ratio_ok(config.left_vel_ratio) || !ratio_ok(config.left_acc_ratio) ||
+      !ratio_ok(config.right_vel_ratio) || !ratio_ok(config.right_acc_ratio)) {
+    return false;
+  }
+  if (config.cmd_cycle_time_ms <= 0) {
     return false;
   }
 
   std::lock_guard<std::mutex> lock(mutex_);
   if (linked_) {
-    return pd_ready_;
+    return control_ready_ || mode_ == ControlMode::kIdle;
   }
 
   const int link_result =
@@ -134,9 +242,10 @@ bool DriverCore::connect_and_enable(
     return false;
   }
   linked_ = true;
+  config_ = config;
 
   const auto fail_and_disconnect = [this]() {
-    pd_ready_ = false;
+    control_ready_ = false;
     FX_L1_Runtime_StopTraj(kThreadId, FX_OBJ_ALL_FLAG);
     FX_L1_State_SwitchToIdle(FX_OBJ_ARM0, kModeTimeoutMs);
     FX_L1_State_SwitchToIdle(FX_OBJ_ARM1, kModeTimeoutMs);
@@ -145,30 +254,57 @@ bool DriverCore::connect_and_enable(
     return false;
   };
 
-  // Link → ResetError (best-effort) → Idle → PD
+  if (FX_L1_Config_SetPDCmdCycleTime(config_.cmd_cycle_time_ms) != 0) {
+    // Non-fatal on some firmwares.
+  }
+
   reset_errors_unlocked();
-  if (!enter_pd_unlocked(left_ratio, right_ratio, gains)) {
+  if (!enter_mode_unlocked(config_.mode)) {
     reset_errors_unlocked();
-    if (!enter_pd_unlocked(left_ratio, right_ratio, gains)) {
+    if (!enter_mode_unlocked(config_.mode)) {
       return fail_and_disconnect();
     }
   }
+  return true;
+}
 
-  left_ratio_ = left_ratio;
-  right_ratio_ = right_ratio;
-  gains_ = gains;
-  pd_ready_ = true;
+bool DriverCore::switch_control_mode(ControlMode mode) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!linked_) {
+    return false;
+  }
+  reset_errors_unlocked();
+  if (!enter_mode_unlocked(mode)) {
+    control_ready_ = false;
+    return false;
+  }
   return true;
 }
 
 bool DriverCore::command_allowed() const {
   std::lock_guard<std::mutex> lock(mutex_);
-  return linked_ && pd_ready_;
+  return linked_ && control_ready_ && mode_ != ControlMode::kIdle;
+}
+
+DriverCore::ControlMode DriverCore::control_mode() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return mode_;
+}
+
+FXStateType DriverCore::current_state(Arm arm) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!linked_) {
+    return FX_STATE_UNKNOWN;
+  }
+  return FX_L1_Fbk_CurrentState(sdk_object_for_arm(arm));
 }
 
 bool DriverCore::hold_current() {
   std::lock_guard<std::mutex> lock(mutex_);
   if (!linked_) {
+    return false;
+  }
+  if (mode_ == ControlMode::kIdle) {
     return false;
   }
 
@@ -184,20 +320,18 @@ bool DriverCore::hold_current() {
     right_deg[i] = feedback->m_ARMS[1].m_ARM_OUT.m_ARM_FBK_Joint_Pos[i];
   }
 
-  if (!pd_ready_) {
-    if (!enter_pd_unlocked(left_ratio_, right_ratio_, gains_)) {
+  if (!control_ready_) {
+    if (!enter_mode_unlocked(mode_)) {
       return false;
     }
   }
 
-  const bool left_ok =
-      FX_L1_Runtime_SetJointPosPDCmd(
-          kThreadId, FX_OBJ_ARM0, left_deg.data()) == 0;
-  const bool right_ok =
-      FX_L1_Runtime_SetJointPosPDCmd(
-          kThreadId, FX_OBJ_ARM1, right_deg.data()) == 0;
+  const bool left_ok = send_position_unlocked(
+      Arm::kLeft, sdk_degrees_to_ros_radians(left_deg));
+  const bool right_ok = send_position_unlocked(
+      Arm::kRight, sdk_degrees_to_ros_radians(right_deg));
   if (left_ok && right_ok) {
-    pd_ready_ = true;
+    control_ready_ = true;
     return true;
   }
   return false;
@@ -211,7 +345,8 @@ bool DriverCore::stop_motion() {
   FX_L1_Runtime_StopTraj(kThreadId, FX_OBJ_ALL_FLAG);
   FX_L1_State_SwitchToIdle(FX_OBJ_ARM0, kModeTimeoutMs);
   FX_L1_State_SwitchToIdle(FX_OBJ_ARM1, kModeTimeoutMs);
-  pd_ready_ = false;
+  mode_ = ControlMode::kIdle;
+  control_ready_ = false;
   return true;
 }
 
@@ -222,18 +357,17 @@ bool DriverCore::emergency_stop() {
   }
   const bool ok =
       FX_L1_Runtime_EmergencyStop(kThreadId, FX_OBJ_ALL_FLAG) == 0;
-  pd_ready_ = false;
+  mode_ = ControlMode::kIdle;
+  control_ready_ = false;
   return ok;
 }
 
-bool DriverCore::send_pd_position(Arm arm, const JointArray &target_rad) {
+bool DriverCore::send_position(Arm arm, const JointArray &target_rad) {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_ || !pd_ready_) {
+  if (!linked_ || !control_ready_ || mode_ == ControlMode::kIdle) {
     return false;
   }
-  auto command = ros_radians_to_sdk_degrees(target_rad);
-  return FX_L1_Runtime_SetJointPosPDCmd(
-             kThreadId, sdk_object_for_arm(arm), command.data()) == 0;
+  return send_position_unlocked(arm, target_rad);
 }
 
 std::optional<DriverCore::DualArmState> DriverCore::read_state() const {
@@ -270,9 +404,22 @@ std::optional<DriverCore::DualArmState> DriverCore::read_state() const {
   return state;
 }
 
+std::optional<int> DriverCore::get_cmd_cycle_time_ms() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!linked_) {
+    return std::nullopt;
+  }
+  int cycle = 0;
+  if (FX_L1_Config_GetPDCmdCycleTime(&cycle) != 0) {
+    return std::nullopt;
+  }
+  return cycle;
+}
+
 void DriverCore::shutdown() {
   std::lock_guard<std::mutex> lock(mutex_);
-  pd_ready_ = false;
+  control_ready_ = false;
+  mode_ = ControlMode::kIdle;
   if (!linked_) {
     return;
   }
