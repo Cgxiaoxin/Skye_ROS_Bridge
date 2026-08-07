@@ -51,3 +51,15 @@ A. 先收尾 P2（半天内）
 右臂同样一次
 查清 emergency_stop 失败（符号/返回值/是否需先 Idle）
 勾完 dev_plan P2 现场项
+
+## 夹爪测试：
+# 开合
+ros2 topic pub -1 /left_teleop_gripper/ctrl sensor_msgs/msg/JointState \
+  "{name: ['gripper_joint'], position: [0.0]}"   # 开
+ros2 topic pub -1 /left_teleop_gripper/ctrl sensor_msgs/msg/JointState \
+  "{name: ['gripper_joint'], position: [1.0]}"   # 闭
+ros2 topic echo /left_gripper/state
+
+# 驱动节点程序残留，清除
+pkill -f skye_robot_driver || true
+pkill -f gento_robot_driver || true
