@@ -12,6 +12,7 @@
 #include "std_srvs/srv/trigger.hpp"
 
 #include "skye_robot_driver/driver_core.hpp"
+#include "skye_robot_driver/gripper_bridge.hpp"
 
 namespace skye_robot_driver {
 
@@ -37,10 +38,14 @@ class DriverNode : public rclcpp::Node {
   static DriverCore::ControlMode parse_control_mode(const std::string &value);
 
   void handle_command(DriverCore::Arm arm, const JointState::SharedPtr message);
+  void handle_gripper_command(
+      DriverCore::Arm arm, const JointState::SharedPtr message);
   void handle_set_mode(
       const std::shared_ptr<SetMode::Request> request,
       std::shared_ptr<SetMode::Response> response);
   void publish_state();
+  void publish_gripper_state();
+  void tick_gripper();
   void check_command_timeout();
   void handle_hold_current(
       const std::shared_ptr<Trigger::Request> request,
@@ -53,6 +58,8 @@ class DriverNode : public rclcpp::Node {
       std::shared_ptr<Trigger::Response> response);
 
   DriverCore core_;
+  GripperBridge gripper_{core_};
+  bool gripper_enabled_{false};
   std::array<int, 7> left_joint_order_{0, 1, 2, 3, 4, 5, 6};
   std::array<int, 7> right_joint_order_{0, 1, 2, 3, 4, 5, 6};
   JointArray left_signs_{};
@@ -74,14 +81,19 @@ class DriverNode : public rclcpp::Node {
   rclcpp::Publisher<JointState>::SharedPtr state_publisher_;
   rclcpp::Publisher<std_msgs::msg::Int16MultiArray>::SharedPtr
       robot_state_publisher_;
+  rclcpp::Publisher<JointState>::SharedPtr left_gripper_state_publisher_;
+  rclcpp::Publisher<JointState>::SharedPtr right_gripper_state_publisher_;
   rclcpp::Subscription<JointState>::SharedPtr left_command_subscription_;
   rclcpp::Subscription<JointState>::SharedPtr right_command_subscription_;
+  rclcpp::Subscription<JointState>::SharedPtr left_gripper_subscription_;
+  rclcpp::Subscription<JointState>::SharedPtr right_gripper_subscription_;
   rclcpp::Service<SetMode>::SharedPtr set_mode_service_;
   rclcpp::Service<Trigger>::SharedPtr hold_current_service_;
   rclcpp::Service<Trigger>::SharedPtr stop_motion_service_;
   rclcpp::Service<Trigger>::SharedPtr emergency_stop_service_;
   rclcpp::TimerBase::SharedPtr state_timer_;
   rclcpp::TimerBase::SharedPtr timeout_timer_;
+  rclcpp::TimerBase::SharedPtr gripper_timer_;
 };
 
 }  // namespace skye_robot_driver

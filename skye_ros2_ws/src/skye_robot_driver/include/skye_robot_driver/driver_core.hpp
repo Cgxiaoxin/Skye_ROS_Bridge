@@ -1,9 +1,12 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "L1Robot.h"
 
@@ -13,6 +16,12 @@ namespace skye_robot_driver {
 class DriverCore {
  public:
   enum class Arm { kLeft, kRight };
+
+  struct TerminalPacket {
+    FXChnType chn{FX_CHN_CANFD};
+    std::vector<std::uint8_t> data;
+    unsigned int receiving_time_ms{0};
+  };
 
   // Aligned with FXStateType for 0..3; PD kept as optional escape hatch.
   enum class ControlMode {
@@ -79,6 +88,16 @@ class DriverCore {
   bool send_position(Arm arm, const JointArray &target_rad);
   std::optional<DualArmState> read_state() const;
   std::optional<int> get_cmd_cycle_time_ms() const;
+  bool linked() const;
+
+  // End-effector terminal passthrough (CANFD / 485). Requires linked_.
+  bool terminal_set(
+      FXTerminalType terminal, FXChnType chn,
+      const std::uint8_t *data, std::size_t len,
+      unsigned int timeout_ms = 100);
+  std::optional<TerminalPacket> terminal_get(
+      FXTerminalType terminal, unsigned int timeout_ms = 100);
+
   void shutdown();
 
  private:

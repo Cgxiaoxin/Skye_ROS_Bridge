@@ -69,6 +69,18 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   const auto cmd_cycle_time_ms = declare_parameter<int>("cmd_cycle_time_ms", 4);
   max_delta_per_cycle_ = declare_parameter<double>("max_delta_per_cycle", 0.05);
   command_timeout_s_ = declare_parameter<double>("command_timeout_s", 0.20);
+  const auto enable_gripper = declare_parameter<bool>("enable_gripper", true);
+  const auto gripper_rate_hz =
+      declare_parameter<double>("gripper_rate_hz", 100.0);
+  GripperBridge::Config gripper_config;
+  gripper_config.left_motor_id =
+      declare_parameter<int>("gripper_left_motor_id", 1);
+  gripper_config.right_motor_id =
+      declare_parameter<int>("gripper_right_motor_id", 2);
+  gripper_config.kp = declare_parameter<double>("gripper_kp", 3.0);
+  gripper_config.kd = declare_parameter<double>("gripper_kd", 0.12);
+  gripper_config.pos_min = declare_parameter<double>("gripper_pos_min", 0.0);
+  gripper_config.pos_max = declare_parameter<double>("gripper_pos_max", 1.6);
 
   left_joint_order_ = load_joint_order(*this, "left_joint_order", kDefaultOrder);
   right_joint_order_ =
@@ -119,6 +131,18 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   if (cmd_cycle_time_ms <= 0) {
     throw std::invalid_argument("cmd_cycle_time_ms must be > 0");
   }
+  if (enable_gripper) {
+    if (!std::isfinite(gripper_rate_hz) || gripper_rate_hz <= 0.0) {
+      throw std::invalid_argument(
+          "gripper_rate_hz must be finite and greater than zero");
+    }
+    if (!std::isfinite(gripper_config.kp) || !std::isfinite(gripper_config.kd) ||
+        !std::isfinite(gripper_config.pos_min) ||
+        !std::isfinite(gripper_config.pos_max) ||
+        gripper_config.pos_max <= gripper_config.pos_min) {
+      throw std::invalid_argument("invalid gripper MIT / position range params");
+    }
+  }
   auto ratio_ok = [](int value) { return value >= 1 && value <= 100; };
   if (!ratio_ok(left_vel) || !ratio_ok(right_vel) || !ratio_ok(left_acc) ||
       !ratio_ok(right_acc)) {
@@ -146,6 +170,21 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       [this](JointState::SharedPtr message) {
         handle_command(DriverCore::Arm::kRight, std::move(message));
       });
+
+  left_gripper_subscription_ = create_subscription<JointState>(
+      "/left_teleop_gripper/ctrl", cmd_qos,
+      [this](JointState::SharedPtr message) {
+        handle_gripper_command(DriverCore::Arm::kLeft, std::move(message));
+      });
+  right_gripper_subscription_ = create_subscription<JointState>(
+      "/right_teleop_gripper/ctrl", cmd_qos,
+      [this](JointState::SharedPtr message) {
+        handle_gripper_command(DriverCore::Arm::kRight, std::move(message));
+      });
+  left_gripper_state_publisher_ =
+      create_publisher<JointState>("/left_gripper/state", st_qos);
+  right_gripper_state_publisher_ =
+      create_publisher<JointState>("/right_gripper/state", st_qos);
 
   set_mode_service_ = create_service<SetMode>(
       "/set_mode",
@@ -197,6 +236,25 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
         static_cast<int>(connect_config.mode), connect_config.left_vel_ratio,
         connect_config.right_vel_ratio, connect_config.left_acc_ratio,
         connect_config.right_acc_ratio, connect_config.cmd_cycle_time_ms);
+
+    if (enable_gripper) {
+      if (!gripper_.start(gripper_config)) {
+        throw std::runtime_error("failed to enable DM gripper motors via Terminal");
+      }
+      gripper_enabled_ = true;
+      const auto gripper_period =
+          std::chrono::duration<double>(1.0 / gripper_rate_hz);
+      gripper_timer_ = create_wall_timer(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(gripper_period),
+          [this]() { tick_gripper(); });
+      RCLCPP_INFO(
+          get_logger(),
+          "Gripper enabled: motor_id L/R=%d/%d; kp=%.3f kd=%.3f; "
+          "pos=[%.3f,%.3f] rad; rate=%.1f Hz",
+          gripper_config.left_motor_id, gripper_config.right_motor_id,
+          gripper_config.kp, gripper_config.kd, gripper_config.pos_min,
+          gripper_config.pos_max, gripper_rate_hz);
+    }
   } else {
     RCLCPP_INFO(
         get_logger(),
@@ -204,7 +262,13 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   }
 }
 
-DriverNode::~DriverNode() { core_.shutdown(); }
+DriverNode::~DriverNode() {
+  if (gripper_enabled_) {
+    gripper_.stop();
+    gripper_enabled_ = false;
+  }
+  core_.shutdown();
+}
 
 DriverCore::ControlMode DriverNode::parse_control_mode(
     const std::string &value) {
@@ -373,12 +437,25 @@ void DriverNode::handle_command(
     return;
   }
 
+  // Seed from live feedback so the first command cannot jump to a distant
+  // absolute pose in one SetJointPosCmd (was: last_command = mapped).
   if (!last_command) {
-    last_command = mapped;
-  } else {
-    mapped =
-        DriverCore::limit_delta(mapped, *last_command, max_delta_per_cycle_);
+    const auto state = core_.read_state();
+    if (!state) {
+      RCLCPP_ERROR(
+          get_logger(),
+          "%s command rejected: no feedback to seed last_command", arm_name);
+      return;
+    }
+    last_command = arm == DriverCore::Arm::kLeft ? state->left_position
+                                                 : state->right_position;
+    RCLCPP_INFO(
+        get_logger(),
+        "%s first command: seeded last_command from feedback, then limit_delta",
+        arm_name);
   }
+  mapped =
+      DriverCore::limit_delta(mapped, *last_command, max_delta_per_cycle_);
 
   if (!core_.send_position(arm, mapped)) {
     RCLCPP_ERROR(
@@ -447,6 +524,10 @@ void DriverNode::handle_stop_motion(
 void DriverNode::handle_emergency_stop(
     const std::shared_ptr<Trigger::Request> /*request*/,
     std::shared_ptr<Trigger::Response> response) {
+  if (gripper_enabled_) {
+    gripper_.stop();
+    gripper_enabled_ = false;
+  }
   const bool ok = core_.emergency_stop();
   response->success = ok;
   response->message = ok ? "emergency stop issued; now IDLE" : "emergency_stop failed";
@@ -454,6 +535,52 @@ void DriverNode::handle_emergency_stop(
   right_streaming_ = false;
   left_last_command_.reset();
   right_last_command_.reset();
+}
+
+void DriverNode::handle_gripper_command(
+    DriverCore::Arm arm, const JointState::SharedPtr message) {
+  if (!gripper_enabled_) {
+    return;
+  }
+  if (message->position.empty() || !std::isfinite(message->position[0])) {
+    RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 2000,
+        "gripper command ignored: need finite position[0]");
+    return;
+  }
+  gripper_.set_target(arm, message->position[0]);
+}
+
+void DriverNode::tick_gripper() {
+  if (!gripper_enabled_) {
+    return;
+  }
+  gripper_.tick_control();
+  gripper_.tick_feedback();
+  publish_gripper_state();
+}
+
+void DriverNode::publish_gripper_state() {
+  auto publish_one = [this](
+                         DriverCore::Arm arm,
+                         const rclcpp::Publisher<JointState>::SharedPtr &pub) {
+    const auto fb = gripper_.feedback(arm);
+    JointState msg;
+    msg.header.stamp = now();
+    msg.name = {"gripper_joint"};
+    if (fb.valid) {
+      msg.position = {fb.position};
+      msg.velocity = {fb.velocity};
+      msg.effort = {fb.effort};
+    } else {
+      msg.position = {gripper_.target(arm)};
+      msg.velocity = {0.0};
+      msg.effort = {0.0};
+    }
+    pub->publish(msg);
+  };
+  publish_one(DriverCore::Arm::kLeft, left_gripper_state_publisher_);
+  publish_one(DriverCore::Arm::kRight, right_gripper_state_publisher_);
 }
 
 void DriverNode::publish_state() {

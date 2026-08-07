@@ -41,7 +41,10 @@ set(GENTO_SDK_INCLUDE_DIRS
   ${GENTO_SDK_ROOT}/include/Kinematics/MotionPlanner
   ${GENTO_SDK_ROOT}/include/Kinematics/SkyeBodyKinematics)
 
-add_library(skye_driver_core STATIC src/driver_core.cpp)
+add_library(skye_driver_core STATIC
+  src/driver_core.cpp
+  src/dm_mit.cpp
+  src/gripper_bridge.cpp)
 target_include_directories(skye_driver_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   ${GENTO_SDK_INCLUDE_DIRS})

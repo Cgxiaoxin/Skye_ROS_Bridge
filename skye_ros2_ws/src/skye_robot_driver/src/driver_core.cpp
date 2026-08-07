@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace skye_robot_driver {
 
@@ -414,6 +415,50 @@ std::optional<int> DriverCore::get_cmd_cycle_time_ms() const {
     return std::nullopt;
   }
   return cycle;
+}
+
+bool DriverCore::linked() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return linked_;
+}
+
+bool DriverCore::terminal_set(
+    FXTerminalType terminal, FXChnType chn, const std::uint8_t *data,
+    std::size_t len, unsigned int timeout_ms) {
+  if (data == nullptr || len == 0 || len > 64) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!linked_) {
+    return false;
+  }
+  unsigned char buffer[64]{};
+  std::copy(data, data + len, buffer);
+  unsigned int sending_time = 0;
+  return FX_L1_Terminal_SetData(
+             terminal, chn, timeout_ms, buffer,
+             static_cast<unsigned int>(len), &sending_time) == 0;
+}
+
+std::optional<DriverCore::TerminalPacket> DriverCore::terminal_get(
+    FXTerminalType terminal, unsigned int timeout_ms) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!linked_) {
+    return std::nullopt;
+  }
+  FXChnType chn = FX_CHN_CANFD;
+  unsigned char buffer[64]{};
+  unsigned int receiving_time = 0;
+  const int n = FX_L1_Terminal_GetData(
+      terminal, timeout_ms, &chn, buffer, &receiving_time);
+  if (n < 0) {
+    return std::nullopt;
+  }
+  TerminalPacket packet;
+  packet.chn = chn;
+  packet.receiving_time_ms = receiving_time;
+  packet.data.assign(buffer, buffer + n);
+  return packet;
 }
 
 void DriverCore::shutdown() {

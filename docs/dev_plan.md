@@ -47,8 +47,10 @@
 - [x] 文档：`docs/p4_factr_teleop.md`
 - [ ] 实机：Docker 小臂 + 主机驱动，键 `1` sync → `2` teleop
 
-### P5 — 夹爪（后续）
-- [ ] 对齐 `/left|right_teleop_gripper/ctrl` 与 state；不进 v0.1
+### P5 — 夹爪（DM4310 Terminal CANFD）
+- [x] 扩 `skye_robot_driver`：MIT + `FX_L1_Terminal_*`（对齐 Thor `gripper_bridge.py`）
+- [x] 订 `/left|right_teleop_gripper/ctrl`，发 `/left|right_gripper/state`
+- [ ] 实机：与 FACTR 联调开合 + 力反馈
 
 ---
 
@@ -127,13 +129,14 @@ left/right_velocity_ratio: 10
 | `2` teleop | 发 `/gento/{left,right}_joint_control` |
 | `3` stop | 停主手输出 |
 
-### 6. 夹爪（后续对齐，不进 v0.1）
+### 6. 夹爪（DM4310，FACTR 对齐）
 
 | Topic | 说明 |
 |-------|------|
-| `/left_teleop_gripper/ctrl`、`/right_teleop_gripper/ctrl` | 主手夹爪指令 |
-| `/left_gripper/state`、`/right_gripper/state` | 夹爪状态 |
-| 录数遗留名 | `/left_gripper_state` 等（`tele_operation/` 偏录数，非控制主路径） |
+| `/left_teleop_gripper/ctrl`、`/right_teleop_gripper/ctrl` | 主手夹爪指令，`JointState.position[0]∈[0,1]` |
+| `/left_gripper/state`、`/right_gripper/state` | 夹爪状态（归一化位 + 电机 vel/effort） |
+
+实现：同进程 Terminal CANFD + MIT；设计见 `docs/superpowers/specs/2026-08-07-dm-gripper-terminal-design.md`。
 
 ### 7. 与旧驱动差异（本仓库主动改）
 

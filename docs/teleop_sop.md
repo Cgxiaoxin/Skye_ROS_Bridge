@@ -23,7 +23,9 @@
    ros2 service call /gento/set_mode skye_robot_driver/srv/SetMode "{mode: 0}"
    ```
    回执含 `success` 与左右 `FX` 状态。5. 确认 `/gento/joint_states` @ ~250 Hz。
-6. 单臂小幅试跑 → 双臂 → 再开 FACTR（`1` sync → `2` teleop）。
+6. 单臂小幅试跑 → 双臂 → 再开 FACTR（`1` sync → `2` teleop）。  
+   手动 `topic pub`：发**绝对角**；每条最多 `max_delta_per_cycle`（默认 0.05 rad）。  
+   **禁止**对远处目标 `--once` 盲发（见 `docs/Thor 启动文档.md`）。
 
 核验脚本：`./scripts/verify_p2_smoke.sh`（需已连真机启动驱动）。
 

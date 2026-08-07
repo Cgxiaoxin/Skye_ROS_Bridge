@@ -33,6 +33,12 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 | 发布 | `/gento/robot_state` | `std_msgs/Int16MultiArray` | `[left_fx_state, right_fx_state]` |
 | 订阅 | `/gento/left_joint_control` | `JointState` | 7 轴 position（rad） |
 | 订阅 | `/gento/right_joint_control` | `JointState` | 7 轴 position（rad） |
+| 订阅 | `/left_teleop_gripper/ctrl` | `JointState` | 夹爪指令 `position[0]∈[0,1]`（0=开，1=闭） |
+| 订阅 | `/right_teleop_gripper/ctrl` | `JointState` | 同上 |
+| 发布 | `/left_gripper/state` | `JointState` | `name=[gripper_joint]`；归一化位/速/力矩 |
+| 发布 | `/right_gripper/state` | `JointState` | 同上 |
+
+夹爪走 **Terminal CANFD + DM4310 MIT**（非 Hand 24）。参数见 `enable_gripper` / `gripper_*`。
 
 ## Service
 
