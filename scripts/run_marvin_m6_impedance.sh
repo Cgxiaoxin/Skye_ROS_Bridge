@@ -28,7 +28,12 @@ USE_LEFT_GRIPPER="${USE_LEFT_GRIPPER:-false}"
 USE_RIGHT_GRIPPER="${USE_RIGHT_GRIPPER:-false}"
 
 # Pass either a full /dev path or a /dev/serial/by-id basename.
-# 当前本机: FTB8HNOT -> ttyUSB0 (左), FTAO51EA -> ttyUSB1 (右)
+# 优先读 bind_leader_arms.py 写入的绑定（换臂：python3 /scripts/bind_leader_arms.py）
+BINDING_ENV="${MARVIN_WS}/.skye/leader_arms.env"
+if [[ -f "${BINDING_ENV}" ]]; then
+  # shellcheck disable=SC1090
+  source "${BINDING_ENV}"
+fi
 ROBOT_LEADER_DYNAMIXEL_PORT_LEFT="${ROBOT_LEADER_DYNAMIXEL_PORT_LEFT:-usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0}"
 ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT="${ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT:-usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0}"
 
@@ -66,6 +71,7 @@ DOCKER_ARGS=(
   -e "RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
   -v /dev:/dev
   -v "${MARVIN_WS}:/marvin_ws"
+  -v "${SCRIPT_DIR}:/scripts:ro"
   -w /marvin_ws
 )
 

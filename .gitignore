@@ -39,3 +39,6 @@ __pycache__/
 # Misc
 *.tar.gz
 *.zip
+
+# 本机主臂 FTDI 绑定（bind_leader_arms.py）
+marvin_ws/.skye/

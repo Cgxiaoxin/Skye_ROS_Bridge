@@ -8,7 +8,7 @@
 |----|--------------------------------------|---------------------------------------------|
 | 指令 | `/left\|right_joint_control` | `/gento/left\|right_joint_control` |
 | 反馈 | `/left\|right_joint_state`（7 轴分侧） | **`/gento/joint_states`（14 轴）** |
-| Docker 挂载 | 曾误挂 `scripts/` | **`marvin_ws` → `/marvin_ws`** |
+| Docker 挂载 | `marvin_ws` → `/marvin_ws`，`scripts` → `/scripts` | 同左（含 `bind_leader_arms.py`） |
 | 大臂驱动 | `gento_robot_driver` | **`skye_robot_driver`** |
 
 小臂 yaml：`follower_joint_offset` 左=0、右=7，与 14 轴 `/gento/joint_states` 一致。
@@ -45,7 +45,10 @@ ros2 service call /gento/set_mode skye_robot_driver/srv/SetMode "{mode: 2}"
 source /marvin_ws/install/setup.bash
 export ROS_DOMAIN_ID=20 ROS_LOCALHOST_ONLY=0 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
-# FTDI 低延迟（按实际 ttyUSB）
+# 换臂后先绑定串口（见 docs/新主臂串口绑定.md）
+# python3 /scripts/bind_leader_arms.py && source /marvin_ws/.skye/leader_arms.env
+
+# FTDI 低延迟（按实际 ttyUSB；bind 脚本也会写 1）
 echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
 echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB1/latency_timer
 
