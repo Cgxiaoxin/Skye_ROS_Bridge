@@ -59,3 +59,6 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 | `cartesian_stiffness/damping` | SDK 例程默认 | 笛卡尔阻抗 K/D |
 | `max_delta_per_cycle` | `0.05` | rad/周期 |
 | `command_timeout_s` | `0.20` | 超时 hold |
+| `enable_gripper` | `true` | 同进程夹爪桥；`ros2 param set` 不会停已创建的定时器 |
+| `gripper_rate_hz` | `100.0` | 夹爪控制/状态发布频率 |
+| `gripper_feedback_timeout_ms` | `1` | `terminal_get` 超时；过长会拖慢 `/gento/joint_states` |
