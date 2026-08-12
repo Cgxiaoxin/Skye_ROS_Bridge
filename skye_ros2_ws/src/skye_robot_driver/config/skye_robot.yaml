@@ -34,5 +34,7 @@ skye_robot_driver:
     gripper_kp: 3.0
     gripper_kd: 0.12
     gripper_rate_hz: 100.0
+    # Keep short: long terminal_get blocks joint_states publish on single-thread spin.
+    gripper_feedback_timeout_ms: 1
     gripper_pos_min: 0.0
     gripper_pos_max: 1.6

@@ -21,6 +21,8 @@ class GripperBridge {
     double kd{0.12};
     double pos_min{0.0};
     double pos_max{1.6};
+    // Non-blocking CAN read; long timeouts block the single-threaded executor.
+    unsigned int feedback_timeout_ms{1};
   };
 
   // Normalized feedback for FACTR: position in [0,1] (0=open, 1=closed).

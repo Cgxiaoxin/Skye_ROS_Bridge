@@ -126,7 +126,8 @@ void GripperBridge::tick_feedback() {
     return;
   }
   for (Arm arm : {Arm::kLeft, Arm::kRight}) {
-    const auto packet = core_.terminal_get(terminal_for_arm(arm), 100);
+    const auto packet =
+        core_.terminal_get(terminal_for_arm(arm), config_.feedback_timeout_ms);
     if (!packet || packet->data.size() < 5) {
       continue;
     }

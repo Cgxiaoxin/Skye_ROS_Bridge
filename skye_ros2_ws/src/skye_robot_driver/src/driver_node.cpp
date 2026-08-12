@@ -81,6 +81,8 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   gripper_config.kd = declare_parameter<double>("gripper_kd", 0.12);
   gripper_config.pos_min = declare_parameter<double>("gripper_pos_min", 0.0);
   gripper_config.pos_max = declare_parameter<double>("gripper_pos_max", 1.6);
+  gripper_config.feedback_timeout_ms = static_cast<unsigned int>(
+      declare_parameter<int>("gripper_feedback_timeout_ms", 1));
 
   left_joint_order_ = load_joint_order(*this, "left_joint_order", kDefaultOrder);
   right_joint_order_ =
@@ -139,8 +141,10 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
     if (!std::isfinite(gripper_config.kp) || !std::isfinite(gripper_config.kd) ||
         !std::isfinite(gripper_config.pos_min) ||
         !std::isfinite(gripper_config.pos_max) ||
-        gripper_config.pos_max <= gripper_config.pos_min) {
-      throw std::invalid_argument("invalid gripper MIT / position range params");
+        gripper_config.pos_max <= gripper_config.pos_min ||
+        gripper_config.feedback_timeout_ms == 0) {
+      throw std::invalid_argument(
+          "invalid gripper MIT / position range / feedback_timeout_ms params");
     }
   }
   auto ratio_ok = [](int value) { return value >= 1 && value <= 100; };
@@ -250,10 +254,11 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       RCLCPP_INFO(
           get_logger(),
           "Gripper enabled: motor_id L/R=%d/%d; kp=%.3f kd=%.3f; "
-          "pos=[%.3f,%.3f] rad; rate=%.1f Hz",
+          "pos=[%.3f,%.3f] rad; rate=%.1f Hz; fb_timeout=%ums",
           gripper_config.left_motor_id, gripper_config.right_motor_id,
           gripper_config.kp, gripper_config.kd, gripper_config.pos_min,
-          gripper_config.pos_max, gripper_rate_hz);
+          gripper_config.pos_max, gripper_rate_hz,
+          gripper_config.feedback_timeout_ms);
     }
   } else {
     RCLCPP_INFO(
