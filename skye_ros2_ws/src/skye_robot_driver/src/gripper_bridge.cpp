@@ -13,6 +13,7 @@ constexpr int kProbeIds[] = {1, 2, 0, 3, 4, 5, 6, 7, 8, 16, 17};
 constexpr int kEnableRepeats = 3;
 constexpr int kProbeAttempts = 4;
 constexpr unsigned int kProbeTimeoutMs = 30;
+constexpr unsigned int kSetupTimeoutMs = 100;
 constexpr std::uint32_t kReenablePeriodTicks = 100;  // ~1s at 100 Hz
 
 }  // namespace
@@ -122,26 +123,28 @@ double GripperBridge::rad_to_norm(double rad) const {
   return dm_mit::clamp((rad - config_.pos_min) / span, 0.0, 1.0);
 }
 
-bool GripperBridge::send_raw(Arm arm, const std::uint8_t *data8) {
+bool GripperBridge::send_raw(
+    Arm arm, const std::uint8_t *data8, unsigned int timeout_ms) {
   const auto packed = dm_mit::pack_terminal(
       static_cast<std::uint32_t>(motor_id_unlocked(arm)), data8,
       dm_mit::kCanMtu);
   return core_.terminal_set(
-      terminal_for_arm(arm), FX_CHN_CANFD, packed.data(), packed.size());
+      terminal_for_arm(arm), FX_CHN_CANFD, packed.data(), packed.size(),
+      timeout_ms);
 }
 
 bool GripperBridge::send_mit(Arm arm, double norm) {
   const auto mit =
       dm_mit::encode_mit(config_.kp, config_.kd, norm_to_rad(norm), 0.0, 0.0);
-  return send_raw(arm, mit.data());
+  return send_raw(arm, mit.data(), config_.feedback_timeout_ms);
 }
 
 bool GripperBridge::enable_motors() {
   const auto frame = dm_mit::enable_frame();
   bool ok = true;
   for (int i = 0; i < kEnableRepeats; ++i) {
-    ok = send_raw(Arm::kLeft, frame.data()) && ok;
-    ok = send_raw(Arm::kRight, frame.data()) && ok;
+    ok = send_raw(Arm::kLeft, frame.data(), kSetupTimeoutMs) && ok;
+    ok = send_raw(Arm::kRight, frame.data(), kSetupTimeoutMs) && ok;
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
   return ok;
@@ -149,9 +152,9 @@ bool GripperBridge::enable_motors() {
 
 bool GripperBridge::disable_motors() {
   const auto frame = dm_mit::disable_frame();
-  const bool left_ok = send_raw(Arm::kLeft, frame.data());
+  const bool left_ok = send_raw(Arm::kLeft, frame.data(), kSetupTimeoutMs);
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  const bool right_ok = send_raw(Arm::kRight, frame.data());
+  const bool right_ok = send_raw(Arm::kRight, frame.data(), kSetupTimeoutMs);
   return left_ok && right_ok;
 }
 
@@ -212,7 +215,7 @@ bool GripperBridge::probe_motor_id(Arm arm) {
       config_.right_motor_id = id;
     }
     core_.terminal_clear(terminal_for_arm(arm));
-    send_raw(arm, enable.data());
+    send_raw(arm, enable.data(), kSetupTimeoutMs);
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
     if (wait_for_feedback(arm, kProbeTimeoutMs, kProbeAttempts)) {
       return true;
@@ -239,10 +242,10 @@ void GripperBridge::maybe_reenable() {
   }
   const auto frame = dm_mit::enable_frame();
   if (!left.valid) {
-    send_raw(Arm::kLeft, frame.data());
+    send_raw(Arm::kLeft, frame.data(), config_.feedback_timeout_ms);
   }
   if (!right.valid) {
-    send_raw(Arm::kRight, frame.data());
+    send_raw(Arm::kRight, frame.data(), config_.feedback_timeout_ms);
   }
 }
 

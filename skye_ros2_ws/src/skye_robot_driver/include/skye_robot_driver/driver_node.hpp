@@ -92,6 +92,8 @@ class DriverNode : public rclcpp::Node {
   rclcpp::Service<Trigger>::SharedPtr hold_current_service_;
   rclcpp::Service<Trigger>::SharedPtr stop_motion_service_;
   rclcpp::Service<Trigger>::SharedPtr emergency_stop_service_;
+  rclcpp::CallbackGroup::SharedPtr control_callback_group_;
+  rclcpp::CallbackGroup::SharedPtr gripper_callback_group_;
   rclcpp::TimerBase::SharedPtr state_timer_;
   rclcpp::TimerBase::SharedPtr timeout_timer_;
   rclcpp::TimerBase::SharedPtr gripper_timer_;

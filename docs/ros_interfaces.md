@@ -63,4 +63,4 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 | `gripper_left_motor_id` / `gripper_right_motor_id` | `1` / `2` | 左 ARM0+ID1；右 ARM1+ID2 |
 | `gripper_invert` | `true` | FACTR 扳机 1=开/0=闭 → 电机 0=开/1=闭；state 同样反回去给 FACTR |
 | `gripper_rate_hz` | `100.0` | 夹爪控制/状态发布频率 |
-| `gripper_feedback_timeout_ms` | `1` | `terminal_get` 超时；过长会拖慢 `/gento/joint_states` |
+| `gripper_feedback_timeout_ms` | `1` | 运行时 `terminal_set/get` 超时；夹爪与关节分线程，但 SDK mutex 仍串行，必须短 |

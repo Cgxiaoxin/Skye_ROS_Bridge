@@ -58,7 +58,8 @@ class GripperBridge {
  private:
   FXTerminalType terminal_for_arm(Arm arm) const;
   int motor_id_unlocked(Arm arm) const;
-  bool send_raw(Arm arm, const std::uint8_t *data8);
+  bool send_raw(
+      Arm arm, const std::uint8_t *data8, unsigned int timeout_ms);
   bool send_mit(Arm arm, double norm);
   bool enable_motors();
   bool disable_motors();

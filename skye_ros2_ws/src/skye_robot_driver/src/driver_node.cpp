@@ -165,6 +165,15 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
     }
   }
 
+  control_callback_group_ = create_callback_group(
+      rclcpp::CallbackGroupType::MutuallyExclusive);
+  gripper_callback_group_ = create_callback_group(
+      rclcpp::CallbackGroupType::MutuallyExclusive);
+  rclcpp::SubscriptionOptions control_sub_opts;
+  control_sub_opts.callback_group = control_callback_group_;
+  rclcpp::SubscriptionOptions gripper_sub_opts;
+  gripper_sub_opts.callback_group = gripper_callback_group_;
+
   const auto cmd_qos = control_qos();
   const auto st_qos = state_qos();
   state_publisher_ = create_publisher<JointState>("/joint_states", st_qos);
@@ -174,23 +183,27 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       "/left_joint_control", cmd_qos,
       [this](JointState::SharedPtr message) {
         handle_command(DriverCore::Arm::kLeft, std::move(message));
-      });
+      },
+      control_sub_opts);
   right_command_subscription_ = create_subscription<JointState>(
       "/right_joint_control", cmd_qos,
       [this](JointState::SharedPtr message) {
         handle_command(DriverCore::Arm::kRight, std::move(message));
-      });
+      },
+      control_sub_opts);
 
   left_gripper_subscription_ = create_subscription<JointState>(
       "/left_teleop_gripper/ctrl", cmd_qos,
       [this](JointState::SharedPtr message) {
         handle_gripper_command(DriverCore::Arm::kLeft, std::move(message));
-      });
+      },
+      gripper_sub_opts);
   right_gripper_subscription_ = create_subscription<JointState>(
       "/right_teleop_gripper/ctrl", cmd_qos,
       [this](JointState::SharedPtr message) {
         handle_gripper_command(DriverCore::Arm::kRight, std::move(message));
-      });
+      },
+      gripper_sub_opts);
   left_gripper_state_publisher_ =
       create_publisher<JointState>("/left_gripper/state", st_qos);
   right_gripper_state_publisher_ =
@@ -202,35 +215,40 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
           const std::shared_ptr<SetMode::Request> request,
           std::shared_ptr<SetMode::Response> response) {
         handle_set_mode(request, response);
-      });
+      },
+      rmw_qos_profile_services_default, control_callback_group_);
   hold_current_service_ = create_service<Trigger>(
       "/hold_current",
       [this](
           const std::shared_ptr<Trigger::Request> request,
           std::shared_ptr<Trigger::Response> response) {
         handle_hold_current(request, response);
-      });
+      },
+      rmw_qos_profile_services_default, control_callback_group_);
   stop_motion_service_ = create_service<Trigger>(
       "/stop_motion",
       [this](
           const std::shared_ptr<Trigger::Request> request,
           std::shared_ptr<Trigger::Response> response) {
         handle_stop_motion(request, response);
-      });
+      },
+      rmw_qos_profile_services_default, control_callback_group_);
   emergency_stop_service_ = create_service<Trigger>(
       "/emergency_stop",
       [this](
           const std::shared_ptr<Trigger::Request> request,
           std::shared_ptr<Trigger::Response> response) {
         handle_emergency_stop(request, response);
-      });
+      },
+      rmw_qos_profile_services_default, control_callback_group_);
 
   const auto period = std::chrono::duration<double>(1.0 / state_publish_hz);
   state_timer_ = create_wall_timer(
       std::chrono::duration_cast<std::chrono::nanoseconds>(period),
-      [this]() { publish_state(); });
+      [this]() { publish_state(); }, control_callback_group_);
   timeout_timer_ = create_wall_timer(
-      std::chrono::milliseconds(50), [this]() { check_command_timeout(); });
+      std::chrono::milliseconds(50), [this]() { check_command_timeout(); },
+      control_callback_group_);
 
   if (connect_on_startup) {
     const auto ip = parse_ipv4(robot_ip);
@@ -256,9 +274,10 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
           std::chrono::duration<double>(1.0 / gripper_rate_hz);
       gripper_timer_ = create_wall_timer(
           std::chrono::duration_cast<std::chrono::nanoseconds>(gripper_period),
-          [this]() { tick_gripper(); });
+          [this]() { tick_gripper(); }, gripper_callback_group_);
       RCLCPP_INFO(
           get_logger(),
+          "Executor: control+gripper callback groups (MultiThreaded, 2). "
           "Gripper enabled: motor_id L/R=%d/%d term R=ARM%d invert=%s; "
           "kp=%.3f kd=%.3f; "
           "pos=[%.3f,%.3f] rad; rate=%.1f Hz; fb_timeout=%ums | %s",
