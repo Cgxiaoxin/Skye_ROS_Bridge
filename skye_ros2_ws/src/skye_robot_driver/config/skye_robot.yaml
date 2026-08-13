@@ -1,0 +1,38 @@
+# Skye robot driver defaults (FX modes 0..3 + P3 safety)
+skye_robot_driver:
+  ros__parameters:
+    robot_ip: "6.6.7.190"
+    # 0=idle 1=position 2=imp_joint 3=imp_cart (FX_STATE); default teleop=2
+    control_mode: "imp_joint"
+    left_velocity_ratio: 10
+    right_velocity_ratio: 10
+    left_acceleration_ratio: 10
+    right_acceleration_ratio: 10
+    state_publish_hz: 250.0
+    cmd_cycle_time_ms: 4
+    connect_on_startup: true
+    left_joint_order: [0, 1, 2, 3, 4, 5, 6]
+    right_joint_order: [0, 1, 2, 3, 4, 5, 6]
+    left_joint_signs: [1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0]
+    right_joint_signs: [1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0]
+    left_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    right_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    left_joint_limits_min: [-3.1067, -2.01, -3.1067, -1.0472, -3.1067, -1.0472, -1.5708]
+    left_joint_limits_max: [3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708]
+    right_joint_limits_min: [-3.1067, -2.01, -3.1067, -1.0472, -3.1067, -1.0472, -1.5708]
+    right_joint_limits_max: [3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708]
+    max_delta_per_cycle: 0.05
+    command_timeout_s: 0.20
+    impedance_stiffness: [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+    impedance_damping: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
+    cartesian_stiffness: [2000.0, 2000.0, 2000.0, 100.0, 100.0, 100.0, 50.0]
+    cartesian_damping: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 1.0]
+    # DM4310 gripper via Terminal CANFD (FACTR topics, not Hand-24)
+    enable_gripper: true
+    gripper_left_motor_id: 1
+    gripper_right_motor_id: 2
+    gripper_kp: 3.0
+    gripper_kd: 0.12
+    gripper_rate_hz: 100.0
+    gripper_pos_min: 0.0
+    gripper_pos_max: 1.6

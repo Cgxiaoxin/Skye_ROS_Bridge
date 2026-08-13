@@ -1,0 +1,29 @@
+1. 使用启动脚本运行docker
+bash run_marvin_m6_impedance.sh
+
+/usr/bin/python3 -m pip install pyserial minimalmodbus modbus_tk 
+unset ROS_LOCALHOST_ONLY
+export ROS_DOMAIN_ID=42
+source /marvin_ws/install/setup.bash
+
+
+2. 启动小臂
+echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB2/latency_timer
+echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB3/latency_timer
+# 双臂
+ros2 launch factr_teleop start_teleop_m6_dual.launch.py use_keyboard:=true
+# 单left臂
+ros2 launch factr_teleop start_teleop_m6_left.launch.py use_keyboard:=true
+# 单right臂
+ros2 launch factr_teleop start_teleop_m6_right.launch.py use_keyboard:=true
+如果小臂id* 关节角值过大 导致程序报错 可以先考虑重启小臂电源 实在无法解决需要回到windows上位机 用dynamixelwizard2setup调试
+
+启动后通过按键盘上方数字栏操作
+按键说明 1->同步 2->启动遥操 3->暂停 
+通常先按1同步，并上抬小臂防止下坠，按2开始遥操，遥操后按3暂停
+
+Tips：
+(1) 小臂每次上电之前需要对齐蓝线及红色记号，才能上电
+(2) 官方飞书文档3.2中有更换新夹爪的使用方案
+(3) 按1后，按2可能让大臂立刻同步小臂，导致机械臂下坠，需提前确认环境安全性，并在按2前抬升小臂
+(4) 官方文档链接：https://my.feishu.cn/wiki/JPwOw7PiJiX56vkN5YlcnQVbngf?from=from_copylink
