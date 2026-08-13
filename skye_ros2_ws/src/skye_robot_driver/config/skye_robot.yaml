@@ -27,11 +27,15 @@ skye_robot_driver:
     impedance_damping: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
     cartesian_stiffness: [2000.0, 2000.0, 2000.0, 100.0, 100.0, 100.0, 50.0]
     cartesian_damping: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 1.0]
-    # DM4310 gripper via Terminal CANFD (not Hand-24). Per-arm CAN, both ID=1.
+    # DM4310 gripper via Terminal CANFD (not Hand-24).
+    # Left: ARM0 + ID1; Right: ARM1 + ID2.
     enable_gripper: true
     gripper_left_motor_id: 1
-    gripper_right_motor_id: 1
+    gripper_right_motor_id: 2
     gripper_right_terminal: 1   # 0=ARM0 (share left bus) 1=ARM1
+    # FACTR trigger: released=1, pressed=0. Motor: 0=open, 1=closed.
+    # Invert so press closes. Manual motor test: set false, then 0=open 1=closed.
+    gripper_invert: true
     gripper_kp: 3.0
     gripper_kd: 0.12
     gripper_rate_hz: 100.0

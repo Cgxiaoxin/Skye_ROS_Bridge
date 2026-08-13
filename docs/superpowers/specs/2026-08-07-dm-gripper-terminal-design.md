@@ -16,7 +16,7 @@
 
 | 方向 | Topic | 类型 | 语义 |
 |------|-------|------|------|
-| 订 | `/left_teleop_gripper/ctrl`、`/right_teleop_gripper/ctrl` | `sensor_msgs/JointState` | `position[0] ∈ [0,1]`，0=开，1=闭 |
+| 订 | `/left_teleop_gripper/ctrl`、`/right_teleop_gripper/ctrl` | `sensor_msgs/JointState` | FACTR 扳机：1=松开/开，0=按下/闭；`gripper_invert` 后电机 0=开 1=闭 |
 | 发 | `/left_gripper/state`、`/right_gripper/state` | `sensor_msgs/JointState` | `name=[gripper_joint]`；position 归一化 `[0,1]`；velocity/effort 来自电机反馈 |
 
 ## 架构
@@ -39,8 +39,9 @@ DriverNode
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `enable_gripper` | `true` | 连接成功后使能夹爪桥 |
-| `gripper_left_motor_id` | `1` | 左 CAN ID |
-| `gripper_right_motor_id` | `2` | 右 CAN ID |
+| `gripper_left_motor_id` | `1` | 左 CAN ID（ARM0） |
+| `gripper_right_motor_id` | `2` | 右 CAN ID（ARM1） |
+| `gripper_invert` | `true` | FACTR 扳机与电机 0/1 语义相反时取反 |
 | `gripper_kp` / `gripper_kd` | `3.0` / `0.12` | MIT 增益 |
 | `gripper_rate_hz` | `100.0` | 下发频率 |
 | `gripper_pos_min` / `gripper_pos_max` | `0.0` / `1.6` | 电机角 (rad)，对应 0/1 |

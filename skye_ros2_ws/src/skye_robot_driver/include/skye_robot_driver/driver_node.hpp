@@ -60,6 +60,7 @@ class DriverNode : public rclcpp::Node {
   DriverCore core_;
   GripperBridge gripper_{core_};
   bool gripper_enabled_{false};
+  bool gripper_invert_{true};
   std::array<int, 7> left_joint_order_{0, 1, 2, 3, 4, 5, 6};
   std::array<int, 7> right_joint_order_{0, 1, 2, 3, 4, 5, 6};
   JointArray left_signs_{};

@@ -33,7 +33,7 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 | 发布 | `/gento/robot_state` | `std_msgs/Int16MultiArray` | `[left_fx_state, right_fx_state]` |
 | 订阅 | `/gento/left_joint_control` | `JointState` | 7 轴 position（rad） |
 | 订阅 | `/gento/right_joint_control` | `JointState` | 7 轴 position（rad） |
-| 订阅 | `/left_teleop_gripper/ctrl` | `JointState` | 夹爪指令 `position[0]∈[0,1]`（0=开，1=闭） |
+| 订阅 | `/left_teleop_gripper/ctrl` | `JointState` | 夹爪指令 `position[0]∈[0,1]`。`gripper_invert:=true`（默认）时按 FACTR 扳机：1=松开/开，0=按下/闭；内部再 `1-x` 到电机 0=开 1=闭 |
 | 订阅 | `/right_teleop_gripper/ctrl` | `JointState` | 同上 |
 | 发布 | `/left_gripper/state` | `JointState` | `name=[gripper_joint]`；归一化位/速/力矩 |
 | 发布 | `/right_gripper/state` | `JointState` | 同上 |
@@ -60,5 +60,7 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 | `max_delta_per_cycle` | `0.05` | rad/周期 |
 | `command_timeout_s` | `0.20` | 超时 hold |
 | `enable_gripper` | `true` | 同进程夹爪桥；`ros2 param set` 不会停已创建的定时器 |
+| `gripper_left_motor_id` / `gripper_right_motor_id` | `1` / `2` | 左 ARM0+ID1；右 ARM1+ID2 |
+| `gripper_invert` | `true` | FACTR 扳机 1=开/0=闭 → 电机 0=开/1=闭；state 同样反回去给 FACTR |
 | `gripper_rate_hz` | `100.0` | 夹爪控制/状态发布频率 |
 | `gripper_feedback_timeout_ms` | `1` | `terminal_get` 超时；过长会拖慢 `/gento/joint_states` |

@@ -17,7 +17,7 @@ class GripperBridge {
 
   struct Config {
     int left_motor_id{1};
-    int right_motor_id{1};
+    int right_motor_id{2};
     // Right gripper terminal: 0=ARM0 (shared bus with left), 1=ARM1.
     int right_terminal{1};
     double kp{3.0};

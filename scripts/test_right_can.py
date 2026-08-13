@@ -11,16 +11,16 @@ import time
 SDK = "/data/coding/tianji/Skye_ROS_Bridge/third_party/gento_sdk/lib/x86_64/libGentoSDK.so"
 IP = (6, 6, 7, 190)
 ARM0, ARM1, CANFD = 0, 1, 1
-MOTOR_ID = 1
 TARGETS = (0.5, 1.0, 0.5)  # 0=开 1=闭
 HOLD_S = 2.0
 POS_MAX = 1.6
 KP, KD = 3.0, 0.12
 QMAX, DQMAX, TAUMAX = 12.5, 30.0, 10.0
 
+# (name, terminal, can_id)
 ARMS = (
-    ("L", ARM0),
-    ("R", ARM1),
+    ("L", ARM0, 1),
+    ("R", ARM1, 2),
 )
 
 
@@ -124,58 +124,67 @@ def main():
     if ret < 0:
         print(f"link 失败 {ret}。先停 skye_robot_driver: pkill -f skye_robot_driver")
         return 1
-    print(f"link ok delay={ret}ms  id={MOTOR_ID}  targets={list(TARGETS)}")
-
-    enable = pack(MOTOR_ID, bytes([0xFF] * 7 + [0xFC]))
-    disable = pack(MOTOR_ID, bytes([0xFF] * 7 + [0xFD]))
+    print(
+        "link ok delay={}ms  L id={}  R id={}  targets={}".format(
+            ret, ARMS[0][2], ARMS[1][2], list(TARGETS)
+        )
+    )
 
     try:
-        for name, arm in ARMS:
+        for name, arm, _cid in ARMS:
             sdk.FX_L1_Terminal_ClearData(arm)
         for i in range(3):
-            codes = [f"{name}={tx(arm, enable)}" for name, arm in ARMS]
+            codes = []
+            for name, arm, cid in ARMS:
+                codes.append(
+                    f"{name}={tx(arm, pack(cid, bytes([0xFF] * 7 + [0xFC])))}"
+                )
             print(f"enable #{i + 1} → " + " ".join(codes) + "  (0=SDK已发出)")
             time.sleep(0.05)
 
         totals = {"L": 0, "R": 0}
         for norm in TARGETS:
-            mit = pack(MOTOR_ID, encode_mit(KP, KD, norm * POS_MAX))
             hits = {"L": 0, "R": 0}
             last = {"L": None, "R": None}
             print(f"\n=== target {norm} ({HOLD_S:.0f}s) 看左右爪是否跟上 ===")
             t0 = time.time()
             while time.time() - t0 < HOLD_S:
-                for name, arm in ARMS:
+                for name, arm, cid in ARMS:
+                    mit = pack(cid, encode_mit(KP, KD, norm * POS_MAX))
                     tx(arm, mit)
                     fb = decode_fb(rx(arm, 10))
                     if fb:
                         hits[name] += 1
                         last[name] = fb
                 time.sleep(0.01)
-            for name, _arm in ARMS:
+            for name, _arm, cid in ARMS:
                 totals[name] += hits[name]
                 fb = last[name]
                 if fb:
-                    cid, pos, vel, tau, err, tmos, tmot = fb
+                    rid, pos, vel, tau, err, tmos, tmot = fb
                     print(
-                        f"  {name}: {hits[name]}帧  can=0x{cid:02X} "
+                        f"  {name} tx=0x{cid:02X}: {hits[name]}帧  can=0x{rid:02X} "
                         f"pos={pos:.3f}rad norm={pos / POS_MAX:.2f} "
                         f"vel={vel:.3f} err={err} mos={tmos}C"
                     )
                 else:
-                    print(f"  {name}: 0帧  无CAN反馈（未上电/CAN不通/未使能）")
+                    print(
+                        f"  {name} tx=0x{cid:02X}: 0帧  无CAN反馈（未上电/CAN不通/未使能）"
+                    )
 
         print("\n--- 汇总 ---")
-        for name, _arm in ARMS:
+        for name, _arm, cid in ARMS:
             n = totals[name]
             if n:
-                print(f"{name} 硬件 OK：共 {n} 帧反馈")
+                print(f"{name} id={cid} 硬件 OK：共 {n} 帧反馈")
             else:
-                print(f"{name} 硬件异常：全程 0 帧。查该臂 24V / CAN H/L / 末端板")
+                print(
+                    f"{name} id={cid} 硬件异常：全程 0 帧。查该臂 24V / CAN H/L / 末端板"
+                )
         print("对照：左能动、右 0 帧 = 右爪供电或右腕 CAN，不是双爪互斥。")
 
-        for name, arm in ARMS:
-            tx(arm, disable)
+        for name, arm, cid in ARMS:
+            tx(arm, pack(cid, bytes([0xFF] * 7 + [0xFD])))
     finally:
         sdk.FX_L1_System_Unlink()
         print("unlink")

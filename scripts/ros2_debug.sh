@@ -53,11 +53,11 @@ A. 先收尾 P2（半天内）
 勾完 dev_plan P2 现场项
 
 ## 夹爪测试：
-# 开合
+# 默认 gripper_invert=true，与 FACTR 扳机同语义：1=开 0=闭
 ros2 topic pub -1 /left_teleop_gripper/ctrl sensor_msgs/msg/JointState \
-  "{name: ['gripper_joint'], position: [0.0]}"   # 开
+  "{name: ['gripper_joint'], position: [1.0]}"   # 开
 ros2 topic pub -1 /left_teleop_gripper/ctrl sensor_msgs/msg/JointState \
-  "{name: ['gripper_joint'], position: [1.0]}"   # 闭
+  "{name: ['gripper_joint'], position: [0.0]}"   # 闭
 ros2 topic echo /left_gripper/state
 
 # 驱动节点程序残留，清除
