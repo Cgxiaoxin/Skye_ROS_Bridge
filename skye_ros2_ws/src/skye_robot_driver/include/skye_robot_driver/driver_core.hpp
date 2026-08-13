@@ -91,6 +91,7 @@ class DriverCore {
   bool linked() const;
 
   // End-effector terminal passthrough (CANFD / 485). Requires linked_.
+  bool terminal_clear(FXTerminalType terminal);
   bool terminal_set(
       FXTerminalType terminal, FXChnType chn,
       const std::uint8_t *data, std::size_t len,

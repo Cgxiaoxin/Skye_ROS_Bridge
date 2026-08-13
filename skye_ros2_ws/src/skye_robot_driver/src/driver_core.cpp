@@ -422,6 +422,14 @@ bool DriverCore::linked() const {
   return linked_;
 }
 
+bool DriverCore::terminal_clear(FXTerminalType terminal) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!linked_) {
+    return false;
+  }
+  return FX_L1_Terminal_ClearData(terminal) == 0;
+}
+
 bool DriverCore::terminal_set(
     FXTerminalType terminal, FXChnType chn, const std::uint8_t *data,
     std::size_t len, unsigned int timeout_ms) {

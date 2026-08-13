@@ -76,7 +76,9 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   gripper_config.left_motor_id =
       declare_parameter<int>("gripper_left_motor_id", 1);
   gripper_config.right_motor_id =
-      declare_parameter<int>("gripper_right_motor_id", 2);
+      declare_parameter<int>("gripper_right_motor_id", 1);
+  gripper_config.right_terminal =
+      declare_parameter<int>("gripper_right_terminal", 1);
   gripper_config.kp = declare_parameter<double>("gripper_kp", 3.0);
   gripper_config.kd = declare_parameter<double>("gripper_kd", 0.12);
   gripper_config.pos_min = declare_parameter<double>("gripper_pos_min", 0.0);
@@ -142,9 +144,12 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
         !std::isfinite(gripper_config.pos_min) ||
         !std::isfinite(gripper_config.pos_max) ||
         gripper_config.pos_max <= gripper_config.pos_min ||
-        gripper_config.feedback_timeout_ms == 0) {
+        gripper_config.feedback_timeout_ms == 0 ||
+        (gripper_config.right_terminal != 0 &&
+         gripper_config.right_terminal != 1)) {
       throw std::invalid_argument(
-          "invalid gripper MIT / position range / feedback_timeout_ms params");
+          "invalid gripper MIT / position range / terminal / "
+          "feedback_timeout_ms params");
     }
   }
   auto ratio_ok = [](int value) { return value >= 1 && value <= 100; };
@@ -253,12 +258,21 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
           [this]() { tick_gripper(); });
       RCLCPP_INFO(
           get_logger(),
-          "Gripper enabled: motor_id L/R=%d/%d; kp=%.3f kd=%.3f; "
-          "pos=[%.3f,%.3f] rad; rate=%.1f Hz; fb_timeout=%ums",
-          gripper_config.left_motor_id, gripper_config.right_motor_id,
-          gripper_config.kp, gripper_config.kd, gripper_config.pos_min,
-          gripper_config.pos_max, gripper_rate_hz,
-          gripper_config.feedback_timeout_ms);
+          "Gripper enabled: motor_id L/R=%d/%d term R=ARM%d; kp=%.3f kd=%.3f; "
+          "pos=[%.3f,%.3f] rad; rate=%.1f Hz; fb_timeout=%ums | %s",
+          gripper_.motor_id(DriverCore::Arm::kLeft),
+          gripper_.motor_id(DriverCore::Arm::kRight),
+          gripper_config.right_terminal, gripper_config.kp, gripper_config.kd,
+          gripper_config.pos_min, gripper_config.pos_max, gripper_rate_hz,
+          gripper_config.feedback_timeout_ms, gripper_.start_report().c_str());
+      if (gripper_.start_report().find("silent") != std::string::npos ||
+          gripper_.start_report().find("fb=NONE") != std::string::npos) {
+        RCLCPP_WARN(
+            get_logger(),
+            "Gripper CAN incomplete: %s. /right_gripper/state frame_id="
+            "no_feedback means topic is echoing target, not motor pose.",
+            gripper_.start_report().c_str());
+      }
     }
   } else {
     RCLCPP_INFO(
@@ -568,24 +582,34 @@ void DriverNode::tick_gripper() {
 void DriverNode::publish_gripper_state() {
   auto publish_one = [this](
                          DriverCore::Arm arm,
-                         const rclcpp::Publisher<JointState>::SharedPtr &pub) {
+                         const rclcpp::Publisher<JointState>::SharedPtr &pub,
+                         const char *side) {
     const auto fb = gripper_.feedback(arm);
     JointState msg;
     msg.header.stamp = now();
     msg.name = {"gripper_joint"};
     if (fb.valid) {
+      msg.header.frame_id = "can_" + std::to_string(fb.can_id);
       msg.position = {fb.position};
       msg.velocity = {fb.velocity};
       msg.effort = {fb.effort};
     } else {
+      msg.header.frame_id = "no_feedback";
       msg.position = {gripper_.target(arm)};
       msg.velocity = {0.0};
       msg.effort = {0.0};
+      RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 2000,
+          "%s gripper: no CAN feedback (id=%d). state.position is target echo, "
+          "not motor pose. Check Terminal CAN / power / motor ID.",
+          side, gripper_.motor_id(arm));
     }
     pub->publish(msg);
   };
-  publish_one(DriverCore::Arm::kLeft, left_gripper_state_publisher_);
-  publish_one(DriverCore::Arm::kRight, right_gripper_state_publisher_);
+  publish_one(
+      DriverCore::Arm::kLeft, left_gripper_state_publisher_, "left");
+  publish_one(
+      DriverCore::Arm::kRight, right_gripper_state_publisher_, "right");
 }
 
 void DriverNode::publish_state() {
