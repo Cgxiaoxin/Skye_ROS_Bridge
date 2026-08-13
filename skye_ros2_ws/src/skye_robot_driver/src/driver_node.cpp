@@ -16,7 +16,7 @@ constexpr DriverCore::JointArray kDefaultMinimum{
 constexpr DriverCore::JointArray kDefaultMaximum{
     3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708};
 constexpr DriverCore::JointArray kDefaultSigns{
-    1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0};
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
 constexpr DriverCore::JointArray kDefaultOffsets{
     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 constexpr std::array<int, 7> kDefaultOrder{0, 1, 2, 3, 4, 5, 6};

@@ -98,11 +98,11 @@ FACTR：`follower_joint_offset` 左=0、右=7（`grav_comp_m6_{left,right}.yaml`
 
 ### 3. 语义映射（驱动侧，不是舵机接线符号）
 
-两边臂当前一致（来自 `gento_robot.yaml`）：
+两边臂当前一致（`skye_robot.yaml`；实机 j4/j6/j7 反向后已改为全 +1）：
 
 ```text
 joint_order:   [0,1,2,3,4,5,6]
-joint_signs:   [1,1,1,-1,1,-1,-1]
+joint_signs:   [1,1,1,1,1,1,1]
 joint_offsets: [0,0,0,0,0,0,0]
 mapped[i] = leader[order[i]] * signs[i] + offsets[i]
 ```
