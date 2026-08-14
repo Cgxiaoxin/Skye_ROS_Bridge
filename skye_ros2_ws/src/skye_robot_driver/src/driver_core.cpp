@@ -46,13 +46,19 @@ std::optional<DriverCore::ControlMode> DriverCore::mode_from_int(int value) {
 bool DriverCore::validate_target(
     const JointArray &target, const JointArray &minimum,
     const JointArray &maximum) {
+  return !first_invalid_joint(target, minimum, maximum).has_value();
+}
+
+std::optional<std::size_t> DriverCore::first_invalid_joint(
+    const JointArray &target, const JointArray &minimum,
+    const JointArray &maximum) {
   for (std::size_t i = 0; i < target.size(); ++i) {
     if (!std::isfinite(target[i]) || target[i] < minimum[i] ||
         target[i] > maximum[i]) {
-      return false;
+      return i;
     }
   }
-  return true;
+  return std::nullopt;
 }
 
 DriverCore::JointArray DriverCore::apply_joint_mapping(
@@ -300,37 +306,45 @@ FXStateType DriverCore::current_state(Arm arm) const {
   return FX_L1_Fbk_CurrentState(sdk_object_for_arm(arm));
 }
 
-bool DriverCore::hold_current() {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_) {
-    return false;
-  }
-  if (mode_ == ControlMode::kIdle) {
-    return false;
-  }
-
+bool DriverCore::hold_current_arm_unlocked(Arm arm) {
   const ROBOT_RT *feedback = FX_L1_Fbk_GetRT();
   if (feedback == nullptr) {
     return false;
   }
 
-  JointArray left_deg{};
-  JointArray right_deg{};
-  for (std::size_t i = 0; i < left_deg.size(); ++i) {
-    left_deg[i] = feedback->m_ARMS[0].m_ARM_OUT.m_ARM_FBK_Joint_Pos[i];
-    right_deg[i] = feedback->m_ARMS[1].m_ARM_OUT.m_ARM_FBK_Joint_Pos[i];
+  const int arm_idx = arm == Arm::kLeft ? 0 : 1;
+  JointArray deg{};
+  for (std::size_t i = 0; i < deg.size(); ++i) {
+    deg[i] = feedback->m_ARMS[arm_idx].m_ARM_OUT.m_ARM_FBK_Joint_Pos[i];
   }
+  return send_position_unlocked(arm, sdk_degrees_to_ros_radians(deg));
+}
 
-  if (!control_ready_) {
-    if (!enter_mode_unlocked(mode_)) {
-      return false;
-    }
+bool DriverCore::hold_current(Arm arm) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!linked_ || mode_ == ControlMode::kIdle) {
+    return false;
   }
+  if (!control_ready_ && !enter_mode_unlocked(mode_)) {
+    return false;
+  }
+  const bool ok = hold_current_arm_unlocked(arm);
+  if (ok) {
+    control_ready_ = true;
+  }
+  return ok;
+}
 
-  const bool left_ok = send_position_unlocked(
-      Arm::kLeft, sdk_degrees_to_ros_radians(left_deg));
-  const bool right_ok = send_position_unlocked(
-      Arm::kRight, sdk_degrees_to_ros_radians(right_deg));
+bool DriverCore::hold_current() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!linked_ || mode_ == ControlMode::kIdle) {
+    return false;
+  }
+  if (!control_ready_ && !enter_mode_unlocked(mode_)) {
+    return false;
+  }
+  const bool left_ok = hold_current_arm_unlocked(Arm::kLeft);
+  const bool right_ok = hold_current_arm_unlocked(Arm::kRight);
   if (left_ok && right_ok) {
     control_ready_ = true;
     return true;

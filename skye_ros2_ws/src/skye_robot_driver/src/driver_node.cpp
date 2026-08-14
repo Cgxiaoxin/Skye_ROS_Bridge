@@ -67,8 +67,8 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   const auto control_mode_str =
       declare_parameter<std::string>("control_mode", "imp_joint");
   const auto cmd_cycle_time_ms = declare_parameter<int>("cmd_cycle_time_ms", 4);
-  max_delta_per_cycle_ = declare_parameter<double>("max_delta_per_cycle", 0.05);
-  command_timeout_s_ = declare_parameter<double>("command_timeout_s", 0.20);
+  max_delta_per_cycle_ = declare_parameter<double>("max_delta_per_cycle", 0.25);
+  command_timeout_s_ = declare_parameter<double>("command_timeout_s", 0.50);
   const auto enable_gripper = declare_parameter<bool>("enable_gripper", true);
   const auto gripper_rate_hz =
       declare_parameter<double>("gripper_rate_hz", 100.0);
@@ -478,17 +478,29 @@ void DriverNode::handle_command(
 
   auto mapped =
       DriverCore::apply_joint_mapping(leader, order, signs, offsets);
-  if (!DriverCore::validate_target(mapped, minimum, maximum)) {
-    RCLCPP_ERROR(
-        get_logger(),
-        "%s command rejected: mapped target non-finite or outside limits",
-        arm_name);
+  const auto invalid = DriverCore::first_invalid_joint(mapped, minimum, maximum);
+  if (invalid) {
+    const std::size_t j = *invalid;
+    const double v = mapped[j];
+    if (!std::isfinite(v)) {
+      RCLCPP_ERROR_THROTTLE(
+          get_logger(), *get_clock(), 1000,
+          "%s command rejected: j%zu=non-finite (mapped leader teleop frame)",
+          arm_name, j + 1);
+    } else {
+      RCLCPP_ERROR_THROTTLE(
+          get_logger(), *get_clock(), 1000,
+          "%s command rejected: j%zu=%.4f rad outside [%.4f, %.4f]",
+          arm_name, j + 1, v, minimum[j], maximum[j]);
+    }
+    last_command_time = now();
+    streaming = false;
     return;
   }
 
-  // Seed from live feedback so the first command cannot jump to a distant
-  // absolute pose in one SetJointPosCmd (was: last_command = mapped).
-  if (!last_command) {
+  // Seed from live feedback on first command or when resuming after hold/timeout.
+  const bool resuming = !streaming;
+  if (!last_command || resuming) {
     const auto state = core_.read_state();
     if (!state) {
       RCLCPP_ERROR(
@@ -498,10 +510,18 @@ void DriverNode::handle_command(
     }
     last_command = arm == DriverCore::Arm::kLeft ? state->left_position
                                                  : state->right_position;
-    RCLCPP_INFO(
-        get_logger(),
-        "%s first command: seeded last_command from feedback, then limit_delta",
-        arm_name);
+    if (resuming) {
+      RCLCPP_INFO(
+          get_logger(),
+          "%s resuming: re-seeded last_command from feedback (avoid stale "
+          "chase)",
+          arm_name);
+    } else {
+      RCLCPP_INFO(
+          get_logger(),
+          "%s first command: seeded last_command from feedback, then limit_delta",
+          arm_name);
+    }
   }
   mapped =
       DriverCore::limit_delta(mapped, *last_command, max_delta_per_cycle_);
@@ -522,8 +542,9 @@ void DriverNode::handle_command(
 void DriverNode::check_command_timeout() {
   const auto stamp = now();
   auto maybe_hold = [this, &stamp](
-                        bool &streaming, const rclcpp::Time &last_command_time,
-                        const char *arm_name) {
+                        DriverCore::Arm arm, bool &streaming,
+                        std::optional<DriverCore::JointArray> &last_command,
+                        rclcpp::Time &last_command_time, const char *arm_name) {
     if (!streaming) {
       return;
     }
@@ -531,18 +552,22 @@ void DriverNode::check_command_timeout() {
       return;
     }
     RCLCPP_WARN(
-        get_logger(), "%s command timeout (%.3f s); calling hold_current",
-        arm_name, command_timeout_s_);
-    if (!core_.hold_current()) {
+        get_logger(), "%s command timeout (%.3f s); hold %s arm only",
+        arm_name, command_timeout_s_, arm_name);
+    if (!core_.hold_current(arm)) {
       RCLCPP_ERROR(
-          get_logger(), "hold_current after %s timeout failed", arm_name);
+          get_logger(), "hold_current(%s) after timeout failed", arm_name);
     }
-    left_streaming_ = false;
-    right_streaming_ = false;
+    streaming = false;
+    last_command.reset();
   };
 
-  maybe_hold(left_streaming_, left_last_command_time_, "left");
-  maybe_hold(right_streaming_, right_last_command_time_, "right");
+  maybe_hold(
+      DriverCore::Arm::kLeft, left_streaming_, left_last_command_,
+      left_last_command_time_, "left");
+  maybe_hold(
+      DriverCore::Arm::kRight, right_streaming_, right_last_command_,
+      right_last_command_time_, "right");
 }
 
 void DriverNode::handle_hold_current(
@@ -555,6 +580,8 @@ void DriverNode::handle_hold_current(
   if (ok) {
     left_streaming_ = false;
     right_streaming_ = false;
+    left_last_command_.reset();
+    right_last_command_.reset();
   }
 }
 

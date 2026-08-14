@@ -67,6 +67,10 @@ class DriverCore {
   static bool validate_target(
       const JointArray &target, const JointArray &minimum,
       const JointArray &maximum);
+  // First 1-based joint index that fails validate_target, if any.
+  static std::optional<std::size_t> first_invalid_joint(
+      const JointArray &target, const JointArray &minimum,
+      const JointArray &maximum);
   static JointArray apply_joint_mapping(
       const JointArray &leader, const std::array<int, 7> &joint_order,
       const JointArray &signs, const JointArray &offsets);
@@ -83,6 +87,7 @@ class DriverCore {
   ControlMode control_mode() const;
   FXStateType current_state(Arm arm) const;
   bool hold_current();
+  bool hold_current(Arm arm);
   bool stop_motion();
   bool emergency_stop();
   bool send_position(Arm arm, const JointArray &target_rad);
@@ -108,6 +113,7 @@ class DriverCore {
   bool reset_errors_unlocked();
   bool enter_mode_unlocked(ControlMode mode);
   bool send_position_unlocked(Arm arm, const JointArray &target_rad);
+  bool hold_current_arm_unlocked(Arm arm);
 
   mutable std::mutex mutex_;
   bool linked_{false};

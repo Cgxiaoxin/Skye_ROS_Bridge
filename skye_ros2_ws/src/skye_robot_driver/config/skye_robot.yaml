@@ -22,8 +22,8 @@ skye_robot_driver:
     left_joint_limits_max: [3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708]
     right_joint_limits_min: [-3.1067, -2.01, -3.1067, -1.0472, -3.1067, -1.0472, -1.5708]
     right_joint_limits_max: [3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708]
-    max_delta_per_cycle: 0.05
-    command_timeout_s: 0.20
+    max_delta_per_cycle: 0.25
+    command_timeout_s: 0.50
     impedance_stiffness: [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
     impedance_damping: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
     cartesian_stiffness: [2000.0, 2000.0, 2000.0, 100.0, 100.0, 100.0, 50.0]

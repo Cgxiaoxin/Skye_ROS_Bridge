@@ -114,8 +114,8 @@ mapped[i] = leader[order[i]] * signs[i] + offsets[i]
 ```text
 limits_min: [-3.1067,-2.01,-3.1067,-1.0472,-3.1067,-1.0472,-1.5708]
 limits_max: [ 3.1067, 2.01, 3.1067, 2.53,  3.1067, 1.0472, 1.5708]
-max_delta_per_cycle: 0.05   # rad / 周期
-command_timeout_s:   0.20   # 超时 → hold
+max_delta_per_cycle: 0.25   # rad / 周期
+command_timeout_s:   0.50   # 超时 → 按臂 hold
 left/right_velocity_ratio: 10
 ```
 

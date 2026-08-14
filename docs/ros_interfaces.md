@@ -57,8 +57,8 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 | `cmd_cycle_time_ms` | `4` | `SetPDCmdCycleTime` |
 | `impedance_stiffness/damping` | 100 / 10 | 关节阻抗 K/D |
 | `cartesian_stiffness/damping` | SDK 例程默认 | 笛卡尔阻抗 K/D |
-| `max_delta_per_cycle` | `0.05` | rad/周期 |
-| `command_timeout_s` | `0.20` | 超时 hold |
+| `max_delta_per_cycle` | `0.25` | rad/周期 |
+| `command_timeout_s` | `0.50` | 超时 hold（按臂独立，不拖死对侧） |
 | `enable_gripper` | `true` | 同进程夹爪桥；`ros2 param set` 不会停已创建的定时器 |
 | `gripper_left_motor_id` / `gripper_right_motor_id` | `1` / `2` | 左 ARM0+ID1；右 ARM1+ID2 |
 | `gripper_invert` | `true` | FACTR 扳机 1=开/0=闭 → 电机 0=开/1=闭；state 同样反回去给 FACTR |
