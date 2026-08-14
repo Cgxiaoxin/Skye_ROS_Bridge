@@ -61,6 +61,30 @@ std::optional<std::size_t> DriverCore::first_invalid_joint(
   return std::nullopt;
 }
 
+std::optional<std::size_t> DriverCore::first_non_finite(
+    const JointArray &target) {
+  for (std::size_t i = 0; i < target.size(); ++i) {
+    if (!std::isfinite(target[i])) {
+      return i;
+    }
+  }
+  return std::nullopt;
+}
+
+DriverCore::JointArray DriverCore::clamp_to_limits(
+    const JointArray &target, const JointArray &minimum,
+    const JointArray &maximum) {
+  JointArray clamped{};
+  for (std::size_t i = 0; i < target.size(); ++i) {
+    if (!std::isfinite(target[i])) {
+      clamped[i] = target[i];
+      continue;
+    }
+    clamped[i] = std::clamp(target[i], minimum[i], maximum[i]);
+  }
+  return clamped;
+}
+
 DriverCore::JointArray DriverCore::apply_joint_mapping(
     const JointArray &leader, const std::array<int, 7> &joint_order,
     const JointArray &signs, const JointArray &offsets) {

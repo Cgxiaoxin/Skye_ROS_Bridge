@@ -70,11 +70,13 @@ ros2 service type /gento/set_mode | grep -q 'skye_robot_driver/srv/SetMode'
 echo "== P3 static safety helpers in binary/symbols =="
 # Ensure core still exports the safety path used by the node.
 nm -C "$WS/install/skye_robot_driver/lib/skye_robot_driver/skye_robot_driver" \
-  | grep -E 'validate_target|limit_delta|SetPDCmdCycleTime|SwitchToImpJointMode|SwitchToPositionMode|SwitchToImpCartMode' \
+  | grep -E 'validate_target|clamp_to_limits|limit_delta|SetPDCmdCycleTime|SwitchToImpJointMode|SwitchToPositionMode|SwitchToImpCartMode' \
   | head -30 || true
 
 # Grep source for required P3 behaviors (defense in depth for review).
 grep -q 'max_delta_per_cycle' \
+  "$WS/src/skye_robot_driver/src/driver_node.cpp"
+grep -q 'clamp_to_limits' \
   "$WS/src/skye_robot_driver/src/driver_node.cpp"
 grep -q 'command_timeout' \
   "$WS/src/skye_robot_driver/src/driver_node.cpp"

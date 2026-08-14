@@ -67,8 +67,13 @@ class DriverCore {
   static bool validate_target(
       const JointArray &target, const JointArray &minimum,
       const JointArray &maximum);
-  // First 1-based joint index that fails validate_target, if any.
+  // First 0-based joint index that is non-finite or outside [min, max].
   static std::optional<std::size_t> first_invalid_joint(
+      const JointArray &target, const JointArray &minimum,
+      const JointArray &maximum);
+  static std::optional<std::size_t> first_non_finite(const JointArray &target);
+  // Per-joint clamp to [min, max]. Non-finite values are left unchanged.
+  static JointArray clamp_to_limits(
       const JointArray &target, const JointArray &minimum,
       const JointArray &maximum);
   static JointArray apply_joint_mapping(

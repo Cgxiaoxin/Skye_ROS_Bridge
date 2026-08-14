@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -478,24 +479,34 @@ void DriverNode::handle_command(
 
   auto mapped =
       DriverCore::apply_joint_mapping(leader, order, signs, offsets);
-  const auto invalid = DriverCore::first_invalid_joint(mapped, minimum, maximum);
-  if (invalid) {
-    const std::size_t j = *invalid;
-    const double v = mapped[j];
-    if (!std::isfinite(v)) {
-      RCLCPP_ERROR_THROTTLE(
-          get_logger(), *get_clock(), 1000,
-          "%s command rejected: j%zu=non-finite (mapped leader teleop frame)",
-          arm_name, j + 1);
-    } else {
-      RCLCPP_ERROR_THROTTLE(
-          get_logger(), *get_clock(), 1000,
-          "%s command rejected: j%zu=%.4f rad outside [%.4f, %.4f]",
-          arm_name, j + 1, v, minimum[j], maximum[j]);
-    }
+  if (const auto nan_j = DriverCore::first_non_finite(mapped)) {
+    RCLCPP_ERROR_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "%s command rejected: j%zu=non-finite (mapped leader teleop frame)",
+        arm_name, *nan_j + 1);
     last_command_time = now();
     streaming = false;
     return;
+  }
+
+  const auto clamped =
+      DriverCore::clamp_to_limits(mapped, minimum, maximum);
+  if (clamped != mapped) {
+    std::ostringstream oss;
+    oss << std::fixed;
+    oss.precision(4);
+    for (std::size_t j = 0; j < mapped.size(); ++j) {
+      if (clamped[j] == mapped[j]) {
+        continue;
+      }
+      oss << " j" << (j + 1) << "=" << mapped[j] << "->" << clamped[j]
+          << " [" << minimum[j] << "," << maximum[j] << "]";
+    }
+    RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "%s command clamped:%s; other joints still tracking",
+        arm_name, oss.str().c_str());
+    mapped = clamped;
   }
 
   // Seed from live feedback on first command or when resuming after hold/timeout.
@@ -508,8 +519,10 @@ void DriverNode::handle_command(
           "%s command rejected: no feedback to seed last_command", arm_name);
       return;
     }
-    last_command = arm == DriverCore::Arm::kLeft ? state->left_position
-                                                 : state->right_position;
+    last_command = DriverCore::clamp_to_limits(
+        arm == DriverCore::Arm::kLeft ? state->left_position
+                                      : state->right_position,
+        minimum, maximum);
     if (resuming) {
       RCLCPP_INFO(
           get_logger(),
@@ -525,6 +538,7 @@ void DriverNode::handle_command(
   }
   mapped =
       DriverCore::limit_delta(mapped, *last_command, max_delta_per_cycle_);
+  mapped = DriverCore::clamp_to_limits(mapped, minimum, maximum);
 
   if (!core_.send_position(arm, mapped)) {
     RCLCPP_ERROR(

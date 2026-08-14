@@ -32,7 +32,7 @@
 - [ ] 再开双臂；`vel_ratio` 先 10（现场）
 
 ### P3 — 安全层
-- [x] 关节限位（rad）— 超限拒绝下发
+- [x] 关节限位（rad）— 超限 **逐轴 clamp**（NaN 仍整帧拒绝）
 - [x] `max_delta_per_cycle`（默认 0.05 rad）
 - [x] `vel_ratio` / `acc_ratio`（独立参数）
 - [x] `SetPDCmdCycleTime`（默认 4 ms @ 250 Hz）
@@ -119,7 +119,8 @@ command_timeout_s:   0.50   # 超时 → 按臂 hold
 left/right_velocity_ratio: 10
 ```
 
-超限：**拒绝下发**（旧驱动行为），不要静默夹紧后当成功。
+超限：**逐轴 clamp 后继续下发**（贴边轴锁在限位，其余轴跟手）。NaN / 非 7 轴仍整帧拒绝。  
+FACTR 小臂 `arm_joint_limits_min[3]`（J4）应对齐大臂 `-1.0472`，取 **-1.0**（原 -2.4 会把大臂顶出限位后猛追）。
 
 ### 5. 主手模式（FACTR）
 
