@@ -50,6 +50,26 @@ if [[ -f "${OVERLAY_LAUNCH}" ]]; then
   cp -f "${OVERLAY_LAUNCH}" "${INSTALL_LAUNCH}"
 fi
 
+# 右臂夹爪 Dynamixel 第 8 维必须与左臂同为 +1。-1 把松开扳机翻到负半轴 → 归一化 0。
+RIGHT_YAML="${MARVIN_WS}/install/share/factr_teleop/configs/grav_comp_m6_right.yaml"
+if [[ -f "${RIGHT_YAML}" ]]; then
+  python3 - "${RIGHT_YAML}" <<'PY'
+import re, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+text = p.read_text()
+new, n = re.subn(
+    r"(joint_signs:\s*\[[^\]]+),\s*-1(\s*\])",
+    r"\1, 1\2",
+    text,
+    count=1,
+)
+if n:
+    p.write_text(new)
+    print(f"patched {p.name}: gripper joint_signs[7] -1 -> +1")
+PY
+fi
+
 DOCKER_ARGS=(
   --rm
   -it

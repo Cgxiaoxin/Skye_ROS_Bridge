@@ -48,9 +48,11 @@ bool GripperBridge::start(const Config &config) {
     return false;
   }
   if (!(std::isfinite(config.kp) && std::isfinite(config.kd) &&
-        std::isfinite(config.pos_min) && std::isfinite(config.pos_max)) ||
+        std::isfinite(config.pos_min) && std::isfinite(config.pos_max) &&
+        std::isfinite(config.close_limit)) ||
       config.pos_max <= config.pos_min || config.left_motor_id < 0 ||
-      config.right_motor_id < 0 ||
+      config.right_motor_id < 0 || config.close_limit <= 0.0 ||
+      config.close_limit > 1.0 ||
       (config.right_terminal != 0 && config.right_terminal != 1)) {
     start_report_ = "invalid gripper config";
     return false;
@@ -97,7 +99,7 @@ void GripperBridge::stop() {
 }
 
 void GripperBridge::set_target(Arm arm, double value) {
-  const double clamped = dm_mit::clamp(value, 0.0, 1.0);
+  const double clamped = dm_mit::clamp(value, 0.0, config_.close_limit);
   std::lock_guard<std::mutex> lock(target_mutex_);
   if (arm == Arm::kLeft) {
     target_left_ = clamped;

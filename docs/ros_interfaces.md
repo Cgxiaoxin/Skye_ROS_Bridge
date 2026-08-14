@@ -62,5 +62,6 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 | `enable_gripper` | `true` | 同进程夹爪桥；`ros2 param set` 不会停已创建的定时器 |
 | `gripper_left_motor_id` / `gripper_right_motor_id` | `1` / `2` | 左 ARM0+ID1；右 ARM1+ID2 |
 | `gripper_invert` | `true` | FACTR 扳机 1=开/0=闭 → 电机 0=开/1=闭；state 同样反回去给 FACTR |
+| `gripper_close_limit` | `0.93` | 电机空间闭合上限，左右相同。FACTR 按下(0)经 invert 后不会发到 1.0 |
 | `gripper_rate_hz` | `100.0` | 夹爪控制/状态发布频率 |
 | `gripper_feedback_timeout_ms` | `1` | 运行时 `terminal_set/get` 超时；夹爪与关节分线程，但 SDK mutex 仍串行，必须短 |

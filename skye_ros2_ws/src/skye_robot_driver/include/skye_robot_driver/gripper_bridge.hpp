@@ -24,6 +24,8 @@ class GripperBridge {
     double kd{0.12};
     double pos_min{0.0};
     double pos_max{1.6};
+    // Motor-space close cap in [0,1]. 1.0 = pos_max rad; 0.93 avoids hard stop.
+    double close_limit{0.93};
     // Non-blocking CAN read; long timeouts block the single-threaded executor.
     unsigned int feedback_timeout_ms{1};
   };
@@ -45,7 +47,7 @@ class GripperBridge {
   bool started() const;
   const std::string &start_report() const;
 
-  // Target in [0,1]: 0=fully open, 1=fully closed.
+  // Target in [0, close_limit]: 0=fully open, 1=fully closed (capped).
   void set_target(Arm arm, double value);
   double target(Arm arm) const;
   int motor_id(Arm arm) const;

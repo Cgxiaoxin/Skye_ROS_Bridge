@@ -45,3 +45,5 @@ skye_robot_driver:
     gripper_feedback_timeout_ms: 1
     gripper_pos_min: 0.0
     gripper_pos_max: 1.6
+    # Motor 0=open, 1=closed. Cap both arms so FACTR 0 (press) never hits 1.6 rad.
+    gripper_close_limit: 0.93

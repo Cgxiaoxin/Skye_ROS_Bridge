@@ -84,6 +84,8 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   gripper_config.kd = declare_parameter<double>("gripper_kd", 0.12);
   gripper_config.pos_min = declare_parameter<double>("gripper_pos_min", 0.0);
   gripper_config.pos_max = declare_parameter<double>("gripper_pos_max", 1.6);
+  gripper_config.close_limit =
+      declare_parameter<double>("gripper_close_limit", 0.93);
   gripper_config.feedback_timeout_ms = static_cast<unsigned int>(
       declare_parameter<int>("gripper_feedback_timeout_ms", 1));
 
@@ -144,12 +146,15 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
     if (!std::isfinite(gripper_config.kp) || !std::isfinite(gripper_config.kd) ||
         !std::isfinite(gripper_config.pos_min) ||
         !std::isfinite(gripper_config.pos_max) ||
+        !std::isfinite(gripper_config.close_limit) ||
         gripper_config.pos_max <= gripper_config.pos_min ||
+        gripper_config.close_limit <= 0.0 ||
+        gripper_config.close_limit > 1.0 ||
         gripper_config.feedback_timeout_ms == 0 ||
         (gripper_config.right_terminal != 0 &&
          gripper_config.right_terminal != 1)) {
       throw std::invalid_argument(
-          "invalid gripper MIT / position range / terminal / "
+          "invalid gripper MIT / position range / close_limit / terminal / "
           "feedback_timeout_ms params");
     }
   }
@@ -280,13 +285,15 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
           "Executor: control+gripper callback groups (MultiThreaded, 2). "
           "Gripper enabled: motor_id L/R=%d/%d term R=ARM%d invert=%s; "
           "kp=%.3f kd=%.3f; "
-          "pos=[%.3f,%.3f] rad; rate=%.1f Hz; fb_timeout=%ums | %s",
+          "pos=[%.3f,%.3f] rad close_limit=%.3f; rate=%.1f Hz; "
+          "fb_timeout=%ums | %s",
           gripper_.motor_id(DriverCore::Arm::kLeft),
           gripper_.motor_id(DriverCore::Arm::kRight),
           gripper_config.right_terminal,
           gripper_invert_ ? "true" : "false", gripper_config.kp,
           gripper_config.kd,
-          gripper_config.pos_min, gripper_config.pos_max, gripper_rate_hz,
+          gripper_config.pos_min, gripper_config.pos_max,
+          gripper_config.close_limit, gripper_rate_hz,
           gripper_config.feedback_timeout_ms, gripper_.start_report().c_str());
       if (gripper_.start_report().find("silent") != std::string::npos ||
           gripper_.start_report().find("fb=NONE") != std::string::npos) {
