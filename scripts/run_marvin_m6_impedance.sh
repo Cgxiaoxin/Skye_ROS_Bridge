@@ -37,9 +37,9 @@ fi
 ROBOT_LEADER_DYNAMIXEL_PORT_LEFT="${ROBOT_LEADER_DYNAMIXEL_PORT_LEFT:-usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0}"
 ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT="${ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT:-usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0}"
 
-if [[ ! -d "${MARVIN_WS}/install" ]]; then
-  echo "ERROR: marvin_ws install missing at ${MARVIN_WS}/install" >&2
-  exit 1
+if [[ ! -f "${MARVIN_WS}/install/setup.bash" ]]; then
+  echo "marvin_ws/install missing; trying bootstrap (GitLab Package Registry)..."
+  bash "${SCRIPT_DIR}/bootstrap_marvin_install.sh"
 fi
 
 # Keep package launch in sync with tracked overlay (install/ is often gitignored).

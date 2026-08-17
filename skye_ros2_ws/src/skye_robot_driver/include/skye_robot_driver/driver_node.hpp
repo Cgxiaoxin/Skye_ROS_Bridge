@@ -18,6 +18,8 @@ namespace skye_robot_driver {
 
 class DriverNode : public rclcpp::Node {
  public:
+  enum class TeleopMappingMode { kAbsolute, kRelative };
+
   explicit DriverNode(
       const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
   ~DriverNode() override;
@@ -36,6 +38,8 @@ class DriverNode : public rclcpp::Node {
       rclcpp::Node &node, const std::string &parameter_name,
       const std::array<int, 7> &defaults);
   static DriverCore::ControlMode parse_control_mode(const std::string &value);
+  static TeleopMappingMode parse_teleop_mapping_mode(const std::string &value);
+  void reset_teleop_session(DriverCore::Arm arm);
 
   void handle_command(DriverCore::Arm arm, const JointState::SharedPtr message);
   void handle_gripper_command(
@@ -73,6 +77,11 @@ class DriverNode : public rclcpp::Node {
   JointArray right_maximum_{};
   double max_delta_per_cycle_{0.05};
   double command_timeout_s_{0.20};
+  TeleopMappingMode teleop_mapping_mode_{TeleopMappingMode::kRelative};
+  std::optional<JointArray> left_leader_ref_;
+  std::optional<JointArray> right_leader_ref_;
+  std::optional<JointArray> left_gento_ref_;
+  std::optional<JointArray> right_gento_ref_;
   std::optional<JointArray> left_last_command_;
   std::optional<JointArray> right_last_command_;
   rclcpp::Time left_last_command_time_{0, 0, RCL_ROS_TIME};

@@ -70,6 +70,8 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   const auto cmd_cycle_time_ms = declare_parameter<int>("cmd_cycle_time_ms", 4);
   max_delta_per_cycle_ = declare_parameter<double>("max_delta_per_cycle", 0.25);
   command_timeout_s_ = declare_parameter<double>("command_timeout_s", 0.50);
+  teleop_mapping_mode_ = parse_teleop_mapping_mode(
+      declare_parameter<std::string>("teleop_mapping_mode", "relative"));
   const auto enable_gripper = declare_parameter<bool>("enable_gripper", true);
   const auto gripper_rate_hz =
       declare_parameter<double>("gripper_rate_hz", 100.0);
@@ -264,10 +266,13 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
     }
     RCLCPP_INFO(
         get_logger(),
-        "Connected to controller %s; mode=%s(%d); vel L/R=%d/%d; acc L/R=%d/%d; "
-        "cmd_cycle=%dms",
+        "Connected to controller %s; mode=%s(%d); teleop_mapping=%s; "
+        "vel L/R=%d/%d; acc L/R=%d/%d; cmd_cycle=%dms",
         robot_ip.c_str(), DriverCore::mode_name(connect_config.mode),
-        static_cast<int>(connect_config.mode), connect_config.left_vel_ratio,
+        static_cast<int>(connect_config.mode),
+        teleop_mapping_mode_ == TeleopMappingMode::kRelative ? "relative"
+                                                             : "absolute",
+        connect_config.left_vel_ratio,
         connect_config.right_vel_ratio, connect_config.left_acc_ratio,
         connect_config.right_acc_ratio, connect_config.cmd_cycle_time_ms);
 
@@ -401,6 +406,32 @@ std::array<int, 7> DriverNode::load_joint_order(
   return result;
 }
 
+DriverNode::TeleopMappingMode DriverNode::parse_teleop_mapping_mode(
+    const std::string &value) {
+  if (value == "absolute") {
+    return TeleopMappingMode::kAbsolute;
+  }
+  if (value == "relative") {
+    return TeleopMappingMode::kRelative;
+  }
+  throw std::invalid_argument(
+      "teleop_mapping_mode must be relative or absolute");
+}
+
+void DriverNode::reset_teleop_session(DriverCore::Arm arm) {
+  if (arm == DriverCore::Arm::kLeft) {
+    left_leader_ref_.reset();
+    left_gento_ref_.reset();
+    left_last_command_.reset();
+    left_streaming_ = false;
+    return;
+  }
+  right_leader_ref_.reset();
+  right_gento_ref_.reset();
+  right_last_command_.reset();
+  right_streaming_ = false;
+}
+
 void DriverNode::handle_set_mode(
     const std::shared_ptr<SetMode::Request> request,
     std::shared_ptr<SetMode::Response> response) {
@@ -437,6 +468,10 @@ void DriverNode::handle_set_mode(
       static_cast<int16_t>(core_.current_state(DriverCore::Arm::kRight));
   left_streaming_ = false;
   right_streaming_ = false;
+  left_leader_ref_.reset();
+  right_leader_ref_.reset();
+  left_gento_ref_.reset();
+  right_gento_ref_.reset();
   left_last_command_.reset();
   right_last_command_.reset();
   RCLCPP_INFO(
@@ -471,14 +506,52 @@ void DriverNode::handle_command(
       arm == DriverCore::Arm::kLeft ? left_maximum_ : right_maximum_;
   auto &last_command =
       arm == DriverCore::Arm::kLeft ? left_last_command_ : right_last_command_;
+  auto &leader_ref =
+      arm == DriverCore::Arm::kLeft ? left_leader_ref_ : right_leader_ref_;
+  auto &gento_ref =
+      arm == DriverCore::Arm::kLeft ? left_gento_ref_ : right_gento_ref_;
   auto &last_command_time = arm == DriverCore::Arm::kLeft
                                 ? left_last_command_time_
                                 : right_last_command_time_;
   auto &streaming =
       arm == DriverCore::Arm::kLeft ? left_streaming_ : right_streaming_;
 
-  auto mapped =
-      DriverCore::apply_joint_mapping(leader, order, signs, offsets);
+  const bool resuming = !streaming;
+  if (resuming) {
+    const auto state = core_.read_state();
+    if (!state) {
+      RCLCPP_ERROR(
+          get_logger(),
+          "%s command rejected: no feedback to seed teleop session", arm_name);
+      return;
+    }
+    const auto feedback = DriverCore::clamp_to_limits(
+        arm == DriverCore::Arm::kLeft ? state->left_position
+                                      : state->right_position,
+        minimum, maximum);
+    leader_ref = leader;
+    gento_ref = feedback;
+    last_command = feedback;
+    if (teleop_mapping_mode_ == TeleopMappingMode::kRelative) {
+      RCLCPP_INFO(
+          get_logger(),
+          "%s relative teleop: captured leader/gento refs (big arm holds "
+          "current pose on entry)",
+          arm_name);
+    } else {
+      RCLCPP_INFO(
+          get_logger(),
+          "%s absolute teleop: seeded last_command from feedback", arm_name);
+    }
+  }
+
+  JointArray mapped{};
+  if (teleop_mapping_mode_ == TeleopMappingMode::kRelative) {
+    mapped = DriverCore::apply_relative_joint_mapping(
+        leader, *leader_ref, *gento_ref, order, signs);
+  } else {
+    mapped = DriverCore::apply_joint_mapping(leader, order, signs, offsets);
+  }
   if (const auto nan_j = DriverCore::first_non_finite(mapped)) {
     RCLCPP_ERROR_THROTTLE(
         get_logger(), *get_clock(), 1000,
@@ -509,35 +582,17 @@ void DriverNode::handle_command(
     mapped = clamped;
   }
 
-  // Seed from live feedback on first command or when resuming after hold/timeout.
-  const bool resuming = !streaming;
-  if (!last_command || resuming) {
-    const auto state = core_.read_state();
-    if (!state) {
-      RCLCPP_ERROR(
-          get_logger(),
-          "%s command rejected: no feedback to seed last_command", arm_name);
-      return;
-    }
-    last_command = DriverCore::clamp_to_limits(
-        arm == DriverCore::Arm::kLeft ? state->left_position
-                                      : state->right_position,
-        minimum, maximum);
-    if (resuming) {
-      RCLCPP_INFO(
-          get_logger(),
-          "%s resuming: re-seeded last_command from feedback (avoid stale "
-          "chase)",
-          arm_name);
-    } else {
-      RCLCPP_INFO(
-          get_logger(),
-          "%s first command: seeded last_command from feedback, then limit_delta",
-          arm_name);
-    }
-  }
+  const auto before_limit = mapped;
   mapped =
       DriverCore::limit_delta(mapped, *last_command, max_delta_per_cycle_);
+  if (teleop_mapping_mode_ == TeleopMappingMode::kRelative &&
+      DriverCore::delta_was_limited(before_limit, mapped)) {
+    leader_ref = leader;
+    gento_ref = mapped;
+    RCLCPP_DEBUG(
+        get_logger(),
+        "%s relative teleop: re-clutched after delta limit", arm_name);
+  }
   mapped = DriverCore::clamp_to_limits(mapped, minimum, maximum);
 
   if (!core_.send_position(arm, mapped)) {
@@ -572,8 +627,7 @@ void DriverNode::check_command_timeout() {
       RCLCPP_ERROR(
           get_logger(), "hold_current(%s) after timeout failed", arm_name);
     }
-    streaming = false;
-    last_command.reset();
+    reset_teleop_session(arm);
   };
 
   maybe_hold(
@@ -592,10 +646,8 @@ void DriverNode::handle_hold_current(
   response->message =
       ok ? "holding current joint positions" : "hold_current failed";
   if (ok) {
-    left_streaming_ = false;
-    right_streaming_ = false;
-    left_last_command_.reset();
-    right_last_command_.reset();
+    reset_teleop_session(DriverCore::Arm::kLeft);
+    reset_teleop_session(DriverCore::Arm::kRight);
   }
 }
 
@@ -605,10 +657,8 @@ void DriverNode::handle_stop_motion(
   const bool ok = core_.stop_motion();
   response->success = ok;
   response->message = ok ? "motion stopped; now IDLE" : "stop_motion failed";
-  left_streaming_ = false;
-  right_streaming_ = false;
-  left_last_command_.reset();
-  right_last_command_.reset();
+  reset_teleop_session(DriverCore::Arm::kLeft);
+  reset_teleop_session(DriverCore::Arm::kRight);
 }
 
 void DriverNode::handle_emergency_stop(
@@ -621,10 +671,8 @@ void DriverNode::handle_emergency_stop(
   const bool ok = core_.emergency_stop();
   response->success = ok;
   response->message = ok ? "emergency stop issued; now IDLE" : "emergency_stop failed";
-  left_streaming_ = false;
-  right_streaming_ = false;
-  left_last_command_.reset();
-  right_last_command_.reset();
+  reset_teleop_session(DriverCore::Arm::kLeft);
+  reset_teleop_session(DriverCore::Arm::kRight);
 }
 
 void DriverNode::handle_gripper_command(

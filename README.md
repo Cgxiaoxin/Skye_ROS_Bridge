@@ -25,7 +25,8 @@ Skye_ROS_Bridge/
 FACTR 对接文档：`docs/p4_factr_teleop.md`  
 主机起驱动：`./scripts/start_skye_for_factr.sh`  
 小臂 Docker：`./scripts/run_marvin_m6_impedance.sh`（挂载 `marvin_ws` + `/scripts`）  
-换主臂串口：`python3 /scripts/bind_leader_arms.py`（见 `docs/新主臂串口绑定.md`）
+换主臂串口：`python3 /scripts/bind_leader_arms.py`（见 `docs/新主臂串口绑定.md`）  
+小臂 `marvin_ws/install`（clone 后缺失）：`GITLAB_TOKEN=... ./scripts/bootstrap_marvin_install.sh`（见 `docs/小臂大臂启动步骤.md`）
 
 核验：
 - P1：`skye_ros2_ws/scripts/verify_p1_interfaces.sh`

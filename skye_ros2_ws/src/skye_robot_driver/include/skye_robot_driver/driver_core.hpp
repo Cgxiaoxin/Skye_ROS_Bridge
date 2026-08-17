@@ -79,6 +79,13 @@ class DriverCore {
   static JointArray apply_joint_mapping(
       const JointArray &leader, const std::array<int, 7> &joint_order,
       const JointArray &signs, const JointArray &offsets);
+  // Relative teleop: follower_ref + sign * (leader_now - leader_ref) per joint.
+  static JointArray apply_relative_joint_mapping(
+      const JointArray &leader_now, const JointArray &leader_ref,
+      const JointArray &follower_ref, const std::array<int, 7> &joint_order,
+      const JointArray &signs);
+  static bool delta_was_limited(
+      const JointArray &desired, const JointArray &limited);
   static JointArray limit_delta(
       const JointArray &desired, const JointArray &previous,
       double max_delta_per_cycle);

@@ -97,6 +97,31 @@ DriverCore::JointArray DriverCore::apply_joint_mapping(
   return mapped;
 }
 
+DriverCore::JointArray DriverCore::apply_relative_joint_mapping(
+    const JointArray &leader_now, const JointArray &leader_ref,
+    const JointArray &follower_ref, const std::array<int, 7> &joint_order,
+    const JointArray &signs) {
+  JointArray mapped{};
+  for (std::size_t out = 0; out < mapped.size(); ++out) {
+    const int src = joint_order[out];
+    const double delta =
+        leader_now[static_cast<std::size_t>(src)] -
+        leader_ref[static_cast<std::size_t>(src)];
+    mapped[out] = follower_ref[out] + signs[out] * delta;
+  }
+  return mapped;
+}
+
+bool DriverCore::delta_was_limited(
+    const JointArray &desired, const JointArray &limited) {
+  for (std::size_t i = 0; i < desired.size(); ++i) {
+    if (desired[i] != limited[i]) {
+      return true;
+    }
+  }
+  return false;
+}
+
 DriverCore::JointArray DriverCore::limit_delta(
     const JointArray &desired, const JointArray &previous,
     double max_delta_per_cycle) {

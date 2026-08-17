@@ -98,13 +98,14 @@ FACTR：`follower_joint_offset` 左=0、右=7（`grav_comp_m6_{left,right}.yaml`
 
 ### 3. 语义映射（驱动侧，不是舵机接线符号）
 
-两边臂当前一致（`skye_robot.yaml`；实机 j4/j6/j7 反向后已改为全 +1）：
+默认 **`teleop_mapping_mode: relative`**（相对增量）。切 TELEOP 首帧大臂保持当前位，只跟手小臂相对位移；sync 未完成也不会猛追绝对角。
+
+`absolute` 为旧行为：`mapped[i] = leader[order[i]] * signs[i] + offsets[i]`。
+
+相对模式公式：
 
 ```text
-joint_order:   [0,1,2,3,4,5,6]
-joint_signs:   [1,1,1,1,1,1,1]
-joint_offsets: [0,0,0,0,0,0,0]
-mapped[i] = leader[order[i]] * signs[i] + offsets[i]
+q_cmd[i] = q_gento_ref[i] + sign[i] * (q_leader[i] - q_leader_ref[i])
 ```
 
 **不要**照搬 FACTR Dynamixel 的 `joint_signs`（那是小臂舵机方向）。

@@ -58,6 +58,7 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 | `impedance_stiffness/damping` | 100 / 10 | 关节阻抗 K/D |
 | `cartesian_stiffness/damping` | SDK 例程默认 | 笛卡尔阻抗 K/D |
 | `max_delta_per_cycle` | `0.25` | rad/周期 |
+| `teleop_mapping_mode` | `relative` | `relative`=增量遥操；`absolute`=旧绝对映射 |
 | `command_timeout_s` | `0.50` | 超时 hold（按臂独立，不拖死对侧） |
 | `left/right_joint_limits_*` | 见 yaml | 超限逐轴 clamp，不整帧拒收。J4 min=`-1.0472`（≈-60°） |
 | `enable_gripper` | `true` | 同进程夹爪桥；`ros2 param set` 不会停已创建的定时器 |
