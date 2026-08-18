@@ -17,8 +17,10 @@ import ctypes
 import os
 import sys
 import time
+from pathlib import Path
 
-SDK = "/data/coding/tianji/Skye_ROS_Bridge/third_party/gento_sdk/lib/x86_64/libGentoSDK.so"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SDK = str(REPO_ROOT / "third_party/gento_sdk/lib/x86_64/libGentoSDK.so")
 IP = (6, 6, 7, 190)
 ARM0, ARM1, CANFD = 0, 1, 1
 PROBE_IDS = (1, 2, 3, 0, 4, 5, 6, 7, 8, 16, 17)

@@ -7,9 +7,10 @@ Skye / Gento 双臂 **C++ ROS2** 遥操驱动（本机开发；Orin/Thor 换 `li
 ```text
 Skye_ROS_Bridge/
 ├── docs/
-│   ├── dev_plan.md          # 开发顺序 + 与 marvin 对齐清单 ★
-│   ├── ros_interfaces.md    # topic / service 速查
-│   └── teleop_sop.md        # 现场启停
+│   ├── 小臂大臂启动步骤.md   # P4 现场启停 ★
+│   ├── 新主臂串口绑定.md
+│   ├── dev_plan.md          # 开发顺序 + 与 marvin 对齐清单
+│   └── ros_interfaces.md    # topic / service 速查
 ├── third_party/gento_sdk/   # headers + lib/<arch>/libGentoSDK.so
 ├── skye_ros2_ws/            # 主线工作区
 │   └── src/skye_robot_driver/
@@ -22,11 +23,11 @@ Skye_ROS_Bridge/
 
 按 `docs/dev_plan.md`：**P0–P3 完成**；**P4 代码已对齐**（待实机 sync/teleop）→ P5 夹爪。
 
-FACTR 对接文档：`docs/p4_factr_teleop.md`  
-主机起驱动：`./scripts/start_skye_for_factr.sh`  
+FACTR 对接 / 现场启停：`docs/小臂大臂启动步骤.md`  
+主机起驱动：`./scripts/start_skye_for_factr.sh`（默认 `ROS_DOMAIN_ID=21` + FastDDS 关 SHM）  
 小臂 Docker：`./scripts/run_marvin_m6_impedance.sh`（挂载 `marvin_ws` + `/scripts`）  
 换主臂串口：`python3 /scripts/bind_leader_arms.py`（见 `docs/新主臂串口绑定.md`）  
-小臂 `marvin_ws/install`（clone 后缺失）：`GITLAB_TOKEN=... ./scripts/bootstrap_marvin_install.sh`（见 `docs/小臂大臂启动步骤.md`）
+小臂 `marvin_ws/install`（clone 后缺失）：`GITLAB_TOKEN=... ./scripts/bootstrap_marvin_install.sh`
 
 核验：
 - P1：`skye_ros2_ws/scripts/verify_p1_interfaces.sh`

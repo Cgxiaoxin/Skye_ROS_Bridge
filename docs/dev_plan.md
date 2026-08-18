@@ -44,7 +44,7 @@
 - [x] Docker 挂载改为 `marvin_ws`（`scripts/run_marvin_m6_impedance.sh`）
 - [x] 主机启动脚本：`scripts/start_skye_for_factr.sh`（不起旧 gento 驱动）
 - [x] `/gento/joint_states` 改为 **RELIABLE**（FACTR sync 可订阅）
-- [x] 文档：`docs/p4_factr_teleop.md`
+- [x] 文档：`docs/小臂大臂启动步骤.md`
 - [ ] 实机：Docker 小臂 + 主机驱动，键 `1` sync → `2` teleop
 
 ### P5 — 夹爪（DM4310 Terminal CANFD）
@@ -56,7 +56,7 @@
 
 ## 与 marvin_ws 必须对齐的信息
 
-本地现状：**小臂（FACTR 主手）+ 大臂（Gento 从臂）双臂**，同机 / 同 `ROS_DOMAIN_ID`（脚本常用 `20`）。  
+本地现状：**小臂（FACTR 主手）+ 大臂（Gento 从臂）双臂**，同机 / 同 `ROS_DOMAIN_ID`（P4 固定 `21`）。  
 活跃链路（bridge-less）：
 
 ```text
@@ -67,7 +67,7 @@ gento_robot_driver / skye_robot_driver   # 唯一 SDK 客户端
   IP 6.6.7.190
 ```
 
-启动参考：`marvin_ws/start_gento_dual_arm_sync.sh`  
+启动参考（旧）：`marvin_ws/start_gento_dual_arm_sync.sh`；P4 日常：`docs/小臂大臂启动步骤.md`  
 参数参考：`marvin_ws/gento_ros2_ws/src/gento_robot_driver/config/gento_robot.yaml`
 
 ### 1. Topic / Service（对外契约优先兼容 `/gento/*`）
@@ -167,6 +167,6 @@ FACTR 小臂 `arm_joint_limits_min[3]`（J4）应对齐大臂 `-1.0472`，取 **
 |------|------|
 | `docs/dev_plan.md` | 本文件：开发顺序 + 对齐清单 |
 | `docs/ros_interfaces.md` | 对外接口速查 |
-| `docs/teleop_sop.md` | 现场启停 / 急停 |
+| `docs/小臂大臂启动步骤.md` | 现场启停 / 急停 |
 | 根目录 `遥操高频优化路线.md` | QoS / 高频优化（Orin 侧参考，勿重复开文档） |
 | `third_party/gento_sdk/README.md` | SDK vendor / 换架构 so |

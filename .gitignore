@@ -42,3 +42,12 @@ __pycache__/
 
 # 本机主臂 FTDI 绑定（bind_leader_arms.py）
 marvin_ws/.skye/
+
+# Hydra / 运行日志（勿提交）
+marvin_ws/outputs/
+marvin_ws/tele_operation/outputs/
+marvin_ws/.runtime/
+marvin_ws/tele_operation/.idea/
+
+# 安装包（走 GitLab Package Registry）
+*.tgz

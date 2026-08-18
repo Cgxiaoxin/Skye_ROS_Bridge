@@ -5,7 +5,7 @@
 # Usage:
 #   Terminal A (host):  ./scripts/start_skye_for_factr.sh
 #   Terminal B:         ./scripts/run_marvin_m6_impedance.sh
-#     inside docker:    see docs/p4_factr_teleop.md
+#     inside docker:    see docs/小臂大臂启动步骤.md
 
 set -euo pipefail
 
@@ -13,9 +13,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 WS="${REPO_ROOT}/skye_ros2_ws"
 
-export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-20}"
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-21}"
 unset ROS_LOCALHOST_ONLY || true
 export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+export FASTRTPS_DEFAULT_PROFILES_FILE="${FASTRTPS_DEFAULT_PROFILES_FILE:-${REPO_ROOT}/marvin_ws/fastrtps_no_shm.xml}"
 
 if pgrep -x gento_robot_driver >/dev/null 2>&1; then
   echo "ERROR: gento_robot_driver is running. Stop it first (only one SDK client)." >&2

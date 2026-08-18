@@ -54,4 +54,4 @@ echo "== P2: feedback sample =="
 ros2 topic echo --once /gento/joint_states --qos-reliability reliable | head -40
 
 echo "P2 VERIFY OK (feedback + mode path). Motion smoke: manually nudge one joint ±0.03 rad."
-echo "  See docs/teleop_sop.md"
+echo "  See docs/小臂大臂启动步骤.md"

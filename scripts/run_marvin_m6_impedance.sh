@@ -7,7 +7,7 @@
 #
 # Inside container (P4 / Skye bridge-less):
 #   source /marvin_ws/install/setup.bash
-#   export ROS_DOMAIN_ID=20 ROS_LOCALHOST_ONLY=0 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+#   export ROS_DOMAIN_ID=21 ROS_LOCALHOST_ONLY=0 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 #   ros2 launch factr_teleop start_teleop_m6_dual_gento.launch.py use_keyboard:=true
 #
 # Host must already run skye_robot_driver on the same ROS_DOMAIN_ID.
@@ -112,8 +112,9 @@ DOCKER_ARGS=(
   -e "USE_RIGHT_GRIPPER=${USE_RIGHT_GRIPPER}"
   -e "ROBOT_LEADER_DYNAMIXEL_PORT_LEFT=${ROBOT_LEADER_DYNAMIXEL_PORT_LEFT}"
   -e "ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT=${ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT}"
-  -e "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-20}"
+  -e "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-21}"
   -e "RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+  -e "FASTRTPS_DEFAULT_PROFILES_FILE=${FASTRTPS_DEFAULT_PROFILES_FILE:-/marvin_ws/fastrtps_no_shm.xml}"
   -v /dev:/dev
   -v "${MARVIN_WS}:/marvin_ws"
   -v "${SCRIPT_DIR}:/scripts:ro"

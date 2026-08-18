@@ -1,5 +1,7 @@
 # 启动流程
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${REPO_ROOT}/skye_ros2_ws"
 ./scripts/build.sh          # 已编过可跳过
 source install/setup.bash
 export ROS_DOMAIN_ID=20 

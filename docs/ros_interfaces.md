@@ -3,7 +3,7 @@
 单位：**rad**。  
 指令 QoS：`KeepLast(1)` + `BEST_EFFORT`。  
 状态 QoS：`KeepLast(1)` + `RELIABLE`（供 FACTR sync）。  
-细节与开发顺序见 `dev_plan.md`；FACTR 对接见 `p4_factr_teleop.md`。
+细节与开发顺序见 `dev_plan.md`；FACTR 对接见 `小臂大臂启动步骤.md`。
 
 ## 控制模式（对齐 Gento `FXStateType`）
 

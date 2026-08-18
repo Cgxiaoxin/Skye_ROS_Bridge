@@ -3,7 +3,8 @@ set -euo pipefail
 export ROS_LOG_DIR=/tmp/skye_ros_log
 export ROS_HOME=/tmp/skye_ros_home
 mkdir -p "$ROS_LOG_DIR" "$ROS_HOME"
-WS=/data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WS="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "$WS"
 set +u
 # Prefer system python for ros2cli
