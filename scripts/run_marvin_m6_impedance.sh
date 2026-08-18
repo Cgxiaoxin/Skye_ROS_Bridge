@@ -37,6 +37,11 @@ fi
 ROBOT_LEADER_DYNAMIXEL_PORT_LEFT="${ROBOT_LEADER_DYNAMIXEL_PORT_LEFT:-usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0}"
 ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT="${ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT:-usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0}"
 
+if [[ ! -f "${MARVIN_WS}/fastrtps_no_shm.xml" ]]; then
+  echo "ERROR: missing ${MARVIN_WS}/fastrtps_no_shm.xml" >&2
+  exit 1
+fi
+
 if [[ ! -f "${MARVIN_WS}/install/setup.bash" ]]; then
   echo "marvin_ws/install missing; trying bootstrap (GitLab Package Registry)..."
   bash "${SCRIPT_DIR}/bootstrap_marvin_install.sh"
@@ -114,7 +119,7 @@ DOCKER_ARGS=(
   -e "ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT=${ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT}"
   -e "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-21}"
   -e "RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
-  -e "FASTRTPS_DEFAULT_PROFILES_FILE=${FASTRTPS_DEFAULT_PROFILES_FILE:-/marvin_ws/fastrtps_no_shm.xml}"
+  -e "FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml"
   -v /dev:/dev
   -v "${MARVIN_WS}:/marvin_ws"
   -v "${SCRIPT_DIR}:/scripts:ro"
@@ -130,4 +135,5 @@ fi
 
 echo "Mount: ${MARVIN_WS} -> /marvin_ws"
 echo "Image: ${IMAGE}"
+echo "FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml"
 exec docker run "${DOCKER_ARGS[@]}" "${IMAGE}"

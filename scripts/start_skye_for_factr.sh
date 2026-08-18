@@ -16,7 +16,16 @@ WS="${REPO_ROOT}/skye_ros2_ws"
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-21}"
 unset ROS_LOCALHOST_ONLY || true
 export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
-export FASTRTPS_DEFAULT_PROFILES_FILE="${FASTRTPS_DEFAULT_PROFILES_FILE:-${REPO_ROOT}/marvin_ws/fastrtps_no_shm.xml}"
+
+# FastDDS 会对 FASTRTPS_DEFAULT_PROFILES_FILE 做 realpath；文件不存在会报
+# "XMLPARSER Error: realpath failed"。外部若已 export 成无效路径，这里强制回退。
+FASTRTPS_XML="${REPO_ROOT}/marvin_ws/fastrtps_no_shm.xml"
+if [[ -n "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" && -f "${FASTRTPS_DEFAULT_PROFILES_FILE}" ]]; then
+  FASTRTPS_XML="${FASTRTPS_DEFAULT_PROFILES_FILE}"
+fi
+[[ -f "${FASTRTPS_XML}" ]] \
+  || { echo "ERROR: FastDDS xml missing: ${FASTRTPS_XML}" >&2; exit 1; }
+export FASTRTPS_DEFAULT_PROFILES_FILE="${FASTRTPS_XML}"
 
 if pgrep -x gento_robot_driver >/dev/null 2>&1; then
   echo "ERROR: gento_robot_driver is running. Stop it first (only one SDK client)." >&2
@@ -41,6 +50,7 @@ source install/setup.bash
 set -u
 
 echo "== skye_robot_driver ROS_DOMAIN_ID=${ROS_DOMAIN_ID} =="
+echo "   FASTRTPS_DEFAULT_PROFILES_FILE=${FASTRTPS_DEFAULT_PROFILES_FILE}"
 echo "Expect FACTR remap: /gento/joint_states + /gento/{left,right}_joint_control"
 echo "Mode default: imp_joint (2). Keyboard in docker: 1=sync 2=teleop 3=stop"
 exec ros2 launch skye_robot_driver skye_robot_driver.launch.py \
