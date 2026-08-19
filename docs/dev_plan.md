@@ -108,7 +108,7 @@ FACTR：`follower_joint_offset` 左=0、右=7（`grav_comp_m6_{left,right}.yaml`
 q_cmd[i] = q_gento_ref[i] + sign[i] * (q_leader[i] - q_leader_ref[i])
 ```
 
-驱动侧 J4 `sign=-1`（Marvin/Gento 限位镜像）；J6/J7 为 `+1`。  
+驱动侧默认全 `+1`（同向）。J4 限位镜像不靠翻符号解决；超出大臂行程走逐轴离合。  
 **不要**照搬 FACTR Dynamixel 的 `joint_signs`（那是小臂舵机方向）。
 
 ### 4. 安全默认（先抄后调）

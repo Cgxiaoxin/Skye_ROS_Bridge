@@ -4,26 +4,26 @@ skye_robot_driver:
     robot_ip: "6.6.7.190"
     # 0=idle 1=position 2=imp_joint 3=imp_cart (FX_STATE); default teleop=2
     control_mode: "imp_joint"
-    left_velocity_ratio: 10
-    right_velocity_ratio: 10
-    left_acceleration_ratio: 10
-    right_acceleration_ratio: 10
+    left_velocity_ratio: 20
+    right_velocity_ratio: 20
+    left_acceleration_ratio: 20
+    right_acceleration_ratio: 20
     state_publish_hz: 250.0
     cmd_cycle_time_ms: 4
     connect_on_startup: true
     left_joint_order: [0, 1, 2, 3, 4, 5, 6]
     right_joint_order: [0, 1, 2, 3, 4, 5, 6]
-    # J4 sign=-1: Marvin URDF [-2.53,+1.05] duals Gento [-1.05,+2.53].
-    # J6/J7 stay +1 (symmetric limits; direction already field-checked).
-    left_joint_signs: [1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0]
-    right_joint_signs: [1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0]
+    # Direction first: all +1 after field check. J4 workspace is intersection
+    # (~±60°) after sync; extra leader travel is absorbed by per-joint clutch.
+    left_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    right_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     left_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     right_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     left_joint_limits_min: [-3.1067, -2.01, -3.1067, -1.0472, -3.1067, -1.0472, -1.5708]
     left_joint_limits_max: [3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708]
     right_joint_limits_min: [-3.1067, -2.01, -3.1067, -1.0472, -3.1067, -1.0472, -1.5708]
     right_joint_limits_max: [3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708]
-    max_delta_per_cycle: 0.0014   # 0.25 deg/s -> 0.0014 rad/s 机器人遥操每步最大弧度值
+    max_delta_per_cycle: 0.05   # 机器人遥操每步最大弧度值rad per command frame (~12.5 rad/s at 250 Hz)
     command_timeout_s: 0.50
     # relative: delta from teleop entry (safe if sync incomplete). absolute: legacy.
     teleop_mapping_mode: relative     # relative | absolute
