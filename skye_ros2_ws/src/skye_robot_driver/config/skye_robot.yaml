@@ -13,16 +13,16 @@ skye_robot_driver:
     connect_on_startup: true
     left_joint_order: [0, 1, 2, 3, 4, 5, 6]
     right_joint_order: [0, 1, 2, 3, 4, 5, 6]
-    # Direction first: all +1 after field check. J4 workspace is intersection
-    # (~±60°) after sync; extra leader travel is absorbed by per-joint clutch.
+    # signs: 仅指令映射。现场 J4=-1 外形反了，改回全 +1。不改 joint_states。
+    # limits: Marvin M6-S L/R CCS-696 V4.0 URDF（左右相同）。J4=-145°~+60°。
     left_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     right_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     left_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     right_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    left_joint_limits_min: [-3.1067, -2.01, -3.1067, -1.0472, -3.1067, -1.0472, -1.5708]
-    left_joint_limits_max: [3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708]
-    right_joint_limits_min: [-3.1067, -2.01, -3.1067, -1.0472, -3.1067, -1.0472, -1.5708]
-    right_joint_limits_max: [3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708]
+    left_joint_limits_min: [-3.1067, -2.0944, -3.1067, -2.5307, -3.1067, -1.0472, -1.5708]
+    left_joint_limits_max: [3.1067, 2.0944, 3.1067, 1.0472, 3.1067, 1.0472, 1.5708]
+    right_joint_limits_min: [-3.1067, -2.0944, -3.1067, -2.5307, -3.1067, -1.0472, -1.5708]
+    right_joint_limits_max: [3.1067, 2.0944, 3.1067, 1.0472, 3.1067, 1.0472, 1.5708]
     max_delta_per_cycle: 0.05   # rad per command frame
     command_timeout_s: 0.50
     # relative: delta from teleop entry (safe if sync incomplete). absolute: legacy.

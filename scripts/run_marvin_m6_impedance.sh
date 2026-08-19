@@ -56,7 +56,7 @@ if [[ -f "${OVERLAY_LAUNCH}" ]]; then
 fi
 
 # 右臂夹爪 Dynamixel 第 8 维必须与左臂同为 +1。-1 把松开扳机翻到负半轴 → 归一化 0。
-# 左右臂 j4 min 对齐大臂 -1.0472（小臂原 -2.4 会把大臂顶到限位后猛追）。
+# 不要改小臂 J4 限位：大臂限位在 skye_robot.yaml，超出由驱动 clamp。
 FACTR_CFG="${MARVIN_WS}/install/share/factr_teleop/configs"
 python3 - "${FACTR_CFG}" <<'PY'
 import re, sys
@@ -68,7 +68,6 @@ def patch_file(path: Path) -> None:
     if not path.is_file():
         return
     text = path.read_text()
-    notes = []
     new, n = re.subn(
         r"(joint_signs:\s*\[[^\]]+),\s*-1(\s*\])",
         r"\1, 1\2",
@@ -76,26 +75,8 @@ def patch_file(path: Path) -> None:
         count=1,
     )
     if n:
-        notes.append("gripper joint_signs[7] -1 -> +1")
-        text = new
-
-    def j4_min(m):
-        parts = [p.strip() for p in m.group(1).split(",")]
-        if len(parts) >= 4 and parts[3] in ("-2.4", "-2.40", "-2.5307"):
-            old = parts[3]
-            parts[3] = "-1.0"
-            notes.append(f"j4 min {old} -> -1.0")
-        return "arm_joint_limits_min: [" + ", ".join(parts) + "]"
-
-    text, _ = re.subn(
-        r"arm_joint_limits_min:\s*\[([^\]]+)\]",
-        j4_min,
-        text,
-        count=1,
-    )
-    if notes:
-        path.write_text(text)
-        print(f"patched {path.name}: " + "; ".join(notes))
+        path.write_text(new)
+        print(f"patched {path.name}: gripper joint_signs[7] -1 -> +1")
 
 patch_file(cfg / "grav_comp_m6_left.yaml")
 patch_file(cfg / "grav_comp_m6_right.yaml")

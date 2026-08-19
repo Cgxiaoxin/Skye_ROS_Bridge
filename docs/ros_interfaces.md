@@ -60,7 +60,7 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 | `max_delta_per_cycle` | `0.25` | rad/周期 |
 | `teleop_mapping_mode` | `relative` | `relative`=增量遥操；`absolute`=旧绝对映射 |
 | `command_timeout_s` | `0.50` | 超时 hold（按臂独立，不拖死对侧） |
-| `left/right_joint_limits_*` | 见 yaml | 超限逐轴 clamp + 离合，不整帧拒收。J4 大臂 `[-1.0472, 2.53]`；小臂用 URDF 全行程 |
+| `left/right_joint_limits_*` | 见 yaml | 超限逐轴 clamp。J4 大臂 URDF `[-2.5307, 1.0472]`（−145°~+60°）；`signs` 全 `+1` |
 | `enable_gripper` | `true` | 同进程夹爪桥；`ros2 param set` 不会停已创建的定时器 |
 | `gripper_left_motor_id` / `gripper_right_motor_id` | `1` / `2` | 左 ARM0+ID1；右 ARM1+ID2 |
 | `gripper_invert` | `true` | FACTR 扳机 1=开/0=闭 → 电机 0=开/1=闭；state 同样反回去给 FACTR |

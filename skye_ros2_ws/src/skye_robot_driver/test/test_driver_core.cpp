@@ -12,9 +12,9 @@ constexpr std::array<int, 7> kOrder{0, 1, 2, 3, 4, 5, 6};
 constexpr DriverCore::JointArray kJ4NegSigns{
     1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0};
 constexpr DriverCore::JointArray kMin{
-    -3.1067, -2.01, -3.1067, -1.0472, -3.1067, -1.0472, -1.5708};
+    -3.1067, -2.0944, -3.1067, -2.5307, -3.1067, -1.0472, -1.5708};
 constexpr DriverCore::JointArray kMax{
-    3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708};
+    3.1067, 2.0944, 3.1067, 1.0472, 3.1067, 1.0472, 1.5708};
 
 }  // namespace
 
@@ -36,11 +36,11 @@ TEST(DriverCore, ClutchLeavesRefsUnchangedWhenInsideLimits) {
 TEST(DriverCore, ClutchAbsorbsOnlySaturatedJoint) {
   DriverCore::JointArray leader_ref{};
   DriverCore::JointArray gento_ref{};
-  DriverCore::JointArray leader_now{0.1, 0.2, 0.3, -2.0, 0.5, 0.6, 0.7};
+  DriverCore::JointArray leader_now{0.1, 0.2, 0.3, -0.5, 0.5, 0.6, 0.7};
   const auto desired = DriverCore::apply_relative_joint_mapping(
       leader_now, leader_ref, gento_ref, kOrder, kJ4NegSigns);
-  // sign[3]=-1, leader J4 -2.0 → desired J4 = +2.0, still inside max 2.53.
-  EXPECT_NEAR(desired[3], 2.0, 1e-12);
+  // sign[3]=-1, leader J4 -0.5 → desired J4 = +0.5, inside URDF max 1.0472.
+  EXPECT_NEAR(desired[3], 0.5, 1e-12);
 
   leader_now[3] = -2.6;
   const auto desired_out = DriverCore::apply_relative_joint_mapping(

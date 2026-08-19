@@ -13,9 +13,9 @@ namespace skye_robot_driver {
 namespace {
 
 constexpr DriverCore::JointArray kDefaultMinimum{
-    -3.1067, -2.01, -3.1067, -1.0472, -3.1067, -1.0472, -1.5708};
+    -3.1067, -2.0944, -3.1067, -2.5307, -3.1067, -1.0472, -1.5708};
 constexpr DriverCore::JointArray kDefaultMaximum{
-    3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708};
+    3.1067, 2.0944, 3.1067, 1.0472, 3.1067, 1.0472, 1.5708};
 constexpr DriverCore::JointArray kDefaultSigns{
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
 constexpr DriverCore::JointArray kDefaultOffsets{

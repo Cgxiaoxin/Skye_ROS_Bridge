@@ -108,21 +108,23 @@ FACTR：`follower_joint_offset` 左=0、右=7（`grav_comp_m6_{left,right}.yaml`
 q_cmd[i] = q_gento_ref[i] + sign[i] * (q_leader[i] - q_leader_ref[i])
 ```
 
-驱动侧默认全 `+1`（同向）。J4 限位镜像不靠翻符号解决；超出大臂行程走逐轴离合。  
+J4 现场 `sign=-1` 外形反了，改回全 `+1`。不改 `joint_states`。  
+限位对齐大臂 URDF（左右相同）。超出大臂行程走逐轴 clamp。  
 **不要**照搬 FACTR Dynamixel 的 `joint_signs`（那是小臂舵机方向）。
 
 ### 4. 安全默认（先抄后调）
 
 ```text
-limits_min: [-3.1067,-2.01,-3.1067,-1.0472,-3.1067,-1.0472,-1.5708]
-limits_max: [ 3.1067, 2.01, 3.1067, 2.53,  3.1067, 1.0472, 1.5708]
-max_delta_per_cycle: 0.25   # rad / 周期
+signs:      [1, 1, 1, 1, 1, 1, 1]
+limits_min: [-3.1067,-2.0944,-3.1067,-2.5307,-3.1067,-1.0472,-1.5708]
+limits_max: [ 3.1067, 2.0944, 3.1067, 1.0472, 3.1067, 1.0472, 1.5708]
+max_delta_per_cycle: 0.05   # rad / 周期
 command_timeout_s:   0.50   # 超时 → 按臂 hold
-left/right_velocity_ratio: 10
+left/right_velocity_ratio: 20
 ```
 
-超限：**逐轴 clamp + 逐轴离合**（贴边轴锁在限位并吃掉超出行程，其余轴跟手）。NaN / 非 7 轴仍整帧拒绝。  
-小臂 FACTR J4 用 Marvin URDF 全行程 `[-2.5307, 1.0472]`，不要再收到 `-1.0`。
+超限：**逐轴 clamp**。NaN / 非 7 轴仍整帧拒绝。  
+不要把 FACTR 小臂 J4 min 收到 `-1.0`。
 
 ### 5. 主手模式（FACTR）
 
