@@ -81,9 +81,10 @@ def patch_file(path: Path) -> None:
 
     def j4_min(m):
         parts = [p.strip() for p in m.group(1).split(",")]
-        if len(parts) >= 4 and parts[3] in ("-2.4", "-2.40"):
+        if len(parts) >= 4 and parts[3] in ("-2.4", "-2.40", "-2.5307"):
+            old = parts[3]
             parts[3] = "-1.0"
-            notes.append("j4 min -2.4 -> -1.0")
+            notes.append(f"j4 min {old} -> -1.0")
         return "arm_joint_limits_min: [" + ", ".join(parts) + "]"
 
     text, _ = re.subn(
