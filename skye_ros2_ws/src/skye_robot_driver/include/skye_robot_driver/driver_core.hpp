@@ -84,6 +84,12 @@ class DriverCore {
       const JointArray &leader_now, const JointArray &leader_ref,
       const JointArray &follower_ref, const std::array<int, 7> &joint_order,
       const JointArray &signs);
+  // Per-joint clutch: if desired[i] was clamped, absorb that joint's leader
+  // travel so reversing does not chase accumulated error. Other joints unchanged.
+  static bool clutch_saturated_joints(
+      const JointArray &desired, const JointArray &clamped,
+      const JointArray &leader_now, JointArray &leader_ref,
+      JointArray &gento_ref, const std::array<int, 7> &joint_order);
   static bool delta_was_limited(
       const JointArray &desired, const JointArray &limited);
   static JointArray limit_delta(

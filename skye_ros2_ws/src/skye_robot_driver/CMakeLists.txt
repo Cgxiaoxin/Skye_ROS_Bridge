@@ -72,5 +72,11 @@ install(TARGETS skye_robot_driver_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_driver_core test/test_driver_core.cpp)
+  target_link_libraries(test_driver_core skye_driver_core)
+endif()
+
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()

@@ -32,11 +32,13 @@ q_cmd[i] = q_gento_ref[i] + sign[i] * (q_leader[order[i]] - q_leader_ref[order[i
 以下事件结束当前会话，下一帧指令重新 capture ref：
 
 - 首条指令 / `streaming=false` 后恢复（hold、timeout、stop、set_mode）
-- `limit_delta` 发生裁剪时 **re-clutch**（更新 ref，防限幅解除后跳变）
+- 某一轴 `clamp_to_limits` 贴边时 **仅该轴 re-clutch**（吃掉超出行程，回来不猛追）
+
+`limit_delta` 只做速度帽，不再整臂改写 ref。
 
 ## 安全链（保留）
 
-`limit_delta` → `clamp_to_limits` → SDK；`command_timeout_s` → hold。
+`clamp_to_limits`（逐轴离合）→ `limit_delta` → SDK；`command_timeout_s` → hold。
 
 ## 配置
 

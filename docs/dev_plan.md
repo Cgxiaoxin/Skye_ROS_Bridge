@@ -108,6 +108,7 @@ FACTR：`follower_joint_offset` 左=0、右=7（`grav_comp_m6_{left,right}.yaml`
 q_cmd[i] = q_gento_ref[i] + sign[i] * (q_leader[i] - q_leader_ref[i])
 ```
 
+驱动侧 J4 `sign=-1`（Marvin/Gento 限位镜像）；J6/J7 为 `+1`。  
 **不要**照搬 FACTR Dynamixel 的 `joint_signs`（那是小臂舵机方向）。
 
 ### 4. 安全默认（先抄后调）
@@ -120,8 +121,8 @@ command_timeout_s:   0.50   # 超时 → 按臂 hold
 left/right_velocity_ratio: 10
 ```
 
-超限：**逐轴 clamp 后继续下发**（贴边轴锁在限位，其余轴跟手）。NaN / 非 7 轴仍整帧拒绝。  
-FACTR 小臂 `arm_joint_limits_min[3]`（J4）应对齐大臂 `-1.0472`，取 **-1.0**（原 -2.4 会把大臂顶出限位后猛追）。
+超限：**逐轴 clamp + 逐轴离合**（贴边轴锁在限位并吃掉超出行程，其余轴跟手）。NaN / 非 7 轴仍整帧拒绝。  
+小臂 FACTR J4 用 Marvin URDF 全行程 `[-2.5307, 1.0472]`，不要再收到 `-1.0`。
 
 ### 5. 主手模式（FACTR）
 

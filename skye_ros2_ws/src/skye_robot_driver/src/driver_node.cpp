@@ -17,7 +17,7 @@ constexpr DriverCore::JointArray kDefaultMinimum{
 constexpr DriverCore::JointArray kDefaultMaximum{
     3.1067, 2.01, 3.1067, 2.53, 3.1067, 1.0472, 1.5708};
 constexpr DriverCore::JointArray kDefaultSigns{
-    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+    1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0};
 constexpr DriverCore::JointArray kDefaultOffsets{
     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 constexpr std::array<int, 7> kDefaultOrder{0, 1, 2, 3, 4, 5, 6};
@@ -562,37 +562,31 @@ void DriverNode::handle_command(
     return;
   }
 
-  const auto clamped =
-      DriverCore::clamp_to_limits(mapped, minimum, maximum);
-  if (clamped != mapped) {
+  const auto desired = mapped;
+  mapped = DriverCore::clamp_to_limits(desired, minimum, maximum);
+  if (mapped != desired) {
     std::ostringstream oss;
     oss << std::fixed;
     oss.precision(4);
     for (std::size_t j = 0; j < mapped.size(); ++j) {
-      if (clamped[j] == mapped[j]) {
+      if (mapped[j] == desired[j]) {
         continue;
       }
-      oss << " j" << (j + 1) << "=" << mapped[j] << "->" << clamped[j]
+      oss << " j" << (j + 1) << "=" << desired[j] << "->" << mapped[j]
           << " [" << minimum[j] << "," << maximum[j] << "]";
     }
     RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 1000,
         "%s command clamped:%s; other joints still tracking",
         arm_name, oss.str().c_str());
-    mapped = clamped;
+    if (teleop_mapping_mode_ == TeleopMappingMode::kRelative) {
+      DriverCore::clutch_saturated_joints(
+          desired, mapped, leader, *leader_ref, *gento_ref, order);
+    }
   }
 
-  const auto before_limit = mapped;
   mapped =
       DriverCore::limit_delta(mapped, *last_command, max_delta_per_cycle_);
-  if (teleop_mapping_mode_ == TeleopMappingMode::kRelative &&
-      DriverCore::delta_was_limited(before_limit, mapped)) {
-    leader_ref = leader;
-    gento_ref = mapped;
-    RCLCPP_DEBUG(
-        get_logger(),
-        "%s relative teleop: re-clutched after delta limit", arm_name);
-  }
   mapped = DriverCore::clamp_to_limits(mapped, minimum, maximum);
 
   if (!core_.send_position(arm, mapped)) {

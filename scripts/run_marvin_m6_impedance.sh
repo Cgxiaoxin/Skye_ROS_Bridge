@@ -56,13 +56,27 @@ if [[ -f "${OVERLAY_LAUNCH}" ]]; then
 fi
 
 # 右臂夹爪 Dynamixel 第 8 维必须与左臂同为 +1。-1 把松开扳机翻到负半轴 → 归一化 0。
-# 左右臂 j4 min 对齐大臂 -1.0472（小臂原 -2.4 会把大臂顶到限位后猛追）。
+# 小臂 J4 恢复 Marvin URDF 全行程 [-2.5307, 1.0472]；大臂超限由 driver 逐轴离合，不再缩主手。
 FACTR_CFG="${MARVIN_WS}/install/share/factr_teleop/configs"
 python3 - "${FACTR_CFG}" <<'PY'
 import re, sys
 from pathlib import Path
 
 cfg = Path(sys.argv[1])
+J4_MIN = "-2.5307"
+J4_MAX = "1.0472"
+
+def patch_limits(text, key, index, new_val, notes):
+    pattern = rf"({key}:\s*\[)([^\]]+)(\])"
+
+    def repl(m):
+        parts = [p.strip() for p in m.group(2).split(",")]
+        if len(parts) > index and parts[index] != new_val:
+            notes.append(f"{key}[{index}] {parts[index]} -> {new_val}")
+            parts[index] = new_val
+        return m.group(1) + ", ".join(parts) + m.group(3)
+
+    return re.sub(pattern, repl, text, count=1)
 
 def patch_file(path: Path) -> None:
     if not path.is_file():
@@ -79,19 +93,8 @@ def patch_file(path: Path) -> None:
         notes.append("gripper joint_signs[7] -1 -> +1")
         text = new
 
-    def j4_min(m):
-        parts = [p.strip() for p in m.group(1).split(",")]
-        if len(parts) >= 4 and parts[3] in ("-2.4", "-2.40"):
-            parts[3] = "-1.0"
-            notes.append("j4 min -2.4 -> -1.0")
-        return "arm_joint_limits_min: [" + ", ".join(parts) + "]"
-
-    text, _ = re.subn(
-        r"arm_joint_limits_min:\s*\[([^\]]+)\]",
-        j4_min,
-        text,
-        count=1,
-    )
+    text = patch_limits(text, "arm_joint_limits_min", 3, J4_MIN, notes)
+    text = patch_limits(text, "arm_joint_limits_max", 3, J4_MAX, notes)
     if notes:
         path.write_text(text)
         print(f"patched {path.name}: " + "; ".join(notes))

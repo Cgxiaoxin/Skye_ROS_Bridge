@@ -112,6 +112,23 @@ DriverCore::JointArray DriverCore::apply_relative_joint_mapping(
   return mapped;
 }
 
+bool DriverCore::clutch_saturated_joints(
+    const JointArray &desired, const JointArray &clamped,
+    const JointArray &leader_now, JointArray &leader_ref,
+    JointArray &gento_ref, const std::array<int, 7> &joint_order) {
+  bool clutched = false;
+  for (std::size_t out = 0; out < desired.size(); ++out) {
+    if (desired[out] == clamped[out]) {
+      continue;
+    }
+    const auto src = static_cast<std::size_t>(joint_order[out]);
+    leader_ref[src] = leader_now[src];
+    gento_ref[out] = clamped[out];
+    clutched = true;
+  }
+  return clutched;
+}
+
 bool DriverCore::delta_was_limited(
     const JointArray &desired, const JointArray &limited) {
   for (std::size_t i = 0; i < desired.size(); ++i) {
