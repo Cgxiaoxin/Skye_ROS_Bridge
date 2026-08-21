@@ -375,6 +375,8 @@ Expected: PASS
 
 **Report (Task 3 polish):** step index uses exact `t_now >= step_t0s[i]` (no eps); eps retained only for `holding_tail` vs `end_t` (`max(1e-12, |dt|·1e-9, |end_t|·1e-9)`). Precomputed `step_t0s`/`end_t` on load for large `t0`. 12/12 pytest pass incl. `step_t0s[1]-1e-15 → step 0`.
 
+**Report (P1 fix):** holding eps dropped `|end_t|·1e-9` (broke Unix epoch t0≈1e9: eps≈1 at last step). Now `max(1e-12, |dt|·1e-9)` only. Added `test_unix_epoch_t0_last_step_holding` (t0=1e9, dt=0.1: 15·dt→False, 16·dt→True). 13/13 pytest pass.
+
 ```bash
 git commit -am "feat(hitl): add policy chunk player with hold-last-step"
 ```
