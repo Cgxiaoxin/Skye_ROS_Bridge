@@ -93,6 +93,17 @@ while time.monotonic() < publish_end and not abs_msgs:
 if not abs_msgs:
     raise SystemExit("FAIL: no messages on /gento/left_joint_control_abs")
 
+rate_start_count = len(abs_msgs)
+rate_deadline = time.monotonic() + 1.0
+while time.monotonic() < rate_deadline:
+    msg.header.stamp = node.get_clock().now().to_msg()
+    pub.publish(msg)
+    rclpy.spin_once(node, timeout_sec=0.05)
+rate_count = len(abs_msgs) - rate_start_count
+if rate_count < 5:
+    raise SystemExit(
+        f"FAIL: abs rate too low ({rate_count} msgs in 1s, need >=5)")
+
 with open(ABS_FILE, "w", encoding="utf-8") as f:
     f.write("position:\n")
     for p in abs_msgs[0].position:
@@ -102,7 +113,7 @@ node.destroy_node()
 rclpy.shutdown()
 PY
 
-echo "== P6.1: abs joint control sample =="
+echo "== P6.1: abs joint control sample + hz =="
 grep -q 'position:' "$ABS_FILE" \
   || { echo "FAIL: no messages on /gento/left_joint_control_abs"; exit 1; }
 
@@ -123,6 +134,13 @@ def on_mode(msg: ControlMode) -> None:
 
 node.create_subscription(ControlMode, "/skye/control_mode", on_mode, 10)
 pub = node.create_publisher(String, "/skye/intervention_cmd", 10)
+match_deadline = time.monotonic() + 2.0
+while time.monotonic() < match_deadline:
+    rclpy.spin_once(node, timeout_sec=0.1)
+    if pub.get_subscription_count() > 0:
+        break
+else:
+    time.sleep(2.0)
 deadline = time.monotonic() + 3.0
 while time.monotonic() < deadline and not seen:
     rclpy.spin_once(node, timeout_sec=0.1)
