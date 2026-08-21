@@ -49,7 +49,7 @@ def test_just_before_next_step_stays_on_current_step():
     left = _flat(16, 7, 0.0)
     left[7] = 2.5  # step 1 marker
     p.load(16, 0.1, 10.0, left, _flat(16, 7, 0.0), [0.0] * 16, [0.0] * 16)
-    s = p.sample(10.0 + 0.099999999999)
+    s = p.sample(10.0 + 0.099999999)
     assert s["left"][0] == 0.0
     assert s["holding_tail"] is False
 
@@ -85,6 +85,29 @@ def test_just_after_horizon_holding_tail():
     s = p.sample(16 * dt + 1e-6)
     assert s["left"][0] == 3.14
     assert s["holding_tail"] is True
+
+
+def test_nonzero_t0_last_step_at_15dt():
+    dt = 0.03
+    for t0 in (10.0, 1e6):
+        p = ChunkPlayer()
+        left = _flat(16, 7, 0.0)
+        left[15 * 7] = 3.14
+        p.load(16, dt, t0, left, _flat(16, 7, 0.0), [0.0] * 16, [0.0] * 16)
+        s = p.sample(t0 + 15 * dt)
+        assert s["left"][0] == 3.14
+        assert s["holding_tail"] is False
+
+
+def test_nonzero_t0_mid_interval_step0():
+    for t0 in (10.0, 1e6):
+        p = ChunkPlayer()
+        left = _flat(16, 7, 0.0)
+        left[7] = 2.5
+        p.load(16, 0.1, t0, left, _flat(16, 7, 0.0), [0.0] * 16, [0.0] * 16)
+        s = p.sample(t0 + 0.051)
+        assert s["left"][0] == 0.0
+        assert s["holding_tail"] is False
 
 
 def test_reject_non_finite_dt_t0_keeps_previous():

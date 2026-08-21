@@ -12,6 +12,8 @@ class _Chunk:
     t0: float
     dt: float
     steps: int
+    step_t0s: List[float]
+    end_t: float
     left: List[float]
     right: List[float]
     left_gripper: List[float]
@@ -32,8 +34,11 @@ class ChunkPlayer:
                 or len(left_gripper) != chunk_size
                 or len(right_gripper) != chunk_size):
             return False
+        step_t0s = [t0 + i * dt for i in range(chunk_size)]
+        end_t = t0 + chunk_size * dt
         self._chunk = _Chunk(
             t0=t0, dt=dt, steps=chunk_size,
+            step_t0s=step_t0s, end_t=end_t,
             left=list(left_joints), right=list(right_joints),
             left_gripper=list(left_gripper),
             right_gripper=list(right_gripper),
@@ -44,16 +49,14 @@ class ChunkPlayer:
         if self._chunk is None:
             return None
         c = self._chunk
-        elapsed = t_now - c.t0
-        if elapsed <= 0.0:
+        eps = max(1e-12, abs(c.dt) * 1e-9)
+        if t_now <= c.step_t0s[0]:
             idx, holding = 0, False
         else:
-            end_t = c.steps * c.dt
-            eps = max(1e-12, abs(c.dt) * 1e-9, abs(end_t) * 1e-9)
-            holding = elapsed + eps >= end_t
+            holding = t_now + eps >= c.end_t
             idx = 0
             for i in range(1, c.steps):
-                if elapsed >= i * c.dt:
+                if t_now + eps >= c.step_t0s[i]:
                     idx = i
                 else:
                     break
