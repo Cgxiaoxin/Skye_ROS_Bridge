@@ -1,7 +1,7 @@
 # HITL DAgger：control_arbiter + 数采接入设计
 
 **日期：** 2026-08-21  
-**状态：** 待用户审阅后进入实现计划  
+**状态：** 设计已审阅；实现计划见 [`docs/superpowers/plans/2026-08-21-hitl-dagger-control-arbiter.md`](../plans/2026-08-21-hitl-dagger-control-arbiter.md)  
 **前置方案：** [`docs/HITL_DAgger_集成方案.md`](../../HITL_DAgger_集成方案.md)  
 **仓库落点：** 本仓库新建 ROS2 包 `skye_hitl_dagger`（方案 A），不另起平行工程
 
@@ -130,10 +130,7 @@ AUTONOMOUS ─────────────────► HANDOVER_SYNC 
 - Driver 默认 `teleop_mapping_mode: relative`：把收到的 `joint_control` 当**主臂角**做增量映射。
 - 策略输出是**大臂绝对角** → 若原样进现网 relative，会错。
 
-**v1 做法（二选一，实现 plan 里定一种）：**
-
-1. **推荐：** HITL on 时 driver 增加参数 / 话题侧标志：来自 arbiter 的指令 **pass-through absolute**（跳过 relative）；HUMAN 路径仍 relative。  
-2. 或 arbiter 只在 HUMAN 时写 `/gento/*`，AUTONOMOUS 写新 topic `/gento/*_joint_control_abs`，driver 另订绝对入口。
+**v1 已锁定（实现 plan）：** AUTONOMOUS / hold 写 `/gento/{left,right}_joint_control_abs`（driver 新入口，跳过 relative，仍 clamp + `max_delta`）；HUMAN 仍写原 `/gento/{left,right}_joint_control`（relative）。abs 路径不得污染 teleop 的 `leader_ref` / `gento_ref`。
 
 验收：固定 chunk 绝对角，大臂到位误差在安全阈值内，且不被 relative 扭曲。
 
@@ -297,4 +294,4 @@ Arbiter 是状态机选源器，不是死锁名义 Hz 的定时器：
 - VLA：按本 §6 发 `/skye/policy_action`（已约定方向）。  
 - 数采：mcap 最终 topic 清单。  
 - 反应延迟 N：后置实测。  
-- driver 绝对透传的具体 API（§5.2 两种实现选一）。
+- driver 绝对透传：已锁定为 `/gento/*_joint_control_abs`（见实现 plan Task 6）。
