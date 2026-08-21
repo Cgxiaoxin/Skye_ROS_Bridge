@@ -25,7 +25,7 @@ def map_key(key: str) -> Optional[str]:
     normalized = key.strip().lower()
     if not normalized:
         return None
-    return KEY_TO_CMD.get(normalized[0])
+    return KEY_TO_CMD.get(normalized)
 
 
 class HitlKeyboardNode(Node):

@@ -16,3 +16,5 @@ def test_map_key_ignores_other_keys():
     assert map_key("a") is None
     assert map_key("") is None
     assert map_key("   ") is None
+    assert map_key("qabc") is None
+    assert map_key("wxyz") is None
