@@ -454,6 +454,26 @@ void DriverNode::reset_absolute_session(DriverCore::Arm arm) {
   right_abs_streaming_ = false;
 }
 
+bool DriverNode::path_streaming(DriverCore::Arm arm, bool absolute) const {
+  const bool left = arm == DriverCore::Arm::kLeft;
+  if (absolute) {
+    return left ? left_abs_streaming_ : right_abs_streaming_;
+  }
+  return left ? left_streaming_ : right_streaming_;
+}
+
+bool DriverNode::path_active(DriverCore::Arm arm, bool absolute) const {
+  if (!path_streaming(arm, absolute)) {
+    return false;
+  }
+  const bool left = arm == DriverCore::Arm::kLeft;
+  const auto &stamp =
+      absolute ? (left ? left_abs_last_command_time_
+                       : right_abs_last_command_time_)
+               : (left ? left_last_command_time_ : right_last_command_time_);
+  return (now() - stamp).seconds() <= command_timeout_s_;
+}
+
 void DriverNode::handle_set_mode(
     const std::shared_ptr<SetMode::Request> request,
     std::shared_ptr<SetMode::Response> response) {
@@ -624,6 +644,13 @@ void DriverNode::handle_command(
   last_command = mapped;
   last_command_time = now();
   streaming = true;
+  if (path_streaming(arm, true)) {
+    RCLCPP_INFO(
+        get_logger(),
+        "%s relative teleop command takes over; invalidating absolute session",
+        arm_name);
+    reset_absolute_session(arm);
+  }
 }
 
 void DriverNode::handle_absolute_command(
@@ -708,19 +735,39 @@ void DriverNode::handle_absolute_command(
   last_command = mapped;
   last_command_time = now();
   streaming = true;
+  if (path_streaming(arm, false)) {
+    RCLCPP_INFO(
+        get_logger(),
+        "%s absolute command takes over; invalidating relative teleop session",
+        arm_name);
+    reset_teleop_session(arm);
+  }
 }
 
 void DriverNode::check_command_timeout() {
   const auto stamp = now();
   auto maybe_hold = [this, &stamp](
                         DriverCore::Arm arm, bool &streaming,
-                        std::optional<DriverCore::JointArray> &last_command,
                         rclcpp::Time &last_command_time, const char *arm_name,
                         bool absolute) {
     if (!streaming) {
       return;
     }
     if ((stamp - last_command_time).seconds() <= command_timeout_s_) {
+      return;
+    }
+    if (path_active(arm, !absolute)) {
+      // The other command path owns this arm now; holding would fight it.
+      RCLCPP_INFO(
+          get_logger(),
+          "%s command timeout (%.3f s); other command path is streaming, "
+          "skipping hold",
+          arm_name, command_timeout_s_);
+      if (absolute) {
+        reset_absolute_session(arm);
+      } else {
+        reset_teleop_session(arm);
+      }
       return;
     }
     RCLCPP_WARN(
@@ -738,16 +785,16 @@ void DriverNode::check_command_timeout() {
   };
 
   maybe_hold(
-      DriverCore::Arm::kLeft, left_streaming_, left_last_command_,
-      left_last_command_time_, "left", false);
+      DriverCore::Arm::kLeft, left_streaming_, left_last_command_time_, "left",
+      false);
   maybe_hold(
-      DriverCore::Arm::kRight, right_streaming_, right_last_command_,
-      right_last_command_time_, "right", false);
+      DriverCore::Arm::kRight, right_streaming_, right_last_command_time_,
+      "right", false);
   maybe_hold(
-      DriverCore::Arm::kLeft, left_abs_streaming_, left_abs_last_command_,
-      left_abs_last_command_time_, "left absolute", true);
+      DriverCore::Arm::kLeft, left_abs_streaming_, left_abs_last_command_time_,
+      "left absolute", true);
   maybe_hold(
-      DriverCore::Arm::kRight, right_abs_streaming_, right_abs_last_command_,
+      DriverCore::Arm::kRight, right_abs_streaming_,
       right_abs_last_command_time_, "right absolute", true);
 }
 

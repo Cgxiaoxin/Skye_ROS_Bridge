@@ -41,6 +41,8 @@ class DriverNode : public rclcpp::Node {
   static TeleopMappingMode parse_teleop_mapping_mode(const std::string &value);
   void reset_teleop_session(DriverCore::Arm arm);
   void reset_absolute_session(DriverCore::Arm arm);
+  bool path_streaming(DriverCore::Arm arm, bool absolute) const;
+  bool path_active(DriverCore::Arm arm, bool absolute) const;
 
   void handle_command(DriverCore::Arm arm, const JointState::SharedPtr message);
   void handle_absolute_command(
