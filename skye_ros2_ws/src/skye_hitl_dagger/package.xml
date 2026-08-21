@@ -16,6 +16,7 @@
   <depend>std_srvs</depend>
   <exec_depend>rosidl_default_runtime</exec_depend>
   <exec_depend>rosbag2_py</exec_depend>
+  <exec_depend>rosbag2_storage_mcap</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 
   <member_of_group>rosidl_interface_packages</member_of_group>

@@ -49,14 +49,14 @@ TOPIC_MESSAGE_TYPES = {
 
 
 def next_episode_path(output_dir: str, existing: Sequence[Path] = ()) -> Path:
-    """Return the first unused episode_XXXX.mcap path."""
+    """Return the first unused rosbag2 episode directory URI."""
     root = Path(output_dir)
     used = {path.name for path in existing}
     index = 0
-    while f"episode_{index:04d}.mcap" in used or (
-            root / f"episode_{index:04d}.mcap").exists():
+    while f"episode_{index:04d}" in used or (
+            root / f"episode_{index:04d}").exists():
         index += 1
-    return root / f"episode_{index:04d}.mcap"
+    return root / f"episode_{index:04d}"
 
 
 class EpisodeRecorderNode(Node):

@@ -621,13 +621,15 @@ git commit -am "feat(hitl): add HITL launch and FACTR teleop-branch remaps"
 
 **Interfaces:**
 - Consumes: policy / teleop / gento cmds / joint_states / grippers / control_mode
-- Produces: `episode_XXXX.mcap` under `output_dir`
+- Produces: rosbag2 URI directory `output_dir/episode_XXXX/`; with `storage_id=mcap`,
+  the directory contains one or more `*.mcap` files.
 
 - [ ] **Step 1: 实现旁路录制**
 
 使用 `rosbag2_py.SequentialWriter`，storage_id=`mcap`。  
 参数：`output_dir`, `topics`（字符串数组，带默认列表）。  
 键盘或服务：`start`/`stop` 可用 `std_srvs/Trigger`：`/skye/recorder/start`, `/skye/recorder/stop`。
+主机需安装 MCAP 存储插件：`sudo apt install ros-humble-rosbag2-storage-mcap`。
 
 默认 topics：
 ```text
@@ -655,7 +657,7 @@ ros2 service call /skye/recorder/start std_srvs/srv/Trigger {}
 ros2 service call /skye/recorder/stop std_srvs/srv/Trigger {}
 ls /tmp/hitl_bags
 ```
-Expected: 生成 `.mcap` 文件。
+Expected: 生成 `episode_XXXX/` rosbag2 目录，目录内生成 `*.mcap` 文件。
 
 - [ ] **Step 3: Commit**
 
