@@ -49,3 +49,10 @@ The build failure appears environmental: `/opt/ros/humble` contains an inconsist
 - `git diff --check`: passed.
 - `ReadLints`: no diagnostics.
 - Focused pytest was attempted but blocked by the host Python/ROS mismatch (`rclpy` Humble binary is Python 3.10 while active pytest uses Python 3.13); no code test failure was observed.
+
+## Fix: P1 stale TRANSIENT_LOCAL TELEOP sync completion
+
+- Replaced timestamp gating with `_awaiting_sync` + `_seen_non_teleop_since_sync_req`.
+- Takeover clears `_teleop_state=None`; callback marks non-TELEOP only; timer completes sync on fresh TELEOP after FACTR leaves TELEOP (SYNC) and returns.
+- Added `sync_ready()` helper; tests reject stale TELEOP without prior non-TELEOP.
+- `colcon build --packages-select skye_hitl_dagger`: passed. 4/4 pytest pass (ROS-sourced).

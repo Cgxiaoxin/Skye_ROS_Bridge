@@ -27,11 +27,10 @@ def policy_gripper_value(value: float, invert: bool) -> float:
     return 1.0 - value if invert else value
 
 
-def is_post_sync_teleop(state: str, received_at: float,
-                        sync_request_time: Optional[float]) -> bool:
-    """Return whether a TELEOP state was observed after takeover."""
-    return (state == "TELEOP" and sync_request_time is not None
-            and received_at >= sync_request_time)
+def sync_ready(state: Optional[str], awaiting_sync: bool,
+               seen_non_teleop: bool) -> bool:
+    """Return whether HANDOVER_SYNC may complete after FACTR leaves then re-enters TELEOP."""
+    return awaiting_sync and seen_non_teleop and state == "TELEOP"
 
 
 class ControlArbiterNode(Node):
@@ -56,10 +55,10 @@ class ControlArbiterNode(Node):
         self._last_target: Optional[dict] = None
         self._hold_target: Optional[dict] = None
         self._sync_started: Optional[float] = None
-        self._sync_request_time: Optional[float] = None
-        self._awaiting_post_sync_teleop = False
+        self._awaiting_sync = False
+        self._seen_non_teleop_since_sync_req = False
         self._last_stale_warning = 0.0
-        self._teleop_state = ""
+        self._teleop_state: Optional[str] = None
 
         abs_qos = QoSProfile(depth=10)
         best_effort = QoSProfile(
@@ -133,9 +132,9 @@ class ControlArbiterNode(Node):
     def _intervention_callback(self, msg: String) -> None:
         if msg.data == "takeover" and self._logic.request_takeover():
             self._sync_started = time.monotonic()
-            self._sync_request_time = self._sync_started
-            self._teleop_state = ""
-            self._awaiting_post_sync_teleop = True
+            self._teleop_state = None
+            self._awaiting_sync = True
+            self._seen_non_teleop_since_sync_req = False
             sampled = self._player.sample(self._now_seconds())
             if sampled is not None:
                 self._last_target = sampled
@@ -144,23 +143,26 @@ class ControlArbiterNode(Node):
             self._publish_mode()
         elif msg.data == "return" and self._logic.request_return():
             self._sync_started = None
-            self._sync_request_time = None
-            self._awaiting_post_sync_teleop = False
+            self._awaiting_sync = False
+            self._seen_non_teleop_since_sync_req = False
             self._hold_target = None
             self._publish_teleop("switch_teleop")
             self._publish_mode()
 
     def _state_callback(self, msg: String) -> None:
         self._teleop_state = msg.data
-        if (self._logic.mode() == ControlModeState.HANDOVER_SYNC
-                and self._awaiting_post_sync_teleop
-                and is_post_sync_teleop(
-                    msg.data, time.monotonic(), self._sync_request_time)):
-            self._awaiting_post_sync_teleop = False
-            self._complete_sync()
+        if self._awaiting_sync and msg.data != "TELEOP":
+            self._seen_non_teleop_since_sync_req = True
 
     def _sync_timer_callback(self) -> None:
         if self._logic.mode() != ControlModeState.HANDOVER_SYNC:
+            return
+        if sync_ready(
+                self._teleop_state, self._awaiting_sync,
+                self._seen_non_teleop_since_sync_req):
+            self._awaiting_sync = False
+            self._seen_non_teleop_since_sync_req = False
+            self._complete_sync()
             return
         if (self._sync_started is not None
               and time.monotonic() - self._sync_started >= self._sync_timeout):
@@ -173,7 +175,8 @@ class ControlArbiterNode(Node):
             self._publish_teleop("switch_teleop")
             self._publish_mode()
             self._sync_started = None
-            self._sync_request_time = None
+            self._awaiting_sync = False
+            self._seen_non_teleop_since_sync_req = False
 
     def _joint_timer_callback(self) -> None:
         mode = self._logic.mode()
