@@ -1,4 +1,5 @@
 from __future__ import annotations
+import math
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -23,7 +24,8 @@ class ChunkPlayer:
 
     def load(self, chunk_size, dt, t0, left_joints, right_joints,
              left_gripper, right_gripper) -> bool:
-        if chunk_size != DEFAULT_STEPS or dt <= 0.0:
+        if (chunk_size != DEFAULT_STEPS or dt <= 0.0
+                or not math.isfinite(dt) or not math.isfinite(t0)):
             return False
         n = chunk_size * DOF
         if (len(left_joints) != n or len(right_joints) != n
@@ -42,14 +44,21 @@ class ChunkPlayer:
         if self._chunk is None:
             return None
         c = self._chunk
-        if t_now <= c.t0:
+        elapsed = t_now - c.t0
+        last_idx = c.steps - 1
+        horizon = last_idx * c.dt
+        eps = max(1e-9, c.dt * 1e-6)
+        if elapsed <= 0.0:
             idx = 0
             holding = False
         else:
-            idx = int((t_now - c.t0) / c.dt)
-            holding = idx >= c.steps
-            if idx >= c.steps:
-                idx = c.steps - 1
+            idx = round(elapsed / c.dt)
+            if idx >= c.steps or elapsed > horizon + eps:
+                idx = last_idx
+                holding = True
+            else:
+                idx = min(idx, last_idx)
+                holding = False
         base = idx * DOF
         return {
             "left": c.left[base:base+DOF],
