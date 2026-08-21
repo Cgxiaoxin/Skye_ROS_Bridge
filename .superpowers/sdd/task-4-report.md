@@ -35,3 +35,17 @@ The build failure appears environmental: `/opt/ros/humble` contains an inconsist
 - Matches FACTR convention in `docs/新主臂串口绑定.md`.
 
 **Out of scope (Task 6):** downstream consumer wiring for `/gento/{left,right}_joint_control_abs` is not part of Task 4; arbiter publishes abs targets during AUTONOMOUS/HANDOVER_SYNC only.
+
+## Fix: Task 4 important findings
+
+- HANDOVER_SYNC now freezes the takeover-time target, publishes it every joint/gripper tick, and rejects new chunks from replacing the live player until sync completes.
+- `/teleop/state` now uses `KEEP_LAST(1)`, `RELIABLE`, and `TRANSIENT_LOCAL` QoS.
+- Takeover clears cached teleop state and requires a post-request `TELEOP` observation before completing sync.
+
+## Verification (2026-08-21)
+
+- `colcon build --packages-select skye_hitl_dagger --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3`: passed.
+- `/usr/bin/python3 -m py_compile .../control_arbiter_node.py`: passed.
+- `git diff --check`: passed.
+- `ReadLints`: no diagnostics.
+- Focused pytest was attempted but blocked by the host Python/ROS mismatch (`rclpy` Humble binary is Python 3.10 while active pytest uses Python 3.13); no code test failure was observed.

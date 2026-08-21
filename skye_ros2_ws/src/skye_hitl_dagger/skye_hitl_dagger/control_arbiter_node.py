@@ -8,7 +8,12 @@ from typing import Optional
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
@@ -20,6 +25,13 @@ from skye_hitl_dagger.msg import ControlMode, PolicyActionChunk
 def policy_gripper_value(value: float, invert: bool) -> float:
     """Convert policy motor-space gripper values for the driver input."""
     return 1.0 - value if invert else value
+
+
+def is_post_sync_teleop(state: str, received_at: float,
+                        sync_request_time: Optional[float]) -> bool:
+    """Return whether a TELEOP state was observed after takeover."""
+    return (state == "TELEOP" and sync_request_time is not None
+            and received_at >= sync_request_time)
 
 
 class ControlArbiterNode(Node):
@@ -42,7 +54,10 @@ class ControlArbiterNode(Node):
         self._player = ChunkPlayer()
         self._policy_version = ""
         self._last_target: Optional[dict] = None
+        self._hold_target: Optional[dict] = None
         self._sync_started: Optional[float] = None
+        self._sync_request_time: Optional[float] = None
+        self._awaiting_post_sync_teleop = False
         self._last_stale_warning = 0.0
         self._teleop_state = ""
 
@@ -86,7 +101,12 @@ class ControlArbiterNode(Node):
                 msg, self._right_gripper_pub), 10)
         self.create_subscription(
             String, "/skye/intervention_cmd", self._intervention_callback, 10)
-        self.create_subscription(String, "/teleop/state", self._state_callback, 10)
+        teleop_state_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST, depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.create_subscription(
+            String, "/teleop/state", self._state_callback, teleop_state_qos)
 
         self.create_timer(1.0 / 250.0, self._joint_timer_callback)
         self.create_timer(1.0 / gripper_rate, self._gripper_timer_callback)
@@ -100,6 +120,9 @@ class ControlArbiterNode(Node):
         t0 = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
         if t0 == 0.0:
             t0 = self._now_seconds()
+        if self._logic.mode() == ControlModeState.HANDOVER_SYNC:
+            self._policy_version = msg.policy_version
+            return
         if not self._player.load(
                 msg.chunk_size, msg.dt, t0, msg.left_joints, msg.right_joints,
                 msg.left_gripper, msg.right_gripper):
@@ -110,28 +133,36 @@ class ControlArbiterNode(Node):
     def _intervention_callback(self, msg: String) -> None:
         if msg.data == "takeover" and self._logic.request_takeover():
             self._sync_started = time.monotonic()
+            self._sync_request_time = self._sync_started
+            self._teleop_state = ""
+            self._awaiting_post_sync_teleop = True
             sampled = self._player.sample(self._now_seconds())
             if sampled is not None:
                 self._last_target = sampled
+            self._hold_target = self._last_target
             self._publish_sync("switch_sync")
             self._publish_mode()
         elif msg.data == "return" and self._logic.request_return():
             self._sync_started = None
+            self._sync_request_time = None
+            self._awaiting_post_sync_teleop = False
+            self._hold_target = None
             self._publish_teleop("switch_teleop")
             self._publish_mode()
 
     def _state_callback(self, msg: String) -> None:
         self._teleop_state = msg.data
         if (self._logic.mode() == ControlModeState.HANDOVER_SYNC
-                and msg.data == "TELEOP"):
+                and self._awaiting_post_sync_teleop
+                and is_post_sync_teleop(
+                    msg.data, time.monotonic(), self._sync_request_time)):
+            self._awaiting_post_sync_teleop = False
             self._complete_sync()
 
     def _sync_timer_callback(self) -> None:
         if self._logic.mode() != ControlModeState.HANDOVER_SYNC:
             return
-        if self._teleop_state == "TELEOP":
-            self._complete_sync()
-        elif (self._sync_started is not None
+        if (self._sync_started is not None
               and time.monotonic() - self._sync_started >= self._sync_timeout):
             self.get_logger().warning(
                 "teleop sync timeout; remaining in HANDOVER_SYNC")
@@ -142,9 +173,16 @@ class ControlArbiterNode(Node):
             self._publish_teleop("switch_teleop")
             self._publish_mode()
             self._sync_started = None
+            self._sync_request_time = None
 
     def _joint_timer_callback(self) -> None:
-        if self._logic.mode() == ControlModeState.HUMAN:
+        mode = self._logic.mode()
+        if mode == ControlModeState.HUMAN:
+            return
+        if mode == ControlModeState.HANDOVER_SYNC:
+            if self._hold_target is not None:
+                self._publish_abs(
+                    self._hold_target["left"], self._hold_target["right"])
             return
         sampled = self._player.sample(self._now_seconds())
         if sampled is not None:
@@ -161,9 +199,11 @@ class ControlArbiterNode(Node):
                 self._last_target["left"], self._last_target["right"])
 
     def _gripper_timer_callback(self) -> None:
-        if self._logic.mode() == ControlModeState.HUMAN:
+        mode = self._logic.mode()
+        if mode == ControlModeState.HUMAN:
             return
-        sampled = self._player.sample(self._now_seconds())
+        sampled = (self._hold_target if mode == ControlModeState.HANDOVER_SYNC
+                   else self._player.sample(self._now_seconds()))
         if sampled is None:
             sampled = self._last_target
         if sampled is not None:
