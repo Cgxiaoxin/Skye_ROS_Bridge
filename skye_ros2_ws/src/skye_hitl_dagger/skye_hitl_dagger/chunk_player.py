@@ -45,16 +45,19 @@ class ChunkPlayer:
             return None
         c = self._chunk
         elapsed = t_now - c.t0
-        eps = 1e-12
         if elapsed <= 0.0:
-            idx = 0
-            holding = False
+            idx, holding = 0, False
         else:
-            idx = int(math.floor((elapsed + eps) / c.dt))
-            holding = elapsed + eps >= c.steps * c.dt
-            if idx >= c.steps:
+            end_t = c.steps * c.dt
+            eps = max(1e-12, abs(end_t) * 1e-9)
+            holding = elapsed + eps >= end_t
+            if holding:
                 idx = c.steps - 1
-                holding = True
+            else:
+                idx = int(elapsed / c.dt)
+                if idx >= c.steps:
+                    idx = c.steps - 1
+                    holding = True
         base = idx * DOF
         return {
             "left": c.left[base:base+DOF],

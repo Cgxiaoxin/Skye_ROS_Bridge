@@ -34,18 +34,6 @@ def test_reject_bad_size_keeps_previous():
     assert p.sample(0.0)["left"][0] == 1.0
 
 
-def test_exact_horizon_lands_on_last_step():
-    dt = 0.03
-    p = ChunkPlayer()
-    left = _flat(16, 7, 0.0)
-    left[15 * 7] = 9.9
-    p.load(16, dt, 0.0, left, _flat(16, 7, 0.0), [0.0] * 16, [0.0] * 16)
-    t_last = 15 * dt
-    s = p.sample(t_last)
-    assert s["left"][0] == 9.9
-    assert s["holding_tail"] is False
-
-
 def test_mid_interval_stays_on_current_step():
     p = ChunkPlayer()
     left = _flat(16, 7, 0.0)
@@ -56,13 +44,23 @@ def test_mid_interval_stays_on_current_step():
     assert s["holding_tail"] is False
 
 
-def test_exact_chunk_horizon_holding_tail():
+def test_just_before_next_step_stays_on_current_step():
+    p = ChunkPlayer()
+    left = _flat(16, 7, 0.0)
+    left[7] = 2.5  # step 1 marker
+    p.load(16, 0.1, 10.0, left, _flat(16, 7, 0.0), [0.0] * 16, [0.0] * 16)
+    s = p.sample(10.0 + 0.099999999999)
+    assert s["left"][0] == 0.0
+    assert s["holding_tail"] is False
+
+
+def test_exact_horizon_last_step_holding():
     dt = 0.03
     p = ChunkPlayer()
     left = _flat(16, 7, 0.0)
     left[15 * 7] = 9.9
     p.load(16, dt, 0.0, left, _flat(16, 7, 0.0), [0.0] * 16, [0.0] * 16)
-    s = p.sample(16 * dt)
+    s = p.sample(16 * 0.03)
     assert s["left"][0] == 9.9
     assert s["holding_tail"] is True
 
