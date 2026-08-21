@@ -18,5 +18,7 @@ install(DIRECTORY skye_hitl_dagger/
   PATTERN "__pycache__" EXCLUDE
 )
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
+install(PROGRAMS scripts/control_arbiter
+  DESTINATION lib/${PROJECT_NAME})
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()
