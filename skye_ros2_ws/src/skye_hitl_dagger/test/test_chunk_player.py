@@ -135,6 +135,16 @@ def test_unix_epoch_t0_last_step_holding():
     assert s["holding_tail"] is True
 
 
+def test_clear_drops_active_chunk():
+    p = ChunkPlayer()
+    p.load(16, 0.1, 0.0, _flat(16, 7, 1.0), _flat(16, 7, 1.0), [0.0] * 16,
+           [0.0] * 16)
+    assert p.has_chunk() is True
+    p.clear()
+    assert p.has_chunk() is False
+    assert p.sample(0.0) is None
+
+
 def test_reject_non_finite_dt_t0_keeps_previous():
     p = ChunkPlayer()
     p.load(16, 0.1, 0.0, _flat(16, 7, 1.0), _flat(16, 7, 1.0), [0.0] * 16, [0.0] * 16)

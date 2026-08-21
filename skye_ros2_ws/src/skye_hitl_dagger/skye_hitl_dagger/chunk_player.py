@@ -45,6 +45,13 @@ class ChunkPlayer:
         )
         return True
 
+    def clear(self) -> None:
+        """Drop the active chunk so sample() stops producing targets."""
+        self._chunk = None
+
+    def has_chunk(self) -> bool:
+        return self._chunk is not None
+
     def sample(self, t_now: float):
         if self._chunk is None:
             return None
