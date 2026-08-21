@@ -113,11 +113,11 @@ class ControlArbiterNode(Node):
             sampled = self._player.sample(self._now_seconds())
             if sampled is not None:
                 self._last_target = sampled
-            self._publish_sync("sync")
+            self._publish_sync("switch_sync")
             self._publish_mode()
         elif msg.data == "return" and self._logic.request_return():
             self._sync_started = None
-            self._publish_teleop("teleop")
+            self._publish_teleop("switch_teleop")
             self._publish_mode()
 
     def _state_callback(self, msg: String) -> None:
@@ -139,7 +139,7 @@ class ControlArbiterNode(Node):
 
     def _complete_sync(self) -> None:
         if self._logic.sync_completed():
-            self._publish_teleop("teleop")
+            self._publish_teleop("switch_teleop")
             self._publish_mode()
             self._sync_started = None
 

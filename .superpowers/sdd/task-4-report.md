@@ -27,3 +27,11 @@ Implemented and committed as `db3bba4` (`feat(hitl): add control arbiter ROS nod
 ## Concerns
 
 The build failure appears environmental: `/opt/ros/humble` contains an inconsistent `rosidl_generator_py` installation. Re-run the build after repairing that installation or using a clean ROS Humble environment.
+
+## Fix: FACTR mode switch payload (post-review)
+
+- `/mode/switch_sync` now publishes `switch_sync` (not bare `sync`).
+- `/mode/switch_teleop` now publishes `switch_teleop` (not bare `teleop`).
+- Matches FACTR convention in `docs/新主臂串口绑定.md`.
+
+**Out of scope (Task 6):** downstream consumer wiring for `/gento/{left,right}_joint_control_abs` is not part of Task 4; arbiter publishes abs targets during AUTONOMOUS/HANDOVER_SYNC only.
