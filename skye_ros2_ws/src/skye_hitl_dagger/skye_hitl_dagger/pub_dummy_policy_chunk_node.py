@@ -22,12 +22,16 @@ class DummyPolicyChunkPublisher(Node):
         self.declare_parameter("dt", 0.05)
         self.declare_parameter("policy_version", "dummy_hold")
         self.declare_parameter("joint_states_topic", "/gento/joint_states")
+        self.declare_parameter("allow_zero_fallback", False)
 
         self._dt = float(self.get_parameter("dt").value)
         self._policy_version = str(self.get_parameter("policy_version").value)
         self._joint_topic = str(self.get_parameter("joint_states_topic").value)
+        self._allow_zero_fallback = bool(
+            self.get_parameter("allow_zero_fallback").value)
         self._left = [0.0] * JOINTS_PER_ARM
         self._right = [0.0] * JOINTS_PER_ARM
+        self._has_valid_joint_states = False
         self._latest_js: Optional[JointState] = None
 
         best_effort = QoSProfile(
@@ -45,9 +49,16 @@ class DummyPolicyChunkPublisher(Node):
         self.create_subscription(
             JointState, self._joint_topic, self._joint_callback, reliable)
         self.create_timer(self._dt, self._publish_chunk)
-        self.get_logger().info(
-            f"Publishing hold chunks every {self._dt:.3f}s from {self._joint_topic}"
-        )
+        if self._allow_zero_fallback:
+            self.get_logger().warn(
+                "allow_zero_fallback=true: publishing zero hold pose until "
+                f"valid joint_states arrive on {self._joint_topic}"
+            )
+        else:
+            self.get_logger().info(
+                f"Waiting for >=14 joint positions on {self._joint_topic} "
+                f"before publishing hold chunks every {self._dt:.3f}s"
+            )
 
     def _joint_callback(self, msg: JointState) -> None:
         self._latest_js = msg
@@ -55,8 +66,16 @@ class DummyPolicyChunkPublisher(Node):
         if len(positions) >= 14:
             self._left = [float(v) for v in positions[:JOINTS_PER_ARM]]
             self._right = [float(v) for v in positions[JOINTS_PER_ARM:14]]
+            if not self._has_valid_joint_states:
+                self._has_valid_joint_states = True
+                self.get_logger().info(
+                    "Received valid joint_states; starting policy chunk publish"
+                )
 
     def _publish_chunk(self) -> None:
+        if not self._has_valid_joint_states and not self._allow_zero_fallback:
+            return
+
         msg = PolicyActionChunk()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.policy_version = self._policy_version
