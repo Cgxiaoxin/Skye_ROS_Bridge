@@ -199,6 +199,18 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
         handle_command(DriverCore::Arm::kRight, std::move(message));
       },
       control_sub_opts);
+  left_abs_command_subscription_ = create_subscription<JointState>(
+      "/left_joint_control_abs", cmd_qos,
+      [this](JointState::SharedPtr message) {
+        handle_absolute_command(DriverCore::Arm::kLeft, std::move(message));
+      },
+      control_sub_opts);
+  right_abs_command_subscription_ = create_subscription<JointState>(
+      "/right_joint_control_abs", cmd_qos,
+      [this](JointState::SharedPtr message) {
+        handle_absolute_command(DriverCore::Arm::kRight, std::move(message));
+      },
+      control_sub_opts);
 
   left_gripper_subscription_ = create_subscription<JointState>(
       "/left_teleop_gripper/ctrl", cmd_qos,
@@ -432,6 +444,16 @@ void DriverNode::reset_teleop_session(DriverCore::Arm arm) {
   right_streaming_ = false;
 }
 
+void DriverNode::reset_absolute_session(DriverCore::Arm arm) {
+  if (arm == DriverCore::Arm::kLeft) {
+    left_abs_last_command_.reset();
+    left_abs_streaming_ = false;
+    return;
+  }
+  right_abs_last_command_.reset();
+  right_abs_streaming_ = false;
+}
+
 void DriverNode::handle_set_mode(
     const std::shared_ptr<SetMode::Request> request,
     std::shared_ptr<SetMode::Response> response) {
@@ -474,6 +496,8 @@ void DriverNode::handle_set_mode(
   right_gento_ref_.reset();
   left_last_command_.reset();
   right_last_command_.reset();
+  reset_absolute_session(DriverCore::Arm::kLeft);
+  reset_absolute_session(DriverCore::Arm::kRight);
   RCLCPP_INFO(
       get_logger(), "set_mode -> %s (%d); feedback L/R=%d/%d",
       DriverCore::mode_name(*mapped), static_cast<int>(*mapped),
@@ -602,12 +626,97 @@ void DriverNode::handle_command(
   streaming = true;
 }
 
+void DriverNode::handle_absolute_command(
+    DriverCore::Arm arm, const JointState::SharedPtr message) {
+  const char *arm_name = arm == DriverCore::Arm::kLeft ? "left" : "right";
+  if (message->position.size() != DriverCore::JointArray{}.size()) {
+    RCLCPP_ERROR(
+        get_logger(),
+        "%s absolute command rejected: expected exactly 7 positions, received %zu",
+        arm_name, message->position.size());
+    return;
+  }
+
+  JointArray absolute{};
+  std::copy(message->position.begin(), message->position.end(), absolute.begin());
+
+  const auto &order =
+      arm == DriverCore::Arm::kLeft ? left_joint_order_ : right_joint_order_;
+  const auto &signs =
+      arm == DriverCore::Arm::kLeft ? left_signs_ : right_signs_;
+  const auto &offsets =
+      arm == DriverCore::Arm::kLeft ? left_offsets_ : right_offsets_;
+  const auto &minimum =
+      arm == DriverCore::Arm::kLeft ? left_minimum_ : right_minimum_;
+  const auto &maximum =
+      arm == DriverCore::Arm::kLeft ? left_maximum_ : right_maximum_;
+  auto &last_command = arm == DriverCore::Arm::kLeft
+                           ? left_abs_last_command_
+                           : right_abs_last_command_;
+  auto &last_command_time = arm == DriverCore::Arm::kLeft
+                                ? left_abs_last_command_time_
+                                : right_abs_last_command_time_;
+  auto &streaming = arm == DriverCore::Arm::kLeft
+                        ? left_abs_streaming_
+                        : right_abs_streaming_;
+
+  if (!streaming) {
+    const auto state = core_.read_state();
+    if (!state) {
+      RCLCPP_ERROR(
+          get_logger(),
+          "%s absolute command rejected: no feedback to seed command session",
+          arm_name);
+      return;
+    }
+    last_command = DriverCore::clamp_to_limits(
+        arm == DriverCore::Arm::kLeft ? state->left_position
+                                      : state->right_position,
+        minimum, maximum);
+  }
+
+  auto mapped = DriverCore::apply_joint_mapping(
+      absolute, order, signs, offsets);
+  if (const auto nan_j = DriverCore::first_non_finite(mapped)) {
+    RCLCPP_ERROR_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "%s absolute command rejected: j%zu=non-finite", arm_name,
+        *nan_j + 1);
+    last_command_time = now();
+    streaming = false;
+    return;
+  }
+
+  const auto desired = mapped;
+  mapped = DriverCore::clamp_to_limits(desired, minimum, maximum);
+  if (mapped != desired) {
+    RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "%s absolute command clamped to joint limits", arm_name);
+  }
+  mapped = DriverCore::limit_delta(mapped, *last_command, max_delta_per_cycle_);
+  mapped = DriverCore::clamp_to_limits(mapped, minimum, maximum);
+
+  if (!core_.send_position(arm, mapped)) {
+    RCLCPP_ERROR(
+        get_logger(),
+        "%s absolute command failed: SDK not ready / idle / mode rejected command",
+        arm_name);
+    return;
+  }
+
+  last_command = mapped;
+  last_command_time = now();
+  streaming = true;
+}
+
 void DriverNode::check_command_timeout() {
   const auto stamp = now();
   auto maybe_hold = [this, &stamp](
                         DriverCore::Arm arm, bool &streaming,
                         std::optional<DriverCore::JointArray> &last_command,
-                        rclcpp::Time &last_command_time, const char *arm_name) {
+                        rclcpp::Time &last_command_time, const char *arm_name,
+                        bool absolute) {
     if (!streaming) {
       return;
     }
@@ -621,15 +730,25 @@ void DriverNode::check_command_timeout() {
       RCLCPP_ERROR(
           get_logger(), "hold_current(%s) after timeout failed", arm_name);
     }
-    reset_teleop_session(arm);
+    if (absolute) {
+      reset_absolute_session(arm);
+    } else {
+      reset_teleop_session(arm);
+    }
   };
 
   maybe_hold(
       DriverCore::Arm::kLeft, left_streaming_, left_last_command_,
-      left_last_command_time_, "left");
+      left_last_command_time_, "left", false);
   maybe_hold(
       DriverCore::Arm::kRight, right_streaming_, right_last_command_,
-      right_last_command_time_, "right");
+      right_last_command_time_, "right", false);
+  maybe_hold(
+      DriverCore::Arm::kLeft, left_abs_streaming_, left_abs_last_command_,
+      left_abs_last_command_time_, "left absolute", true);
+  maybe_hold(
+      DriverCore::Arm::kRight, right_abs_streaming_, right_abs_last_command_,
+      right_abs_last_command_time_, "right absolute", true);
 }
 
 void DriverNode::handle_hold_current(
@@ -642,6 +761,8 @@ void DriverNode::handle_hold_current(
   if (ok) {
     reset_teleop_session(DriverCore::Arm::kLeft);
     reset_teleop_session(DriverCore::Arm::kRight);
+    reset_absolute_session(DriverCore::Arm::kLeft);
+    reset_absolute_session(DriverCore::Arm::kRight);
   }
 }
 
@@ -653,6 +774,8 @@ void DriverNode::handle_stop_motion(
   response->message = ok ? "motion stopped; now IDLE" : "stop_motion failed";
   reset_teleop_session(DriverCore::Arm::kLeft);
   reset_teleop_session(DriverCore::Arm::kRight);
+  reset_absolute_session(DriverCore::Arm::kLeft);
+  reset_absolute_session(DriverCore::Arm::kRight);
 }
 
 void DriverNode::handle_emergency_stop(
@@ -667,6 +790,8 @@ void DriverNode::handle_emergency_stop(
   response->message = ok ? "emergency stop issued; now IDLE" : "emergency_stop failed";
   reset_teleop_session(DriverCore::Arm::kLeft);
   reset_teleop_session(DriverCore::Arm::kRight);
+  reset_absolute_session(DriverCore::Arm::kLeft);
+  reset_absolute_session(DriverCore::Arm::kRight);
 }
 
 void DriverNode::handle_gripper_command(

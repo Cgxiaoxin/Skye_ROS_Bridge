@@ -40,8 +40,11 @@ class DriverNode : public rclcpp::Node {
   static DriverCore::ControlMode parse_control_mode(const std::string &value);
   static TeleopMappingMode parse_teleop_mapping_mode(const std::string &value);
   void reset_teleop_session(DriverCore::Arm arm);
+  void reset_absolute_session(DriverCore::Arm arm);
 
   void handle_command(DriverCore::Arm arm, const JointState::SharedPtr message);
+  void handle_absolute_command(
+      DriverCore::Arm arm, const JointState::SharedPtr message);
   void handle_gripper_command(
       DriverCore::Arm arm, const JointState::SharedPtr message);
   void handle_set_mode(
@@ -84,10 +87,16 @@ class DriverNode : public rclcpp::Node {
   std::optional<JointArray> right_gento_ref_;
   std::optional<JointArray> left_last_command_;
   std::optional<JointArray> right_last_command_;
+  std::optional<JointArray> left_abs_last_command_;
+  std::optional<JointArray> right_abs_last_command_;
   rclcpp::Time left_last_command_time_{0, 0, RCL_ROS_TIME};
   rclcpp::Time right_last_command_time_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time left_abs_last_command_time_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time right_abs_last_command_time_{0, 0, RCL_ROS_TIME};
   bool left_streaming_{false};
   bool right_streaming_{false};
+  bool left_abs_streaming_{false};
+  bool right_abs_streaming_{false};
   rclcpp::Publisher<JointState>::SharedPtr state_publisher_;
   rclcpp::Publisher<std_msgs::msg::Int16MultiArray>::SharedPtr
       robot_state_publisher_;
@@ -95,6 +104,10 @@ class DriverNode : public rclcpp::Node {
   rclcpp::Publisher<JointState>::SharedPtr right_gripper_state_publisher_;
   rclcpp::Subscription<JointState>::SharedPtr left_command_subscription_;
   rclcpp::Subscription<JointState>::SharedPtr right_command_subscription_;
+  rclcpp::Subscription<JointState>::SharedPtr
+      left_abs_command_subscription_;
+  rclcpp::Subscription<JointState>::SharedPtr
+      right_abs_command_subscription_;
   rclcpp::Subscription<JointState>::SharedPtr left_gripper_subscription_;
   rclcpp::Subscription<JointState>::SharedPtr right_gripper_subscription_;
   rclcpp::Service<SetMode>::SharedPtr set_mode_service_;

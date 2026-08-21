@@ -45,6 +45,8 @@ def generate_launch_description():
                     ("/joint_states", "/gento/joint_states"),
                     ("/left_joint_control", "/gento/left_joint_control"),
                     ("/right_joint_control", "/gento/right_joint_control"),
+                    ("/left_joint_control_abs", "/gento/left_joint_control_abs"),
+                    ("/right_joint_control_abs", "/gento/right_joint_control_abs"),
                     ("/robot_state", "/gento/robot_state"),
                     ("/set_mode", "/gento/set_mode"),
                     ("/hold_current", "/gento/hold_current"),

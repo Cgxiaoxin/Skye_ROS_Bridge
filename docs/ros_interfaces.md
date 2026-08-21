@@ -33,6 +33,8 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 | 发布 | `/gento/robot_state` | `std_msgs/Int16MultiArray` | `[left_fx_state, right_fx_state]` |
 | 订阅 | `/gento/left_joint_control` | `JointState` | 7 轴 position（rad） |
 | 订阅 | `/gento/right_joint_control` | `JointState` | 7 轴 position（rad） |
+| 订阅 | `/gento/left_joint_control_abs` | `JointState` | HITL/策略绝对角入口；跳过 relative 映射，仍执行限位与单周期增量限制 |
+| 订阅 | `/gento/right_joint_control_abs` | `JointState` | 同上 |
 | 订阅 | `/left_teleop_gripper/ctrl` | `JointState` | 夹爪指令 `position[0]∈[0,1]`。`gripper_invert:=true`（默认）时按 FACTR 扳机：1=松开/开，0=按下/闭；内部再 `1-x` 到电机 0=开 1=闭 |
 | 订阅 | `/right_teleop_gripper/ctrl` | `JointState` | 同上 |
 | 发布 | `/left_gripper/state` | `JointState` | `name=[gripper_joint]`；归一化位/速/力矩 |
@@ -67,3 +69,7 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 | `gripper_close_limit` | `0.93` | 电机空间闭合上限，左右相同。FACTR 按下(0)经 invert 后不会发到 1.0 |
 | `gripper_rate_hz` | `100.0` | 夹爪控制/状态发布频率 |
 | `gripper_feedback_timeout_ms` | `1` | 运行时 `terminal_set/get` 超时；夹爪与关节分线程，但 SDK mutex 仍串行，必须短 |
+
+`*_joint_control_abs` 是策略/HITL 的绝对关节角入口；遥操继续使用原
+`*_joint_control` relative 路径。绝对路径不会更新 teleop 的
+`leader_ref` / `gento_ref`。
