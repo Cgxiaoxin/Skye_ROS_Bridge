@@ -4,6 +4,7 @@ find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PolicyActionChunk.msg"
   "msg/ControlMode.msg"
@@ -19,6 +20,7 @@ install(DIRECTORY skye_hitl_dagger/
 )
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS scripts/control_arbiter scripts/hitl_keyboard
+  scripts/episode_recorder
   DESTINATION lib/${PROJECT_NAME})
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()
