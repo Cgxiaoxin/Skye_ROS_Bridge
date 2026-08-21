@@ -20,6 +20,10 @@ from std_msgs.msg import String
 from skye_hitl_dagger.chunk_player import ChunkPlayer
 from skye_hitl_dagger.control_mode import ControlArbiterLogic, ControlModeState
 from skye_hitl_dagger.msg import ControlMode, PolicyActionChunk
+from skye_hitl_dagger.teleop_sync import TeleopHandshake
+
+JOINTS_PER_ARM = 7
+MODE_COMMANDS = ("switch_sync", "switch_teleop", "switch_stop")
 
 
 def policy_gripper_value(value: float, invert: bool) -> float:
@@ -27,10 +31,11 @@ def policy_gripper_value(value: float, invert: bool) -> float:
     return 1.0 - value if invert else value
 
 
-def sync_ready(state: Optional[str], awaiting_sync: bool,
-               seen_non_teleop: bool) -> bool:
-    """Return whether HANDOVER_SYNC may complete after FACTR leaves then re-enters TELEOP."""
-    return awaiting_sync and seen_non_teleop and state == "TELEOP"
+def chunk_is_fresh(stamp_s: float, return_time: Optional[float]) -> bool:
+    """Reject chunks produced before the last return to AUTONOMOUS."""
+    if return_time is None:
+        return True
+    return stamp_s > 0.0 and stamp_s >= return_time
 
 
 class ControlArbiterNode(Node):
@@ -40,6 +45,9 @@ class ControlArbiterNode(Node):
         self.declare_parameter("sync_timeout_s", 5.0)
         self.declare_parameter("chunk_stale_warn_s", 1.5)
         self.declare_parameter("gripper_rate_hz", 100.0)
+        self.declare_parameter("mode_publish_hz", 5.0)
+        self.declare_parameter("return_mode_command", "switch_sync")
+        self.declare_parameter("joint_states_topic", "/gento/joint_states")
 
         self._invert_gripper = bool(
             self.get_parameter("gripper_invert_on_driver").value)
@@ -48,58 +56,84 @@ class ControlArbiterNode(Node):
             self.get_parameter("chunk_stale_warn_s").value)
         gripper_rate = max(1.0, float(
             self.get_parameter("gripper_rate_hz").value))
+        mode_rate = max(0.1, float(self.get_parameter("mode_publish_hz").value))
+        self._return_command = str(
+            self.get_parameter("return_mode_command").value)
+        if self._return_command not in ("switch_sync", "switch_stop"):
+            self.get_logger().warning(
+                f"return_mode_command={self._return_command} unsupported; "
+                "falling back to switch_sync")
+            self._return_command = "switch_sync"
+        joint_states_topic = str(
+            self.get_parameter("joint_states_topic").value)
 
         self._logic = ControlArbiterLogic()
         self._player = ChunkPlayer()
+        self._handshake = TeleopHandshake()
         self._policy_version = ""
         self._last_target: Optional[dict] = None
         self._hold_target: Optional[dict] = None
         self._sync_started: Optional[float] = None
-        self._awaiting_sync = False
-        self._seen_non_teleop_since_sync_req = False
+        self._return_time: Optional[float] = None
         self._last_stale_warning = 0.0
-        self._teleop_state: Optional[str] = None
+        self._joint_feedback: Optional[dict] = None
 
-        abs_qos = QoSProfile(depth=10)
-        best_effort = QoSProfile(
-            depth=1, reliability=ReliabilityPolicy.BEST_EFFORT,
+        # Match the driver command QoS: latest sample only, no retransmission.
+        cmd_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST, depth=1,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE)
+        mode_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST, depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        state_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST, depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE)
         self._left_abs_pub = self.create_publisher(
-            JointState, "/gento/left_joint_control_abs", abs_qos)
+            JointState, "/gento/left_joint_control_abs", cmd_qos)
         self._right_abs_pub = self.create_publisher(
-            JointState, "/gento/right_joint_control_abs", abs_qos)
+            JointState, "/gento/right_joint_control_abs", cmd_qos)
         self._left_pub = self.create_publisher(
-            JointState, "/gento/left_joint_control", abs_qos)
+            JointState, "/gento/left_joint_control", cmd_qos)
         self._right_pub = self.create_publisher(
-            JointState, "/gento/right_joint_control", abs_qos)
+            JointState, "/gento/right_joint_control", cmd_qos)
         self._left_gripper_pub = self.create_publisher(
-            JointState, "/left_teleop_gripper/ctrl", abs_qos)
+            JointState, "/left_teleop_gripper/ctrl", cmd_qos)
         self._right_gripper_pub = self.create_publisher(
-            JointState, "/right_teleop_gripper/ctrl", abs_qos)
-        self._sync_pub = self.create_publisher(String, "/mode/switch_sync", 10)
-        self._teleop_pub = self.create_publisher(
-            String, "/mode/switch_teleop", 10)
-        self._mode_pub = self.create_publisher(ControlMode, "/skye/control_mode", 10)
+            JointState, "/right_teleop_gripper/ctrl", cmd_qos)
+        self._mode_command_pubs = {
+            name: self.create_publisher(String, f"/mode/{name}", 10)
+            for name in MODE_COMMANDS
+        }
+        self._mode_pub = self.create_publisher(
+            ControlMode, "/skye/control_mode", mode_qos)
 
         self.create_subscription(
             PolicyActionChunk, "/skye/policy_action", self._policy_callback,
-            best_effort)
+            cmd_qos)
         self.create_subscription(
             JointState, "/skye/teleop_action_left",
-            lambda msg: self._teleop_joint_callback(msg, self._left_pub), 10)
+            lambda msg: self._teleop_joint_callback(msg, self._left_pub),
+            cmd_qos)
         self.create_subscription(
             JointState, "/skye/teleop_action_right",
-            lambda msg: self._teleop_joint_callback(msg, self._right_pub), 10)
+            lambda msg: self._teleop_joint_callback(msg, self._right_pub),
+            cmd_qos)
         self.create_subscription(
             JointState, "/skye/teleop_gripper_left",
             lambda msg: self._teleop_gripper_callback(
-                msg, self._left_gripper_pub), 10)
+                msg, self._left_gripper_pub), cmd_qos)
         self.create_subscription(
             JointState, "/skye/teleop_gripper_right",
             lambda msg: self._teleop_gripper_callback(
-                msg, self._right_gripper_pub), 10)
+                msg, self._right_gripper_pub), cmd_qos)
         self.create_subscription(
             String, "/skye/intervention_cmd", self._intervention_callback, 10)
+        self.create_subscription(
+            JointState, joint_states_topic, self._joint_states_callback,
+            state_qos)
         teleop_state_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST, depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
@@ -110,73 +144,105 @@ class ControlArbiterNode(Node):
         self.create_timer(1.0 / 250.0, self._joint_timer_callback)
         self.create_timer(1.0 / gripper_rate, self._gripper_timer_callback)
         self.create_timer(0.05, self._sync_timer_callback)
+        self.create_timer(1.0 / mode_rate, self._publish_mode)
         self._publish_mode()
 
     def _now_seconds(self) -> float:
         return self.get_clock().now().nanoseconds * 1e-9
 
     def _policy_callback(self, msg: PolicyActionChunk) -> None:
-        t0 = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-        if t0 == 0.0:
-            t0 = self._now_seconds()
-        if self._logic.mode() == ControlModeState.HANDOVER_SYNC:
+        if self._logic.mode() != ControlModeState.AUTONOMOUS:
             self._policy_version = msg.policy_version
             return
+        stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        if not chunk_is_fresh(stamp, self._return_time):
+            self.get_logger().warning(
+                "discarding policy chunk stamped before the last return to "
+                "AUTONOMOUS; holding pose until a fresh chunk arrives",
+                throttle_duration_sec=1.0)
+            return
+        t0 = stamp if stamp > 0.0 else self._now_seconds()
         if not self._player.load(
                 msg.chunk_size, msg.dt, t0, msg.left_joints, msg.right_joints,
                 msg.left_gripper, msg.right_gripper):
             self.get_logger().error("rejecting invalid policy action chunk")
             return
+        self._return_time = None
         self._policy_version = msg.policy_version
 
     def _intervention_callback(self, msg: String) -> None:
         if msg.data == "takeover" and self._logic.request_takeover():
             self._sync_started = time.monotonic()
-            self._teleop_state = None
-            self._awaiting_sync = True
-            self._seen_non_teleop_since_sync_req = False
             sampled = self._player.sample(self._now_seconds())
             if sampled is not None:
                 self._last_target = sampled
-            self._hold_target = self._last_target
-            self._publish_sync("switch_sync")
+            self._hold_target = self._last_target or self._feedback_target()
+            self._player.clear()
+            self._publish_mode_command("switch_sync")
+            self._handshake.start_sync()
             self._publish_mode()
         elif msg.data == "return" and self._logic.request_return():
             self._sync_started = None
-            self._awaiting_sync = False
-            self._seen_non_teleop_since_sync_req = False
-            self._hold_target = None
-            self._publish_teleop("switch_teleop")
+            self._handshake.reset()
+            self._player.clear()
+            self._return_time = self._now_seconds()
+            self._hold_target = self._feedback_target() or self._hold_target
+            self._last_target = self._hold_target
+            self._publish_mode_command(self._return_command)
             self._publish_mode()
 
+    def _joint_states_callback(self, msg: JointState) -> None:
+        positions = list(msg.position)
+        if len(positions) < 2 * JOINTS_PER_ARM:
+            return
+        self._joint_feedback = {
+            "left": [float(v) for v in positions[:JOINTS_PER_ARM]],
+            "right": [float(v) for v in
+                      positions[JOINTS_PER_ARM:2 * JOINTS_PER_ARM]],
+        }
+
+    def _feedback_target(self) -> Optional[dict]:
+        """Build a hold target from the follower feedback pose."""
+        if self._joint_feedback is None:
+            return None
+        previous = self._last_target or {}
+        return {
+            "left": list(self._joint_feedback["left"]),
+            "right": list(self._joint_feedback["right"]),
+            "left_gripper": previous.get("left_gripper", 0.0),
+            "right_gripper": previous.get("right_gripper", 0.0),
+            "holding_tail": True,
+        }
+
     def _state_callback(self, msg: String) -> None:
-        self._teleop_state = msg.data
-        if self._awaiting_sync and msg.data != "TELEOP":
-            self._seen_non_teleop_since_sync_req = True
+        self._handshake.on_state(msg.data)
 
     def _sync_timer_callback(self) -> None:
         if self._logic.mode() != ControlModeState.HANDOVER_SYNC:
             return
-        if sync_ready(
-                self._teleop_state, self._awaiting_sync,
-                self._seen_non_teleop_since_sync_req):
-            self._awaiting_sync = False
-            self._seen_non_teleop_since_sync_req = False
+        if self._handshake.aligned_ready():
+            self._sync_started = time.monotonic()
+            self._publish_mode_command("switch_teleop")
+            self._handshake.start_teleop()
+            return
+        if self._handshake.teleop_ready():
             self._complete_sync()
             return
         if (self._sync_started is not None
               and time.monotonic() - self._sync_started >= self._sync_timeout):
+            pending = self._handshake.pending_command()
             self.get_logger().warning(
-                "teleop sync timeout; remaining in HANDOVER_SYNC")
+                f"teleop sync timeout in state {self._handshake.state()}; "
+                f"re-publishing {pending}")
+            if pending is not None:
+                self._publish_mode_command(pending)
             self._sync_started = time.monotonic()
 
     def _complete_sync(self) -> None:
         if self._logic.sync_completed():
-            self._publish_teleop("switch_teleop")
-            self._publish_mode()
+            self._handshake.reset()
             self._sync_started = None
-            self._awaiting_sync = False
-            self._seen_non_teleop_since_sync_req = False
+            self._publish_mode()
 
     def _joint_timer_callback(self) -> None:
         mode = self._logic.mode()
@@ -205,15 +271,20 @@ class ControlArbiterNode(Node):
         mode = self._logic.mode()
         if mode == ControlModeState.HUMAN:
             return
+        if mode == ControlModeState.AUTONOMOUS and self._return_time is not None:
+            # Human owned the gripper until the return; do not fight it before
+            # the policy sends its first post-return chunk.
+            return
         sampled = (self._hold_target if mode == ControlModeState.HANDOVER_SYNC
                    else self._player.sample(self._now_seconds()))
         if sampled is None:
             sampled = self._last_target
-        if sampled is not None:
-            self._publish_gripper(
-                policy_gripper_value(sampled["left_gripper"], self._invert_gripper),
-                policy_gripper_value(
-                    sampled["right_gripper"], self._invert_gripper))
+        if sampled is None or "left_gripper" not in sampled:
+            return
+        self._publish_gripper(
+            policy_gripper_value(sampled["left_gripper"], self._invert_gripper),
+            policy_gripper_value(
+                sampled["right_gripper"], self._invert_gripper))
 
     def _teleop_joint_callback(self, msg: JointState, publisher) -> None:
         if self._logic.mode() == ControlModeState.HUMAN:
@@ -240,11 +311,12 @@ class ControlArbiterNode(Node):
         msg.position = list(position)
         return msg
 
-    def _publish_sync(self, value: str) -> None:
-        self._sync_pub.publish(String(data=value))
-
-    def _publish_teleop(self, value: str) -> None:
-        self._teleop_pub.publish(String(data=value))
+    def _publish_mode_command(self, value: str) -> None:
+        publisher = self._mode_command_pubs.get(value)
+        if publisher is None:
+            self.get_logger().error(f"unknown mode command {value}")
+            return
+        publisher.publish(String(data=value))
 
     def _publish_mode(self) -> None:
         mode = ControlMode()
