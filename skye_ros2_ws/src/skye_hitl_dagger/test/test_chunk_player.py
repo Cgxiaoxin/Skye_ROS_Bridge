@@ -54,6 +54,17 @@ def test_just_before_next_step_stays_on_current_step():
     assert s["holding_tail"] is False
 
 
+def test_exact_last_step_start_at_15dt():
+    dt = 0.03
+    p = ChunkPlayer()
+    left = _flat(16, 7, 0.0)
+    left[15 * 7] = 3.14
+    p.load(16, dt, 0.0, left, _flat(16, 7, 0.0), [0.0] * 16, [0.0] * 16)
+    s = p.sample(15 * 0.03)
+    assert s["left"][0] == 3.14
+    assert s["holding_tail"] is False
+
+
 def test_exact_horizon_last_step_holding():
     dt = 0.03
     p = ChunkPlayer()

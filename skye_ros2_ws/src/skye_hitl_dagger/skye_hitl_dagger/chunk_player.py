@@ -49,15 +49,16 @@ class ChunkPlayer:
             idx, holding = 0, False
         else:
             end_t = c.steps * c.dt
-            eps = max(1e-12, abs(end_t) * 1e-9)
+            eps = max(1e-12, abs(c.dt) * 1e-9, abs(end_t) * 1e-9)
             holding = elapsed + eps >= end_t
+            idx = 0
+            for i in range(1, c.steps):
+                if elapsed >= i * c.dt:
+                    idx = i
+                else:
+                    break
             if holding:
                 idx = c.steps - 1
-            else:
-                idx = int(elapsed / c.dt)
-                if idx >= c.steps:
-                    idx = c.steps - 1
-                    holding = True
         base = idx * DOF
         return {
             "left": c.left[base:base+DOF],
