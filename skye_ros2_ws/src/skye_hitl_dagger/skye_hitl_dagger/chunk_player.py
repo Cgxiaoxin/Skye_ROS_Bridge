@@ -49,14 +49,14 @@ class ChunkPlayer:
         if self._chunk is None:
             return None
         c = self._chunk
-        eps = max(1e-12, abs(c.dt) * 1e-9)
         if t_now <= c.step_t0s[0]:
             idx, holding = 0, False
         else:
+            eps = max(1e-12, abs(c.dt) * 1e-9, abs(c.end_t) * 1e-9)
             holding = t_now + eps >= c.end_t
             idx = 0
             for i in range(1, c.steps):
-                if t_now + eps >= c.step_t0s[i]:
+                if t_now >= c.step_t0s[i]:
                     idx = i
                 else:
                     break

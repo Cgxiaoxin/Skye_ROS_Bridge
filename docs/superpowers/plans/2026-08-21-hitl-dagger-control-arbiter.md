@@ -265,7 +265,7 @@ git commit -m "feat(hitl): add control arbiter state machine logic"
   - `sample(t_now: float) -> dict | None` with keys `left`, `right`, `left_gripper`, `right_gripper`, `holding_tail: bool`
   - Invalid size → `load` returns False，保持上一有效 chunk
 
-- [ ] **Step 1: 写失败单测**
+- [x] **Step 1: 写失败单测**
 
 ```python
 from skye_hitl_dagger.chunk_player import ChunkPlayer
@@ -298,12 +298,12 @@ def test_reject_bad_size_keeps_previous():
     assert p.sample(0.0)["left"][0] == 1.0
 ```
 
-- [ ] **Step 2: 跑测确认失败**
+- [x] **Step 2: 跑测确认失败**
 
 Run: `python3 -m pytest src/skye_hitl_dagger/test/test_chunk_player.py -v`  
 Expected: FAIL
 
-- [ ] **Step 3: 最小实现**
+- [x] **Step 3: 最小实现**
 
 ```python
 # skye_hitl_dagger/chunk_player.py
@@ -367,11 +367,13 @@ class ChunkPlayer:
         }
 ```
 
-- [ ] **Step 4: 跑测通过**
+- [x] **Step 4: 跑测通过**
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
+
+**Report (Task 3 polish):** step index uses exact `t_now >= step_t0s[i]` (no eps); eps retained only for `holding_tail` vs `end_t` (`max(1e-12, |dt|·1e-9, |end_t|·1e-9)`). Precomputed `step_t0s`/`end_t` on load for large `t0`. 12/12 pytest pass incl. `step_t0s[1]-1e-15 → step 0`.
 
 ```bash
 git commit -am "feat(hitl): add policy chunk player with hold-last-step"

@@ -44,6 +44,16 @@ def test_mid_interval_stays_on_current_step():
     assert s["holding_tail"] is False
 
 
+def test_just_before_step1_boundary_stays_on_step0():
+    p = ChunkPlayer()
+    left = _flat(16, 7, 0.0)
+    left[7] = 2.5  # step 1 marker
+    p.load(16, 0.1, 10.0, left, _flat(16, 7, 0.0), [0.0] * 16, [0.0] * 16)
+    s = p.sample(10.1 - 1e-15)
+    assert s["left"][0] == 0.0
+    assert s["holding_tail"] is False
+
+
 def test_just_before_next_step_stays_on_current_step():
     p = ChunkPlayer()
     left = _flat(16, 7, 0.0)
