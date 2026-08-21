@@ -41,15 +41,32 @@ for t in /skye/policy_action /skye/intervention_cmd /skye/control_mode \
   grep -qx "$t" <<<"$TOPICS" || { echo "FAIL: missing topic $t"; exit 1; }
 done
 
-echo "== P6.1: publish dummy policy chunk =="
+echo "== P6.1: publish dummy policy chunk + wait abs =="
+export ABS_FILE
 python3 <<'PY'
+import os
+import time
+
 import rclpy
 from rclpy.node import Node
+from sensor_msgs.msg import JointState
 from skye_hitl_dagger.msg import PolicyActionChunk
+
+ABS_FILE = os.environ["ABS_FILE"]
 
 rclpy.init()
 node = Node("verify_hitl_p61_dummy_pub")
 pub = node.create_publisher(PolicyActionChunk, "/skye/policy_action", 1)
+abs_msgs: list[JointState] = []
+
+
+def on_abs(msg: JointState) -> None:
+    if msg.position:
+        abs_msgs.append(msg)
+
+
+node.create_subscription(
+    JointState, "/gento/left_joint_control_abs", on_abs, 10)
 msg = PolicyActionChunk()
 msg.policy_version = "verify_p61"
 msg.chunk_size = 16
@@ -58,18 +75,34 @@ msg.left_joints = [0.1] * 112
 msg.right_joints = [-0.1] * 112
 msg.left_gripper = [0.0] * 16
 msg.right_gripper = [0.0] * 16
-for _ in range(10):
+
+match_deadline = time.monotonic() + 2.0
+while time.monotonic() < match_deadline:
+    rclpy.spin_once(node, timeout_sec=0.1)
+    if pub.get_subscription_count() > 0:
+        break
+else:
+    time.sleep(2.0)
+
+publish_end = time.monotonic() + 3.0
+while time.monotonic() < publish_end and not abs_msgs:
     msg.header.stamp = node.get_clock().now().to_msg()
     pub.publish(msg)
     rclpy.spin_once(node, timeout_sec=0.05)
+
+if not abs_msgs:
+    raise SystemExit("FAIL: no messages on /gento/left_joint_control_abs")
+
+with open(ABS_FILE, "w", encoding="utf-8") as f:
+    f.write("position:\n")
+    for p in abs_msgs[0].position:
+        f.write(f"- {p}\n")
+
 node.destroy_node()
 rclpy.shutdown()
 PY
 
-sleep 0.5
 echo "== P6.1: abs joint control sample =="
-timeout 5s ros2 topic echo --once /gento/left_joint_control_abs \
-  2>/dev/null | tee "$ABS_FILE"
 grep -q 'position:' "$ABS_FILE" \
   || { echo "FAIL: no messages on /gento/left_joint_control_abs"; exit 1; }
 
