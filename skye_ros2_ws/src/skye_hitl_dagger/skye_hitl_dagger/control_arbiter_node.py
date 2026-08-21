@@ -31,11 +31,22 @@ def policy_gripper_value(value: float, invert: bool) -> float:
     return 1.0 - value if invert else value
 
 
-def chunk_is_fresh(stamp_s: float, return_time: Optional[float]) -> bool:
-    """Reject chunks produced before the last return to AUTONOMOUS."""
+def chunk_is_fresh(
+        stamp_s: float, return_time: Optional[float],
+        receive_time: Optional[float] = None,
+        return_wall_time: Optional[float] = None,
+        now_wall_time: Optional[float] = None,
+        fallback_after_s: float = 2.0) -> bool:
+    """Accept post-return chunks by stamp, then fall back to receive time."""
     if return_time is None:
         return True
-    return stamp_s > 0.0 and stamp_s >= return_time
+    if stamp_s > 0.0 and stamp_s >= return_time:
+        return True
+    if stamp_s == 0.0 and receive_time is not None:
+        return (return_wall_time is None
+                or receive_time >= return_wall_time)
+    return (return_wall_time is not None and now_wall_time is not None
+            and now_wall_time - return_wall_time >= fallback_after_s)
 
 
 class ControlArbiterNode(Node):
@@ -44,6 +55,8 @@ class ControlArbiterNode(Node):
         self.declare_parameter("gripper_invert_on_driver", True)
         self.declare_parameter("sync_timeout_s", 5.0)
         self.declare_parameter("chunk_stale_warn_s", 1.5)
+        self.declare_parameter("chunk_freshness_fallback_s", 2.0)
+        self.declare_parameter("feedback_stale_s", 0.2)
         self.declare_parameter("gripper_rate_hz", 100.0)
         self.declare_parameter("mode_publish_hz", 5.0)
         self.declare_parameter("return_mode_command", "switch_sync")
@@ -54,6 +67,10 @@ class ControlArbiterNode(Node):
         self._sync_timeout = float(self.get_parameter("sync_timeout_s").value)
         self._stale_warn = float(
             self.get_parameter("chunk_stale_warn_s").value)
+        self._freshness_fallback = float(
+            self.get_parameter("chunk_freshness_fallback_s").value)
+        self._feedback_stale = float(
+            self.get_parameter("feedback_stale_s").value)
         gripper_rate = max(1.0, float(
             self.get_parameter("gripper_rate_hz").value))
         mode_rate = max(0.1, float(self.get_parameter("mode_publish_hz").value))
@@ -75,8 +92,11 @@ class ControlArbiterNode(Node):
         self._hold_target: Optional[dict] = None
         self._sync_started: Optional[float] = None
         self._return_time: Optional[float] = None
+        self._return_wall_time: Optional[float] = None
+        self._chunk_fallback_warned = False
         self._last_stale_warning = 0.0
         self._joint_feedback: Optional[dict] = None
+        self._feedback_received_at: Optional[float] = None
 
         # Match the driver command QoS: latest sample only, no retransmission.
         cmd_qos = QoSProfile(
@@ -155,19 +175,31 @@ class ControlArbiterNode(Node):
             self._policy_version = msg.policy_version
             return
         stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-        if not chunk_is_fresh(stamp, self._return_time):
+        received_at = time.monotonic()
+        fresh_by_stamp = self._return_time is None or (
+            stamp > 0.0 and stamp >= self._return_time)
+        if not chunk_is_fresh(
+                stamp, self._return_time, received_at, self._return_wall_time,
+                received_at, self._freshness_fallback):
             self.get_logger().warning(
                 "discarding policy chunk stamped before the last return to "
                 "AUTONOMOUS; holding pose until a fresh chunk arrives",
                 throttle_duration_sec=1.0)
             return
-        t0 = stamp if stamp > 0.0 else self._now_seconds()
+        if not fresh_by_stamp and not self._chunk_fallback_warned:
+            self.get_logger().warning(
+                "no fresh stamped policy chunk after return; "
+                "using receive time for freshness")
+            self._chunk_fallback_warned = True
+        t0 = stamp if fresh_by_stamp else self._now_seconds()
         if not self._player.load(
                 msg.chunk_size, msg.dt, t0, msg.left_joints, msg.right_joints,
                 msg.left_gripper, msg.right_gripper):
             self.get_logger().error("rejecting invalid policy action chunk")
             return
         self._return_time = None
+        self._return_wall_time = None
+        self._chunk_fallback_warned = False
         self._policy_version = msg.policy_version
 
     def _intervention_callback(self, msg: String) -> None:
@@ -186,8 +218,11 @@ class ControlArbiterNode(Node):
             self._handshake.reset()
             self._player.clear()
             self._return_time = self._now_seconds()
-            self._hold_target = self._feedback_target() or self._hold_target
-            self._last_target = self._hold_target
+            self._return_wall_time = time.monotonic()
+            self._chunk_fallback_warned = False
+            feedback = self._feedback_target() if self._feedback_is_recent() else None
+            self._hold_target = feedback
+            self._last_target = feedback
             self._publish_mode_command(self._return_command)
             self._publish_mode()
 
@@ -200,6 +235,16 @@ class ControlArbiterNode(Node):
             "right": [float(v) for v in
                       positions[JOINTS_PER_ARM:2 * JOINTS_PER_ARM]],
         }
+        self._feedback_received_at = time.monotonic()
+        if (self._logic.mode() == ControlModeState.AUTONOMOUS
+                and self._return_time is not None):
+            self._hold_target = self._feedback_target()
+            self._last_target = self._hold_target
+
+    def _feedback_is_recent(self) -> bool:
+        return (self._feedback_received_at is not None
+                and time.monotonic() - self._feedback_received_at
+                <= self._feedback_stale)
 
     def _feedback_target(self) -> Optional[dict]:
         """Build a hold target from the follower feedback pose."""
@@ -254,6 +299,8 @@ class ControlArbiterNode(Node):
                     self._hold_target["left"], self._hold_target["right"])
             return
         sampled = self._player.sample(self._now_seconds())
+        if self._return_time is not None and self._hold_target is None:
+            return
         if sampled is not None:
             self._last_target = sampled
             self._publish_abs(sampled["left"], sampled["right"])

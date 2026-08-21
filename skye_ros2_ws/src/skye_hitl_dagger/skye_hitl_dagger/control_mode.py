@@ -34,7 +34,8 @@ class ControlArbiterLogic:
         return True
 
     def request_return(self) -> bool:
-        if self._mode != ControlModeState.HUMAN:
+        if self._mode not in (
+                ControlModeState.HUMAN, ControlModeState.HANDOVER_SYNC):
             return False
         self._mode = ControlModeState.AUTONOMOUS
         return True

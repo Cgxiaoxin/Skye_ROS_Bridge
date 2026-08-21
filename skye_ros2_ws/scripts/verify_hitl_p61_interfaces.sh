@@ -49,6 +49,12 @@ import time
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
 from sensor_msgs.msg import JointState
 from skye_hitl_dagger.msg import PolicyActionChunk
 
@@ -56,7 +62,12 @@ ABS_FILE = os.environ["ABS_FILE"]
 
 rclpy.init()
 node = Node("verify_hitl_p61_dummy_pub")
-pub = node.create_publisher(PolicyActionChunk, "/skye/policy_action", 1)
+best_effort = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST, depth=1,
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    durability=DurabilityPolicy.VOLATILE)
+pub = node.create_publisher(
+    PolicyActionChunk, "/skye/policy_action", best_effort)
 abs_msgs: list[JointState] = []
 
 
@@ -66,7 +77,7 @@ def on_abs(msg: JointState) -> None:
 
 
 node.create_subscription(
-    JointState, "/gento/left_joint_control_abs", on_abs, 10)
+    JointState, "/gento/left_joint_control_abs", on_abs, best_effort)
 msg = PolicyActionChunk()
 msg.policy_version = "verify_p61"
 msg.chunk_size = 16
@@ -122,17 +133,28 @@ python3 <<'PY'
 import time
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
 from std_msgs.msg import String
 from skye_hitl_dagger.msg import ControlMode
 
 rclpy.init()
 node = Node("verify_hitl_p61_takeover_check")
 seen = []
+control_mode_qos = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST, depth=1,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL)
 
 def on_mode(msg: ControlMode) -> None:
     seen.append(msg.mode)
 
-node.create_subscription(ControlMode, "/skye/control_mode", on_mode, 10)
+node.create_subscription(
+    ControlMode, "/skye/control_mode", on_mode, control_mode_qos)
 pub = node.create_publisher(String, "/skye/intervention_cmd", 10)
 match_deadline = time.monotonic() + 2.0
 while time.monotonic() < match_deadline:

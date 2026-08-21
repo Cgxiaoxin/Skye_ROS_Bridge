@@ -28,3 +28,15 @@ def test_chunk_accepted_when_stamped_at_or_after_return():
 
 def test_unstamped_chunk_rejected_while_return_pending():
     assert not chunk_is_fresh(0.0, 10.0)
+
+
+def test_unstamped_chunk_uses_receive_time():
+    assert chunk_is_fresh(0.0, 10.0, 12.0, 11.0, 12.0)
+
+
+def test_stale_stamp_uses_receive_time_after_fallback():
+    assert chunk_is_fresh(9.0, 10.0, 13.1, 10.0, 12.0, 2.0)
+
+
+def test_stale_stamp_rejected_before_fallback():
+    assert not chunk_is_fresh(9.0, 10.0, 11.0, 10.0, 11.5, 2.0)

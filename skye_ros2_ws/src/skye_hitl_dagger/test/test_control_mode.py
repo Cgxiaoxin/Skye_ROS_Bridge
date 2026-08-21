@@ -26,6 +26,13 @@ def test_return_only_from_human():
     assert logic.mode() == ControlModeState.AUTONOMOUS
 
 
+def test_return_aborts_handover_sync():
+    logic = ControlArbiterLogic()
+    logic.request_takeover()
+    assert logic.request_return() is True
+    assert logic.mode() == ControlModeState.AUTONOMOUS
+
+
 def test_takeover_ignored_when_not_autonomous():
     logic = ControlArbiterLogic()
     logic.request_takeover()

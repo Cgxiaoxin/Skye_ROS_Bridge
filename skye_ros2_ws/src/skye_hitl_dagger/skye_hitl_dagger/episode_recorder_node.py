@@ -9,6 +9,12 @@ from typing import Dict, Sequence
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
 from rclpy.serialization import serialize_message
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
@@ -79,12 +85,27 @@ class EpisodeRecorderNode(Node):
         self._episode_path: Path | None = None
         self._topic_types: Dict[str, str] = {}
         self._subscriptions = []
+        command_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST, depth=1,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE)
+        state_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST, depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE)
+        control_mode_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST, depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL)
         for topic in self._topics:
             message_type = TOPIC_MESSAGE_TYPES[topic]
+            qos = (control_mode_qos if topic == "/skye/control_mode"
+                   else state_qos if topic == "/gento/joint_states"
+                   else command_qos)
             self._subscriptions.append(
                 self.create_subscription(
                     message_type, topic,
-                    lambda msg, topic=topic: self._record(topic, msg), 10))
+                    lambda msg, topic=topic: self._record(topic, msg), qos))
 
         self.create_service(Trigger, "/skye/recorder/start", self._start)
         self.create_service(Trigger, "/skye/recorder/stop", self._stop)
