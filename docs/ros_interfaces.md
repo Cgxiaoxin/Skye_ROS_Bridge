@@ -73,3 +73,21 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 `*_joint_control_abs` 是策略/HITL 的绝对关节角入口；遥操继续使用原
 `*_joint_control` relative 路径。绝对路径不会更新 teleop 的
 `leader_ref` / `gento_ref`。
+
+## HITL DAgger（`hitl_enable:=true`）
+
+无真机验收：`skye_ros2_ws/scripts/verify_hitl_p61_interfaces.sh`（起 arbiter、假 chunk、
+`takeover`、查 `/skye/control_mode` 与 abs topic）。
+
+| Topic | 类型 | 说明 |
+|-------|------|------|
+| `/skye/policy_action` | `skye_hitl_dagger/msg/PolicyActionChunk` | VLA/假策略 → arbiter；16 步绝对角 chunk |
+| `/skye/teleop_action_left` / `_right` | `sensor_msgs/JointState` | FACTR 遥操 → arbiter（仅 HUMAN 转发到 `/gento/*`） |
+| `/skye/teleop_gripper_left` / `_right` | `sensor_msgs/JointState` | FACTR 夹爪 → arbiter |
+| `/skye/intervention_cmd` | `std_msgs/String` | `takeover` / `return`（键盘 `q`/`w`） |
+| `/skye/control_mode` | `skye_hitl_dagger/msg/ControlMode` | `mode`=`AUTONOMOUS`\|`HANDOVER_SYNC`\|`HUMAN`；含 `source`/`policy_version` |
+| `/skye/recorder/start` / `stop` | `std_srvs/Trigger` | mcap episode 录制（P6.3） |
+
+AUTONOMOUS / hold：`control_arbiter` 写 `/gento/*_joint_control_abs`；HUMAN 写
+`/gento/*_joint_control`（relative）。设计细节见
+`docs/superpowers/specs/2026-08-21-hitl-dagger-control-arbiter-design.md`。
