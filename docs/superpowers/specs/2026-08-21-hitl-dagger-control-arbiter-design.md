@@ -1,7 +1,7 @@
 # HITL DAgger：control_arbiter + 数采接入设计
 
 **日期：** 2026-08-21  
-**状态：** 设计已审阅；实现计划见 [`docs/superpowers/plans/2026-08-21-hitl-dagger-control-arbiter.md`](../plans/2026-08-21-hitl-dagger-control-arbiter.md)  
+**状态：** 实现中（Task 7 launch + FACTR remap overlay 已落地）；实现计划见 [`docs/superpowers/plans/2026-08-21-hitl-dagger-control-arbiter.md`](../plans/2026-08-21-hitl-dagger-control-arbiter.md)  
 **前置方案：** [`docs/HITL_DAgger_集成方案.md`](../../HITL_DAgger_集成方案.md)  
 **仓库落点：** 本仓库新建 ROS2 包 `skye_hitl_dagger`（方案 A），不另起平行工程
 
