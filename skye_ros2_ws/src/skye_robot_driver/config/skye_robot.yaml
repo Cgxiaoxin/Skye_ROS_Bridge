@@ -23,7 +23,8 @@ skye_robot_driver:
     left_joint_limits_max: [3.1067, 2.0944, 3.1067, 1.0472, 3.1067, 1.0472, 1.5708]
     right_joint_limits_min: [-3.1067, -2.0944, -3.1067, -2.5307, -3.1067, -1.0472, -1.5708]
     right_joint_limits_max: [3.1067, 2.0944, 3.1067, 1.0472, 3.1067, 1.0472, 1.5708]
-    max_delta_per_cycle: 0.05   # rad per command frame
+    # # 每个控制周期允许的最大关节增量（弧度），用于限制单步运动幅度，防止指令异常或抖动。0.02 即每个周期最大变化约1.15°。
+    max_delta_per_cycle: 0.05   # rad per command frame 
     command_timeout_s: 0.50
     # relative: delta from teleop entry (safe if sync incomplete). absolute: legacy.
     teleop_mapping_mode: relative     # relative | absolute

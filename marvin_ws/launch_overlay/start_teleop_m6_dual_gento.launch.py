@@ -51,11 +51,12 @@ def generate_launch_description():
             ("/joint_control", "/gento/left_joint_control"),
             ("/joint_state", "/gento/joint_states"),
             ("/joint_move", "/left_joint_move"),
+            ("/leader_arm/current_state", "/left_leader_arm/current_state"),
             ("/gripper/ctrl", "/left_teleop_gripper/ctrl"),
             ("/gripper/state", "/left_gripper/state"),
         ],
     )
-
+    
     factr_right = Node(
         package="factr_teleop",
         executable="factr_teleop_robot_driver.py",
@@ -74,6 +75,7 @@ def generate_launch_description():
             ("/joint_control", "/gento/right_joint_control"),
             ("/joint_state", "/gento/joint_states"),
             ("/joint_move", "/right_joint_move"),
+            ("/leader_arm/current_state", "/right_leader_arm/current_state"),
             ("/gripper/ctrl", "/right_teleop_gripper/ctrl"),
             ("/gripper/state", "/right_gripper/state"),
         ],
