@@ -79,16 +79,23 @@ class DriverCore {
   static JointArray apply_joint_mapping(
       const JointArray &leader, const std::array<int, 7> &joint_order,
       const JointArray &signs, const JointArray &offsets);
-  // Relative teleop: follower_ref + sign * (leader_now - leader_ref) per joint.
+  // Relative teleop: follower_ref + sign * (unwrapped_leader - leader_cont_ref)
+  // per joint. leader_prev / leader_continuous track a continuous (unwrapped)
+  // leader angle so that a 2*pi representation jump (leader J1/J3 crossing
+  // +-pi) becomes a small delta instead of a spurious full-turn command.
+  // leader_continuous is advanced in place; leader_prev is the previous raw
+  // reported frame. Caller must keep both per-arm across frames.
   static JointArray apply_relative_joint_mapping(
-      const JointArray &leader_now, const JointArray &leader_ref,
+      const JointArray &leader_now, const JointArray &leader_prev,
+      JointArray &leader_continuous, const JointArray &leader_cont_ref,
       const JointArray &follower_ref, const std::array<int, 7> &joint_order,
       const JointArray &signs);
   // Per-joint clutch: if desired[i] was clamped, absorb that joint's leader
-  // travel so reversing does not chase accumulated error. Other joints unchanged.
+  // travel (re-baseline the continuous leader reference) so reversing does not
+  // chase accumulated error. Other joints unchanged.
   static bool clutch_saturated_joints(
       const JointArray &desired, const JointArray &clamped,
-      const JointArray &leader_now, JointArray &leader_ref,
+      const JointArray &leader_continuous, JointArray &leader_cont_ref,
       JointArray &gento_ref, const std::array<int, 7> &joint_order);
   static bool delta_was_limited(
       const JointArray &desired, const JointArray &limited);

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Build the skye_ros2_ws workspace (main C++ teleop driver).
+# 代码重编译脚本
 set -euo pipefail
 
 WS="$(cd "$(dirname "$0")/.." && pwd)"

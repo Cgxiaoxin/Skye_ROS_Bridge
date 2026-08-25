@@ -4,10 +4,10 @@ skye_robot_driver:
     robot_ip: "6.6.7.190"
     # 0=idle 1=position 2=imp_joint 3=imp_cart (FX_STATE); default teleop=2
     control_mode: "imp_joint"
-    left_velocity_ratio: 30
-    right_velocity_ratio: 30
-    left_acceleration_ratio: 30
-    right_acceleration_ratio: 30
+    left_velocity_ratio: 20
+    right_velocity_ratio: 20
+    left_acceleration_ratio: 20
+    right_acceleration_ratio: 20
     state_publish_hz: 250.0
     cmd_cycle_time_ms: 4
     connect_on_startup: true
@@ -23,11 +23,19 @@ skye_robot_driver:
     left_joint_limits_max: [3.1067, 2.0944, 3.1067, 1.0472, 3.1067, 1.0472, 1.5708]
     right_joint_limits_min: [-3.1067, -2.0944, -3.1067, -2.5307, -3.1067, -1.0472, -1.5708]
     right_joint_limits_max: [3.1067, 2.0944, 3.1067, 1.0472, 3.1067, 1.0472, 1.5708]
-    # # 每个控制周期允许的最大关节增量（弧度），用于限制单步运动幅度，防止指令异常或抖动。0.02 即每个周期最大变化约1.15°。
-    max_delta_per_cycle: 0.05   # rad per command frame 
+    # abs/HITL: scalar cap. relative: max_delta_per_joint (J1 tighter).
+    max_delta_per_cycle: 0.05
+    max_delta_per_joint: [0.01, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
     command_timeout_s: 0.50
     # relative: delta from teleop entry (safe if sync incomplete). absolute: legacy.
     teleop_mapping_mode: relative     # relative | absolute
+    # 0 disables. Require |leader-follower| < this before capturing teleop session.
+    max_enable_error: 0.30
+    # 0 disables. |last_cmd-feedback| over this → hold that arm + reset session.
+    max_following_error: 0.35
+    # 0 disables J1 deadband. Eat small J1 leader travel while J3 motion dominates.
+    j1_coupling_deadband: 0.02
+    j1_coupling_j3_min: 0.05
     impedance_stiffness: [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
     impedance_damping: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
     cartesian_stiffness: [2000.0, 2000.0, 2000.0, 100.0, 100.0, 100.0, 50.0]

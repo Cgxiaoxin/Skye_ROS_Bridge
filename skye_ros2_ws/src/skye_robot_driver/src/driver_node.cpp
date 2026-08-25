@@ -432,13 +432,11 @@ DriverNode::TeleopMappingMode DriverNode::parse_teleop_mapping_mode(
 
 void DriverNode::reset_teleop_session(DriverCore::Arm arm) {
   if (arm == DriverCore::Arm::kLeft) {
-    left_leader_ref_.reset();
     left_gento_ref_.reset();
     left_last_command_.reset();
     left_streaming_ = false;
     return;
   }
-  right_leader_ref_.reset();
   right_gento_ref_.reset();
   right_last_command_.reset();
   right_streaming_ = false;
@@ -510,8 +508,6 @@ void DriverNode::handle_set_mode(
       static_cast<int16_t>(core_.current_state(DriverCore::Arm::kRight));
   left_streaming_ = false;
   right_streaming_ = false;
-  left_leader_ref_.reset();
-  right_leader_ref_.reset();
   left_gento_ref_.reset();
   right_gento_ref_.reset();
   left_last_command_.reset();
@@ -550,8 +546,15 @@ void DriverNode::handle_command(
       arm == DriverCore::Arm::kLeft ? left_maximum_ : right_maximum_;
   auto &last_command =
       arm == DriverCore::Arm::kLeft ? left_last_command_ : right_last_command_;
-  auto &leader_ref =
-      arm == DriverCore::Arm::kLeft ? left_leader_ref_ : right_leader_ref_;
+  auto &leader_prev = arm == DriverCore::Arm::kLeft
+                          ? left_leader_prev_
+                          : right_leader_prev_;
+  auto &leader_continuous = arm == DriverCore::Arm::kLeft
+                                ? left_leader_continuous_
+                                : right_leader_continuous_;
+  auto &leader_cont_ref = arm == DriverCore::Arm::kLeft
+                              ? left_leader_cont_ref_
+                              : right_leader_cont_ref_;
   auto &gento_ref =
       arm == DriverCore::Arm::kLeft ? left_gento_ref_ : right_gento_ref_;
   auto &last_command_time = arm == DriverCore::Arm::kLeft
@@ -573,7 +576,9 @@ void DriverNode::handle_command(
         arm == DriverCore::Arm::kLeft ? state->left_position
                                       : state->right_position,
         minimum, maximum);
-    leader_ref = leader;
+    leader_prev = leader;
+    leader_continuous = leader;
+    leader_cont_ref = leader;
     gento_ref = feedback;
     last_command = feedback;
     if (teleop_mapping_mode_ == TeleopMappingMode::kRelative) {
@@ -592,7 +597,8 @@ void DriverNode::handle_command(
   JointArray mapped{};
   if (teleop_mapping_mode_ == TeleopMappingMode::kRelative) {
     mapped = DriverCore::apply_relative_joint_mapping(
-        leader, *leader_ref, *gento_ref, order, signs);
+        leader, leader_prev, leader_continuous, leader_cont_ref, *gento_ref,
+        order, signs);
   } else {
     mapped = DriverCore::apply_joint_mapping(leader, order, signs, offsets);
   }
@@ -605,6 +611,8 @@ void DriverNode::handle_command(
     streaming = false;
     return;
   }
+  // This frame was consumed by the continuous unwrap tracking.
+  leader_prev = leader;
 
   const auto desired = mapped;
   mapped = DriverCore::clamp_to_limits(desired, minimum, maximum);
@@ -625,7 +633,8 @@ void DriverNode::handle_command(
         arm_name, oss.str().c_str());
     if (teleop_mapping_mode_ == TeleopMappingMode::kRelative) {
       DriverCore::clutch_saturated_joints(
-          desired, mapped, leader, *leader_ref, *gento_ref, order);
+          desired, mapped, leader_continuous, leader_cont_ref, *gento_ref,
+          order);
     }
   }
 
