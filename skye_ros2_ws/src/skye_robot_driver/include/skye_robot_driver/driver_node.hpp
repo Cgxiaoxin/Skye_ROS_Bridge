@@ -83,10 +83,16 @@ class DriverNode : public rclcpp::Node {
   double max_delta_per_cycle_{0.05};
   double command_timeout_s_{0.20};
   TeleopMappingMode teleop_mapping_mode_{TeleopMappingMode::kRelative};
-  std::optional<JointArray> left_leader_ref_;
-  std::optional<JointArray> right_leader_ref_;
   std::optional<JointArray> left_gento_ref_;
   std::optional<JointArray> right_gento_ref_;
+  // Continuous (unwrapped) leader tracking per arm, used by the relative teleop
+  // path. Initialized on teleop session entry and re-based by clutch on limits.
+  JointArray left_leader_prev_{};
+  JointArray right_leader_prev_{};
+  JointArray left_leader_continuous_{};
+  JointArray right_leader_continuous_{};
+  JointArray left_leader_cont_ref_{};
+  JointArray right_leader_cont_ref_{};
   std::optional<JointArray> left_last_command_;
   std::optional<JointArray> right_last_command_;
   std::optional<JointArray> left_abs_last_command_;
