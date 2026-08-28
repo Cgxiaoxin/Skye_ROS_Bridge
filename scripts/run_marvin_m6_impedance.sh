@@ -55,7 +55,7 @@ if [[ -f "${OVERLAY_LAUNCH}" ]]; then
   cp -f "${OVERLAY_LAUNCH}" "${INSTALL_LAUNCH}"
 fi
 
-# 右臂夹爪 joint_signs[7] 保持厂商 -1（见 grav_comp_m6_right.yaml）；勿再强制改 +1。
+# 右臂夹爪 joint_signs[7] 须为 +1（与左臂一致）；-1 会使松开扳机归一化为 0（sync 显示闭合）。
 # 不要改小臂 J4 限位：大臂限位在 skye_robot.yaml，超出由驱动 clamp。
 
 DOCKER_ARGS=(
