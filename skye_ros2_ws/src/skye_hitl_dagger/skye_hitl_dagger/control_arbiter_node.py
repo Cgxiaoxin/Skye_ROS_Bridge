@@ -20,9 +20,12 @@ from std_msgs.msg import String
 from skye_hitl_dagger.chunk_player import ChunkPlayer
 from skye_hitl_dagger.control_mode import ControlArbiterLogic, ControlModeState
 from skye_hitl_dagger.msg import ControlMode, PolicyActionChunk
+from skye_hitl_dagger.policy_relative import PolicyRelativeSession
 from skye_hitl_dagger.teleop_sync import TeleopHandshake
 
 JOINTS_PER_ARM = 7
+DEFAULT_JOINT_ORDER = list(range(JOINTS_PER_ARM))
+DEFAULT_JOINT_SIGNS = [1.0] * JOINTS_PER_ARM
 MODE_COMMANDS = ("switch_sync", "switch_teleop", "switch_stop")
 
 
@@ -61,6 +64,10 @@ class ControlArbiterNode(Node):
         self.declare_parameter("mode_publish_hz", 5.0)
         self.declare_parameter("return_mode_command", "switch_sync")
         self.declare_parameter("joint_states_topic", "/gento/joint_states")
+        self.declare_parameter("left_joint_order", DEFAULT_JOINT_ORDER)
+        self.declare_parameter("right_joint_order", DEFAULT_JOINT_ORDER)
+        self.declare_parameter("left_joint_signs", DEFAULT_JOINT_SIGNS)
+        self.declare_parameter("right_joint_signs", DEFAULT_JOINT_SIGNS)
 
         self._invert_gripper = bool(
             self.get_parameter("gripper_invert_on_driver").value)
@@ -83,8 +90,17 @@ class ControlArbiterNode(Node):
             self._return_command = "switch_sync"
         joint_states_topic = str(
             self.get_parameter("joint_states_topic").value)
+        left_order = list(self.get_parameter("left_joint_order").value)
+        right_order = list(self.get_parameter("right_joint_order").value)
+        left_signs = [float(v) for v in self.get_parameter("left_joint_signs").value]
+        right_signs = [float(v) for v in self.get_parameter("right_joint_signs").value]
 
         self._logic = ControlArbiterLogic()
+        self._left_policy = PolicyRelativeSession(
+            signs=left_signs, joint_order=left_order)
+        self._right_policy = PolicyRelativeSession(
+            signs=right_signs, joint_order=right_order)
+        self._policy_session_dirty = True
         self._player = ChunkPlayer()
         self._handshake = TeleopHandshake()
         self._policy_version = ""
@@ -111,10 +127,6 @@ class ControlArbiterNode(Node):
             history=HistoryPolicy.KEEP_LAST, depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE)
-        self._left_abs_pub = self.create_publisher(
-            JointState, "/gento/left_joint_control_abs", cmd_qos)
-        self._right_abs_pub = self.create_publisher(
-            JointState, "/gento/right_joint_control_abs", cmd_qos)
         self._left_pub = self.create_publisher(
             JointState, "/gento/left_joint_control", cmd_qos)
         self._right_pub = self.create_publisher(
@@ -204,6 +216,7 @@ class ControlArbiterNode(Node):
 
     def _intervention_callback(self, msg: String) -> None:
         if msg.data == "takeover" and self._logic.request_takeover():
+            self._invalidate_policy_sessions()
             self._sync_started = time.monotonic()
             sampled = self._player.sample(self._now_seconds())
             if sampled is not None:
@@ -214,6 +227,7 @@ class ControlArbiterNode(Node):
             self._handshake.start_sync()
             self._publish_mode()
         elif msg.data == "return" and self._logic.request_return():
+            self._invalidate_policy_sessions()
             self._sync_started = None
             self._handshake.reset()
             self._player.clear()
@@ -285,9 +299,25 @@ class ControlArbiterNode(Node):
 
     def _complete_sync(self) -> None:
         if self._logic.sync_completed():
+            self._invalidate_policy_sessions()
             self._handshake.reset()
             self._sync_started = None
             self._publish_mode()
+
+    def _invalidate_policy_sessions(self) -> None:
+        self._left_policy.invalidate()
+        self._right_policy.invalidate()
+        self._policy_session_dirty = True
+
+    def _ensure_policy_sessions(self) -> bool:
+        if not self._policy_session_dirty:
+            return self._left_policy.active and self._right_policy.active
+        if self._joint_feedback is None:
+            return False
+        self._left_policy.begin(self._joint_feedback["left"])
+        self._right_policy.begin(self._joint_feedback["right"])
+        self._policy_session_dirty = False
+        return True
 
     def _joint_timer_callback(self) -> None:
         mode = self._logic.mode()
@@ -295,7 +325,7 @@ class ControlArbiterNode(Node):
             return
         if mode == ControlModeState.HANDOVER_SYNC:
             if self._hold_target is not None:
-                self._publish_abs(
+                self._publish_policy_relative(
                     self._hold_target["left"], self._hold_target["right"])
             return
         sampled = self._player.sample(self._now_seconds())
@@ -303,7 +333,7 @@ class ControlArbiterNode(Node):
             return
         if sampled is not None:
             self._last_target = sampled
-            self._publish_abs(sampled["left"], sampled["right"])
+            self._publish_policy_relative(sampled["left"], sampled["right"])
             if sampled["holding_tail"]:
                 now = time.monotonic()
                 if now - self._last_stale_warning >= self._stale_warn:
@@ -311,7 +341,7 @@ class ControlArbiterNode(Node):
                         "policy chunk ended; holding final joint target")
                     self._last_stale_warning = now
         elif self._last_target is not None:
-            self._publish_abs(
+            self._publish_policy_relative(
                 self._last_target["left"], self._last_target["right"])
 
     def _gripper_timer_callback(self) -> None:
@@ -341,10 +371,16 @@ class ControlArbiterNode(Node):
         if self._logic.mode() == ControlModeState.HUMAN:
             publisher.publish(msg)
 
-    def _publish_abs(self, left, right) -> None:
+    def _publish_policy_relative(self, left, right) -> None:
+        if not self._ensure_policy_sessions():
+            return
+        left_leader = self._left_policy.follower_target_to_leader(left)
+        right_leader = self._right_policy.follower_target_to_leader(right)
+        self._left_policy.commit_published(left_leader)
+        self._right_policy.commit_published(right_leader)
         stamp = self.get_clock().now().to_msg()
-        self._left_abs_pub.publish(self._joint_message(left, stamp))
-        self._right_abs_pub.publish(self._joint_message(right, stamp))
+        self._left_pub.publish(self._joint_message(left_leader, stamp))
+        self._right_pub.publish(self._joint_message(right_leader, stamp))
 
     def _publish_gripper(self, left: float, right: float) -> None:
         stamp = self.get_clock().now().to_msg()
