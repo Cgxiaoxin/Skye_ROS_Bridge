@@ -19,6 +19,7 @@ set -u
 
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-42}"
 export PATH="/usr/bin:/bin:${PATH}"
+PYTHON="${PYTHON:-/usr/bin/python3.10}"
 ros2 daemon stop >/dev/null 2>&1 || true
 ros2 daemon start >/dev/null 2>&1 || true
 
@@ -43,7 +44,7 @@ done
 
 echo "== P6.1: publish dummy policy chunk + wait relative joint_control =="
 export CMD_FILE
-python3 <<'PY'
+"$PYTHON" <<'PY'
 import os
 import time
 
@@ -66,10 +67,14 @@ best_effort = QoSProfile(
     history=HistoryPolicy.KEEP_LAST, depth=1,
     reliability=ReliabilityPolicy.BEST_EFFORT,
     durability=DurabilityPolicy.VOLATILE)
+state_qos = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST, depth=1,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.VOLATILE)
 pub = node.create_publisher(
     PolicyActionChunk, "/skye/policy_action", best_effort)
 state_pub = node.create_publisher(
-    JointState, "/gento/joint_states", best_effort)
+    JointState, "/gento/joint_states", state_qos)
 abs_msgs: list[JointState] = []
 
 feedback = JointState()
@@ -142,7 +147,7 @@ grep -q 'position:' "$CMD_FILE" \
   || { echo "FAIL: no messages on /gento/left_joint_control"; exit 1; }
 
 echo "== P6.1: takeover -> HANDOVER_SYNC =="
-python3 <<'PY'
+"$PYTHON" <<'PY'
 import time
 import rclpy
 from rclpy.node import Node
