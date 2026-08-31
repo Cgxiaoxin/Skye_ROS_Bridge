@@ -44,6 +44,9 @@ set(GENTO_SDK_INCLUDE_DIRS
 add_library(skye_driver_core STATIC
   src/driver_core.cpp
   src/dm_mit.cpp
+  src/gripper_common.cpp
+  src/dm4310_gripper_arm.cpp
+  src/robotiq_gripper_arm.cpp
   src/gripper_bridge.cpp)
 target_include_directories(skye_driver_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
