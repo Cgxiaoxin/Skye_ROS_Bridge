@@ -60,9 +60,9 @@ inline std::optional<std::uint16_t> parse_read_u16(
     return std::nullopt;
   }
   const std::size_t body_len = 3 + byte_count;
-  if (crc16(data, body_len) !=
-      static_cast<std::uint16_t>(data[body_len]) |
-          (static_cast<std::uint16_t>(data[body_len + 1]) << 8)) {
+  const auto recv_crc = static_cast<std::uint16_t>(data[body_len]) |
+                        (static_cast<std::uint16_t>(data[body_len + 1]) << 8);
+  if (crc16(data, body_len) != recv_crc) {
     return std::nullopt;
   }
   return static_cast<std::uint16_t>((data[3] << 8) | data[4]);

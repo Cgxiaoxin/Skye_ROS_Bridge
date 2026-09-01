@@ -32,18 +32,20 @@ skye_robot_driver:
     impedance_damping: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
     cartesian_stiffness: [2000.0, 2000.0, 2000.0, 100.0, 100.0, 100.0, 50.0]
     cartesian_damping: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 1.0]
-    # DM4310 gripper via Terminal CANFD (not Hand-24).
-    # Left: ARM0 + ID1; Right: ARM1 + ID2.
-    # Per-arm driver type: dm4310 (default) | robotiq 使用Robotiq Hand-E
-    gripper_left_type: "dm4310"
-    gripper_right_type: "dm4310"   # set "robotiq" when right arm uses Hand-E
+    # Per-arm driver: dm4310 (CAN) | robotiq (RS485 Modbus Hand-E)
+    # 实测: 左 ARM0/485A/slave9，右 ARM1/485A/slave9
+    gripper_left_type: "robotiq"
+    gripper_right_type: "robotiq"
 
     enable_gripper: true
     gripper_left_motor_id: 1
     gripper_right_motor_id: 2
     gripper_right_terminal: 1   # 0=ARM0 (share left bus) 1=ARM1
-    # FACTR trigger: released=1, pressed=0. Motor: 0=open, 1=closed.
-    # Invert so press closes. Manual motor test: set false, then 0=open 1=closed.
+    # 0/1 映射（与 DM4310 一致；gripper_invert:=true）:
+    #   FACTR 扳机 /left|right_teleop_gripper/ctrl position[0]: 1=松开/张开, 0=按下/闭合
+    #   driver 内部 motor norm: 0=张开, 1=闭合 (invert 后)
+    #   /left|right_gripper/state 再 invert 回 FACTR 语义供小臂读反馈
+    #   Robotiq 物理开度: norm=0 → pos_max_mm, norm=1 → pos_min_mm
     gripper_invert: true
     gripper_kp: 3.0
     gripper_kd: 0.12
@@ -53,10 +55,11 @@ skye_robot_driver:
     gripper_feedback_timeout_ms: 1
     gripper_pos_min: 0.0
     gripper_pos_max: 1.6
-    # Motor 0=open, 1=closed. Cap both arms so FACTR 0 (press) never hits 1.6 rad.
-    gripper_close_limit: 0.93
+    # motor norm 上限 1.0 = 完全闭合；与 FACTR 0 对应
+    gripper_close_limit: 1.0
 
     # Robotiq Hand-E (when gripper_*_type=robotiq). RS485 Modbus via Gento terminal.
+    # 启动后 driver 强制张开至 pos_max_mm；与 control_dual_gripper.py OPEN 对齐。
     gripper_left_robotiq_slave_id: 9
     gripper_right_robotiq_slave_id: 9
     gripper_left_robotiq_485_channel: "485A"   # 485A | 485B
@@ -65,6 +68,11 @@ skye_robot_driver:
     gripper_right_robotiq_terminal: 1
     gripper_robotiq_speed: 136                 # 0~255
     gripper_robotiq_force: 16                  # 0~255 (~20N~185N)
-    gripper_robotiq_pos_min_mm: 0.0            # fully closed opening (mm)
-    gripper_robotiq_pos_max_mm: 50.0           # fully open opening (mm)
-    gripper_robotiq_modbus_timeout_ms: 150
+    gripper_robotiq_pos_min_mm: 0.0            # fallback（未单独配置时）
+    # 遥操 norm=1 / FACTR 按下 0 → 闭合开度 (mm)，与 scripts/robotiq/control_dual_gripper.py 对齐
+    gripper_left_robotiq_pos_min_mm: 2.0       # 左臂闭合：2 mm
+    gripper_right_robotiq_pos_min_mm: 13.0     # 右臂闭合：13 mm
+    gripper_robotiq_pos_max_mm: 50.0           # fallback 张开开度 (mm)
+    gripper_left_robotiq_pos_max_mm: 50.0      # 左臂张开：50 mm
+    gripper_right_robotiq_pos_max_mm: 50.0     # 右臂张开：50 mm
+    gripper_robotiq_modbus_timeout_ms: 200

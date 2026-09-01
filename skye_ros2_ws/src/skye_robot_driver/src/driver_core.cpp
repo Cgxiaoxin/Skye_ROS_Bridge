@@ -238,14 +238,24 @@ bool DriverCore::enter_mode_unlocked(ControlMode mode) {
            FX_L1_State_SwitchToPositionMode(
                FX_OBJ_ARM1, kModeTimeoutMs, right_vel, right_acc) == 0;
       break;
-    case ControlMode::kImpJoint:
-      ok = FX_L1_State_SwitchToImpJointMode(
-               FX_OBJ_ARM0, kModeTimeoutMs, left_vel, left_acc, joint_k_l,
-               joint_d_l) == 0 &&
-           FX_L1_State_SwitchToImpJointMode(
-               FX_OBJ_ARM1, kModeTimeoutMs, right_vel, right_acc, joint_k_r,
-               joint_d_r) == 0;
+    case ControlMode::kImpJoint: {
+      const int arm0 = FX_L1_State_SwitchToImpJointMode(
+          FX_OBJ_ARM0, kModeTimeoutMs, left_vel, left_acc, joint_k_l, joint_d_l);
+      if (arm0 != 0) {
+        last_error_ = "Arm0 SwitchToImpJointMode failed, ret=" + std::to_string(arm0);
+        ok = false;
+        break;
+      }
+      const int arm1 = FX_L1_State_SwitchToImpJointMode(
+          FX_OBJ_ARM1, kModeTimeoutMs, right_vel, right_acc, joint_k_r, joint_d_r);
+      if (arm1 != 0) {
+        last_error_ = "Arm1 SwitchToImpJointMode failed, ret=" + std::to_string(arm1);
+        ok = false;
+        break;
+      }
+      ok = true;
       break;
+    }
     case ControlMode::kImpCart:
       ok = FX_L1_State_SwitchToImpCartMode(
                FX_OBJ_ARM0, kModeTimeoutMs, left_vel, left_acc, cart_k_l,
@@ -305,28 +315,51 @@ bool DriverCore::send_position_unlocked(Arm arm, const JointArray &target_rad) {
   return false;
 }
 
-bool DriverCore::connect_and_enable(
-    const std::array<unsigned char, 4> &ip, const ConnectConfig &config) {
-  auto ratio_ok = [](int value) { return value >= 1 && value <= 100; };
-  if (!ratio_ok(config.left_vel_ratio) || !ratio_ok(config.left_acc_ratio) ||
-      !ratio_ok(config.right_vel_ratio) || !ratio_ok(config.right_acc_ratio)) {
-    return false;
-  }
-  if (config.cmd_cycle_time_ms <= 0) {
-    return false;
-  }
-
+bool DriverCore::link_controller(const std::array<unsigned char, 4> &ip) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (linked_) {
-    return control_ready_ || mode_ == ControlMode::kIdle;
+    return true;
   }
-
   const int link_result =
       FX_L1_System_Link(ip[0], ip[1], ip[2], ip[3], FX_LOG_INFO_FLAG);
   if (link_result < 0) {
     return false;
   }
   linked_ = true;
+  return true;
+}
+
+bool DriverCore::apply_comm_config(int cmd_cycle_time_ms) {
+  if (cmd_cycle_time_ms <= 0) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!linked_) {
+    return false;
+  }
+  if (FX_L1_Config_SetPDCmdCycleTime(cmd_cycle_time_ms) != 0) {
+    // Non-fatal on some firmwares.
+  }
+  return true;
+}
+
+bool DriverCore::configure_and_enable(const ConnectConfig &config) {
+  auto ratio_ok = [](int value) { return value >= 1 && value <= 100; };
+  if (!ratio_ok(config.left_vel_ratio) || !ratio_ok(config.left_acc_ratio) ||
+      !ratio_ok(config.right_vel_ratio) || !ratio_ok(config.right_acc_ratio)) {
+    last_error_ = "invalid velocity/acceleration ratio";
+    return false;
+  }
+  if (config.cmd_cycle_time_ms <= 0) {
+    last_error_ = "invalid cmd_cycle_time_ms";
+    return false;
+  }
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!linked_) {
+    last_error_ = "SDK not linked";
+    return false;
+  }
   config_ = config;
 
   const auto fail_and_disconnect = [this]() {
@@ -347,10 +380,22 @@ bool DriverCore::connect_and_enable(
   if (!enter_mode_unlocked(config_.mode)) {
     reset_errors_unlocked();
     if (!enter_mode_unlocked(config_.mode)) {
+      if (last_error_.empty()) {
+        last_error_ = "enter_mode failed after retry";
+      }
       return fail_and_disconnect();
     }
   }
+  last_error_.clear();
   return true;
+}
+
+bool DriverCore::connect_and_enable(
+    const std::array<unsigned char, 4> &ip, const ConnectConfig &config) {
+  if (!link_controller(ip)) {
+    return false;
+  }
+  return configure_and_enable(config);
 }
 
 bool DriverCore::switch_control_mode(ControlMode mode) {
@@ -512,6 +557,11 @@ std::optional<int> DriverCore::get_cmd_cycle_time_ms() const {
 bool DriverCore::linked() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return linked_;
+}
+
+const std::string &DriverCore::last_error() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return last_error_;
 }
 
 bool DriverCore::terminal_clear(FXTerminalType terminal) {

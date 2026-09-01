@@ -1,0 +1,18 @@
+# Overlay: 双臂 Robotiq Hand-E（实测 ARM0/ARM1 + 485A + slave=9）
+# 当 skye_robot.yaml 默认仍为 dm4310 时使用:
+#   ros2 launch skye_robot_driver skye_robot_driver.launch.py robotiq_dual_gripper:=true
+skye_robot_driver:
+  ros__parameters:
+    gripper_left_type: "robotiq"
+    gripper_right_type: "robotiq"
+    gripper_left_robotiq_terminal: 0
+    gripper_right_robotiq_terminal: 1
+    gripper_left_robotiq_485_channel: "485A"
+    gripper_right_robotiq_485_channel: "485A"
+    gripper_left_robotiq_slave_id: 9
+    gripper_right_robotiq_slave_id: 9
+    gripper_close_limit: 1.0
+    gripper_left_robotiq_pos_min_mm: 2.0
+    gripper_right_robotiq_pos_min_mm: 13.0
+    gripper_left_robotiq_pos_max_mm: 50.0
+    gripper_right_robotiq_pos_max_mm: 50.0

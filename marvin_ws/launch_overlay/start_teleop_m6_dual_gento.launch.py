@@ -13,6 +13,18 @@ from ament_index_python.packages import get_package_share_directory
 import os
 
 
+def _grav_comp_config(name: str) -> str:
+    """Always prefer mounted /marvin_ws install (bind_leader_arms.py patches these)."""
+    marvin = os.environ.get("MARVIN_WS", "/marvin_ws")
+    mounted = os.path.join(
+        marvin, "install", "share", "factr_teleop", "configs", name
+    )
+    if os.path.isfile(mounted):
+        return mounted
+    pkg_share = get_package_share_directory("factr_teleop")
+    return os.path.join(pkg_share, "configs", name)
+
+
 def generate_launch_description():
     pkg_share = get_package_share_directory("factr_teleop")
 
@@ -28,8 +40,8 @@ def generate_launch_description():
     )
     use_keyboard = LaunchConfiguration("use_keyboard")
 
-    left_config = os.path.join(pkg_share, "configs", "grav_comp_m6_left.yaml")
-    right_config = os.path.join(pkg_share, "configs", "grav_comp_m6_right.yaml")
+    left_config = _grav_comp_config("grav_comp_m6_left.yaml")
+    right_config = _grav_comp_config("grav_comp_m6_right.yaml")
 
     # Both arms subscribe to the same 14-DOF /gento/joint_states;
     # follower_joint_offset in yaml selects 0..6 vs 7..13.

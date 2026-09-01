@@ -41,6 +41,16 @@ bool GripperBridge::start(const Config &config) {
          << right_->type_name() << "] " << right_report;
   start_report_ = report.str();
   started_ = left_ok && right_ok;
+  if (started_) {
+    // Unified teleop semantics: motor norm 0 = open (Robotiq pos_max_mm / DM4310 pos_min).
+    if (left_) {
+      left_->set_target(0.0);
+    }
+    if (right_) {
+      right_->set_target(0.0);
+    }
+    tick_control();
+  }
   return started_;
 }
 

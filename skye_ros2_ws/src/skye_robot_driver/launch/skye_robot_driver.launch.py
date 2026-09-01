@@ -13,6 +13,7 @@ def _launch_setup(context, *args, **kwargs):
     params_file = LaunchConfiguration("params_file").perform(context)
     connect_on_startup = LaunchConfiguration("connect_on_startup").perform(context)
     robotiq_right = LaunchConfiguration("robotiq_right_gripper").perform(context)
+    robotiq_dual = LaunchConfiguration("robotiq_dual_gripper").perform(context)
 
     node_params = [
         params_file,
@@ -22,7 +23,11 @@ def _launch_setup(context, *args, **kwargs):
             )
         },
     ]
-    if robotiq_right.lower() in ("1", "true", "yes"):
+    if robotiq_dual.lower() in ("1", "true", "yes"):
+        node_params.append(
+            os.path.join(pkg_share, "config", "skye_robot_robotiq_dual.yaml")
+        )
+    elif robotiq_right.lower() in ("1", "true", "yes"):
         node_params.append(
             os.path.join(pkg_share, "config", "skye_robot_robotiq_right.yaml")
         )
@@ -72,7 +77,12 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "robotiq_right_gripper",
                 default_value="false",
-                description="If true, overlay right-arm Robotiq Hand-E params",
+                description="Overlay: left dm4310 + right Robotiq Hand-E",
+            ),
+            DeclareLaunchArgument(
+                "robotiq_dual_gripper",
+                default_value="false",
+                description="Overlay: both arms Robotiq Hand-E",
             ),
             OpaqueFunction(function=_launch_setup),
         ]

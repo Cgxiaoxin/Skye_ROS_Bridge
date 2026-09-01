@@ -49,6 +49,8 @@ class RobotiqGripperArm : public GripperArmBackend {
   FXTerminalType terminal() const;
   bool tx_modbus(const std::uint8_t *data, std::size_t len);
   std::optional<std::uint16_t> modbus_read(std::uint16_t addr);
+  std::optional<std::uint16_t> modbus_read(
+      std::uint16_t addr, std::string *comm_detail);
   bool modbus_write(std::uint16_t addr, std::uint16_t value);
   static std::uint16_t action_reg(
       int r_act, int r_gto = 0, int r_atr = 0, int r_ard = 0);

@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <iomanip>
 #include <sstream>
 #include <thread>
 
@@ -30,21 +31,34 @@ std::uint16_t RobotiqGripperArm::action_reg(
 
 bool RobotiqGripperArm::tx_modbus(
     const std::uint8_t *data, std::size_t len) {
+  const auto tx_timeout_ms = std::max(
+      config_.modbus_timeout_ms, static_cast<unsigned int>(200));
   return core_.terminal_set(
-      terminal(), config_.channel, data, len, config_.modbus_timeout_ms);
+      terminal(), config_.channel, data, len, tx_timeout_ms);
 }
 
 std::optional<std::uint16_t> RobotiqGripperArm::modbus_read(
     std::uint16_t addr) {
+  return modbus_read(addr, nullptr);
+}
+
+std::optional<std::uint16_t> RobotiqGripperArm::modbus_read(
+    std::uint16_t addr, std::string *comm_detail) {
   core_.terminal_clear(terminal());
   const auto req = modbus_rtu::read_holding(config_.slave_id, addr, 1);
   if (!tx_modbus(req.data(), req.size())) {
+    if (comm_detail != nullptr) {
+      *comm_detail = "tx_setdata_failed";
+    }
     return std::nullopt;
   }
+  // RS-485 往返在 SDK mutex 竞争下常 >150ms；与 test_robotiq_right_485.py 对齐 1s。
+  const auto read_budget_ms = std::max(
+      config_.modbus_timeout_ms, static_cast<unsigned int>(1000));
   const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::milliseconds(config_.modbus_timeout_ms);
+                        std::chrono::milliseconds(read_budget_ms);
   while (std::chrono::steady_clock::now() < deadline) {
-    const auto packet = core_.terminal_get(terminal(), 50);
+    const auto packet = core_.terminal_get(terminal(), 100);
     if (!packet || packet->data.empty()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
       continue;
@@ -54,6 +68,18 @@ std::optional<std::uint16_t> RobotiqGripperArm::modbus_read(
     if (value) {
       return value;
     }
+    if (comm_detail != nullptr && comm_detail->empty()) {
+      std::ostringstream oss;
+      oss << "rx_unparsed n=" << packet->data.size() << " hex=";
+      for (const auto byte : packet->data) {
+        oss << std::hex << std::setw(2) << std::setfill('0')
+            << static_cast<int>(byte) << ' ';
+      }
+      *comm_detail = oss.str();
+    }
+  }
+  if (comm_detail != nullptr && comm_detail->empty()) {
+    *comm_detail = "rx_timeout";
   }
   return std::nullopt;
 }
@@ -64,10 +90,12 @@ bool RobotiqGripperArm::modbus_write(std::uint16_t addr, std::uint16_t value) {
   if (!tx_modbus(req.data(), req.size())) {
     return false;
   }
+  const auto write_budget_ms = std::max(
+      config_.modbus_timeout_ms, static_cast<unsigned int>(1000));
   const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::milliseconds(config_.modbus_timeout_ms);
+                        std::chrono::milliseconds(write_budget_ms);
   while (std::chrono::steady_clock::now() < deadline) {
-    const auto packet = core_.terminal_get(terminal(), 50);
+    const auto packet = core_.terminal_get(terminal(), 100);
     if (packet && packet->data.size() >= 8 &&
         packet->data[0] == static_cast<std::uint8_t>(config_.slave_id) &&
         packet->data[1] == 0x06) {
@@ -75,7 +103,7 @@ bool RobotiqGripperArm::modbus_write(std::uint16_t addr, std::uint16_t value) {
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
-  return true;
+  return false;
 }
 
 bool RobotiqGripperArm::reset_gripper() {
@@ -90,18 +118,21 @@ bool RobotiqGripperArm::activate_gripper() {
   if (!modbus_write(kRegAction, action_reg(1))) {
     return false;
   }
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
   while (std::chrono::steady_clock::now() < deadline) {
     const auto status = modbus_read(kRegStatus);
-    if (!status) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      continue;
+    if (status) {
+      const int g_sta = ((status.value() >> 8) & 0x30) >> 4;
+      if (g_sta == kGstaActivated) {
+        return true;
+      }
     }
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  const auto status = modbus_read(kRegStatus);
+  if (status) {
     const int g_sta = ((status.value() >> 8) & 0x30) >> 4;
-    if (g_sta == kGstaActivated) {
-      return true;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    return g_sta == kGstaActivated;
   }
   return false;
 }
@@ -182,7 +213,22 @@ bool RobotiqGripperArm::start(std::string *report) {
     return false;
   }
   core_.terminal_clear(terminal());
-  bool ok = reset_gripper() && activate_gripper();
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  std::string comm_detail;
+  const auto pre_status = modbus_read(kRegStatus, &comm_detail);
+  bool ok = false;
+  if (!pre_status) {
+    if (report != nullptr) {
+      *report = "robotiq comm=FAIL (" + comm_detail + ")";
+    }
+    return false;
+  }
+  const int pre_gsta = ((pre_status.value() >> 8) & 0x30) >> 4;
+  if (pre_gsta == kGstaActivated) {
+    ok = true;
+  } else {
+    ok = reset_gripper() && activate_gripper();
+  }
   const auto status = modbus_read(kRegStatus);
   std::ostringstream oss;
   oss << "robotiq slave=" << config_.slave_id
@@ -197,6 +243,17 @@ bool RobotiqGripperArm::start(std::string *report) {
   }
   if (!ok) {
     return false;
+  }
+  // Teleop default / FACTR released: motor norm 0 → fully open (pos_max_mm).
+  {
+    std::lock_guard<std::mutex> lock(target_mutex_);
+    target_ = 0.0;
+    dirty_ = true;
+  }
+  if (!write_pending()) {
+    if (report != nullptr) {
+      *report += " open_cmd=FAIL";
+    }
   }
   const double opening = read_opening_mm();
   GripperFeedback parsed;

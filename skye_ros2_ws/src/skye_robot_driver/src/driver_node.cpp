@@ -152,21 +152,31 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   const auto robotiq_force = declare_parameter<int>("gripper_robotiq_force", 16);
   const auto robotiq_pos_min_mm =
       declare_parameter<double>("gripper_robotiq_pos_min_mm", 0.0);
+  const auto left_robotiq_pos_min_mm = declare_parameter<double>(
+      "gripper_left_robotiq_pos_min_mm", robotiq_pos_min_mm);
+  const auto right_robotiq_pos_min_mm = declare_parameter<double>(
+      "gripper_right_robotiq_pos_min_mm", robotiq_pos_min_mm);
   const auto robotiq_pos_max_mm =
       declare_parameter<double>("gripper_robotiq_pos_max_mm", 50.0);
+  const auto left_robotiq_pos_max_mm = declare_parameter<double>(
+      "gripper_left_robotiq_pos_max_mm", robotiq_pos_max_mm);
+  const auto right_robotiq_pos_max_mm = declare_parameter<double>(
+      "gripper_right_robotiq_pos_max_mm", robotiq_pos_max_mm);
   const auto robotiq_modbus_timeout_ms = static_cast<unsigned int>(
       declare_parameter<int>("gripper_robotiq_modbus_timeout_ms", 150));
 
   gripper_config.left.robotiq = {
       declare_parameter<int>("gripper_left_robotiq_slave_id", 9), robotiq_speed,
-      robotiq_force, robotiq_pos_min_mm, robotiq_pos_max_mm, gripper_close_limit,
+      robotiq_force, left_robotiq_pos_min_mm, left_robotiq_pos_max_mm,
+      gripper_close_limit,
       parse_robotiq_485_channel(declare_parameter<std::string>(
           "gripper_left_robotiq_485_channel", "485A")),
       declare_parameter<int>("gripper_left_robotiq_terminal", 0),
       robotiq_modbus_timeout_ms};
   gripper_config.right.robotiq = {
       declare_parameter<int>("gripper_right_robotiq_slave_id", 9), robotiq_speed,
-      robotiq_force, robotiq_pos_min_mm, robotiq_pos_max_mm, gripper_close_limit,
+      robotiq_force, right_robotiq_pos_min_mm, right_robotiq_pos_max_mm,
+      gripper_close_limit,
       parse_robotiq_485_channel(declare_parameter<std::string>(
           "gripper_right_robotiq_485_channel", "485A")),
       declare_parameter<int>("gripper_right_robotiq_terminal", 1),
@@ -348,9 +358,23 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
 
   if (connect_on_startup) {
     const auto ip = parse_ipv4(robot_ip);
-    if (!core_.connect_and_enable(ip, connect_config)) {
+    if (!core_.link_controller(ip)) {
+      throw std::runtime_error("Gento SDK failed to link controller");
+    }
+    if (!core_.configure_and_enable(connect_config)) {
+      core_.shutdown();
       throw std::runtime_error(
-          "Gento SDK failed to connect or enter control mode");
+          std::string("Gento SDK failed to enter control mode: ") +
+          core_.last_error());
+    }
+    if (enable_gripper) {
+      if (!gripper_.start(gripper_config)) {
+        core_.shutdown();
+        throw std::runtime_error(
+            std::string("failed to start gripper bridge: ") +
+            gripper_.start_report());
+      }
+      gripper_enabled_ = true;
     }
     RCLCPP_INFO(
         get_logger(),
@@ -365,10 +389,6 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
         connect_config.right_acc_ratio, connect_config.cmd_cycle_time_ms);
 
     if (enable_gripper) {
-      if (!gripper_.start(gripper_config)) {
-        throw std::runtime_error("failed to start gripper bridge");
-      }
-      gripper_enabled_ = true;
       const auto gripper_period =
           std::chrono::duration<double>(1.0 / gripper_rate_hz);
       gripper_timer_ = create_wall_timer(
