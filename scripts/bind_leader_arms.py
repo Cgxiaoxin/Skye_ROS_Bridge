@@ -133,7 +133,7 @@ def patch_dynamixel_port(path: Path, name: str) -> bool:
 
 
 def patch_all_grav_comp_configs(config_dir: Path, left: str, right: str) -> None:
-    """Patch every grav_comp*.yaml (left/right/backend)."""
+    """Patch every grav_comp*.yaml under config_dir (install or overlay)."""
     if not config_dir.is_dir():
         print(f"  WARN 配置目录不存在: {config_dir}")
         return
@@ -166,11 +166,14 @@ def apply(marvin: Path, left: str, right: str, dry: bool) -> None:
     env = marvin / ".skye" / "leader_arms.env"
     yml = marvin / ".skye" / "leader_arms.yaml"
     cfg_dir = marvin / "install/share/factr_teleop/configs"
+    overlay_dir = marvin / "configs"
 
     print("\n将写入:")
     print(f"  {env}")
     print(f"  {yml}")
-    print(f"  {cfg_dir}/grav_comp*.yaml")
+    print(f"  {cfg_dir}/grav_comp*.yaml (dynamixel_port only)")
+    if overlay_dir.is_dir():
+        print(f"  {overlay_dir}/grav_comp*.yaml (dynamixel_port only)")
     if dry:
         print("[dry-run] 未写盘")
         return
@@ -178,6 +181,8 @@ def apply(marvin: Path, left: str, right: str, dry: bool) -> None:
     write_env(env, left, right)
     write_yaml_map(yml, left, right)
     patch_all_grav_comp_configs(cfg_dir, left, right)
+    if overlay_dir.is_dir():
+        patch_all_grav_comp_configs(overlay_dir, left, right)
     print("设置 latency_timer=1 …")
     set_latency([left, right])
     print("\n验证 dynamixel_port:")

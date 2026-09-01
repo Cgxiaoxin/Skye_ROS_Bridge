@@ -14,8 +14,11 @@ import os
 
 
 def _grav_comp_config(name: str) -> str:
-    """Always prefer mounted /marvin_ws install (bind_leader_arms.py patches these)."""
+    """Prefer repo overlay configs/, then install (bind_leader_arms.py patches port)."""
     marvin = os.environ.get("MARVIN_WS", "/marvin_ws")
+    overlay = os.path.join(marvin, "configs", name)
+    if os.path.isfile(overlay):
+        return overlay
     mounted = os.path.join(
         marvin, "install", "share", "factr_teleop", "configs", name
     )

@@ -44,9 +44,10 @@ skye_robot_driver:
     # 0/1 映射（与 DM4310 一致；gripper_invert:=true）:
     #   FACTR 扳机 /left|right_teleop_gripper/ctrl position[0]: 1=松开/张开, 0=按下/闭合
     #   driver 内部 motor norm: 0=张开, 1=闭合 (invert 后)
-    #   /left|right_gripper/state 再 invert 回 FACTR 语义供小臂读反馈
-    #   Robotiq 物理开度: norm=0 → pos_max_mm, norm=1 → pos_min_mm
+    #   /left|right_gripper/state 再 motor→FACTR: 1=开 0=闭
     gripper_invert: true
+    gripper_left_invert: true
+    gripper_right_invert: true
     gripper_kp: 3.0
     gripper_kd: 0.12
     gripper_rate_hz: 100.0

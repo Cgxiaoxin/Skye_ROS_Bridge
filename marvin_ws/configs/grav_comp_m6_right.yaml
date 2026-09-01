@@ -1,0 +1,101 @@
+name: grav_comp_demo
+
+dynamixel:
+  # USB port name given by the command: ls /dev/serial/by-id/
+  dynamixel_port: "usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0"
+  # Servo types
+  servo_types: [
+    "XM430-W350", "XM430-W350", "XC330-T288", "XC330-T288", 
+    "XC330-T288", "XC330-T288", "XC330-T288","XC330-T288"
+  ]
+  # Servo joint directions to match leader URDF / follower (大臂) frame.
+  # 左臂对照: J6/J7 = -1；右臂同构需 J6/J7 = -1（旧值 +1 导致腕部与遥操反向）。
+  # J8 夹爪: 右小臂厂商基线 -1（左臂 +1）；配合 skye gripper_right_invert=false
+  #   → FACTR 语义仍为 1=松开/张开、0=按下/闭合；sync 时跟随 /right_gripper/state≈1 张开。
+  joint_signs: [1, -1, 1, -1, 1, -1, -1, -1]
+
+arm_teleop:
+  # URDF used for creating leader arm dynamics model to compute gravity compensation
+  leader_urdf: "m6right_isomorphism.urdf"
+  leader_name: "m6_isomorphism"
+  baudrate: 4000000
+  num_arm_joints: 7
+  use_suction_cup: False
+  arm_limit_barrier_enable: True
+  arm_joint_limits_max: [3.0, 2.0, 3.0, 1.0472, 3.0, 0.9, 0.8]
+  # j4 min aligned to follower -1.0472 (was -2.4). Barrier margin 0.1 → resist near -0.9.
+  arm_joint_limits_min: [-3.0, -2.0, -3.0, -2.5307, -3.0, -0.9, -0.5]
+  arm_joint_limits_safety_margin: 0.1
+  initialization:
+    # The expected leader arm joint position before launching the script
+    calibration_joint_pos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    initial_match_joint_pos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0,0.0]
+  # Follower (big arm) dynamics model for external torque estimation (τ_ext = τ_total - τ_gravity)
+  enable_follower_gravity_comp: True
+  follower_urdf_package: "marvin_m6_description"
+  follower_urdf: "marvin_m6.urdf"
+  follower_joint_offset: 7          # right arm occupies DOF 7-13 in the 14-DOF model
+  follower_gravity_in_world: [0.0, 0.0, -9.81]
+  
+gripper_teleop:
+  # The maximum range (in rad) of the leader gripper trigger
+  limit_min: -0.0175
+  limit_setpoint: 0.55
+  limit_max: 0.52517
+  kp: 1.03561658022
+  kd: 0.04315069084
+
+controller:
+  frequency: 500
+  # FACTR 默认 5s；右臂 J3/J4 走位慢时易超时并触发 logger bug 崩溃
+  teleop_sync_timeout: 10.0
+  torque_feedback:
+    enable: False
+    # 每关节增益 μ_f，可按手感独立调节（近端关节感觉弱可适当调大）
+    gain:         [0.2, 0.2, 0.5, 0.5, 0.5, 0.5, 0.5]
+    # 每关节阻尼 K_{f,d}，抑制小臂震荡
+    damping:      [0.04, 0.04, 0.02, 0.02, 0.02, 0.02, 0.02]
+    # 每关节峰值力矩比 follower_max / leader_max，对应 K_{f,p}^{-1}
+    # J1-J2: XM430(4.1Nm) vs Marvin大臂; J3-J7: XC330(0.93Nm) vs Marvin大臂
+    # 初始值统一用原标量 94.57，请根据实际规格表逐关节校准
+    motor_scalar: [43.9, 43.9, 66, 66, 18, 18, 18]
+  gravity_comp:
+    enable: True
+    gain: [0.25, 0.2, 1.0, 1.0, 1.0, 0.8, 1.0]  #J1 恢复 0.6 (2026-08-25: 0.25 补偿不足致 J1 重力下坠)
+  null_space_regulation:
+    enable: False
+    null_space_joint_target: [0.0, -0.8, 0.0, -1.3, 0.0, -0.5, 0.0]
+    kp: 0.1
+    kd: 0.01
+  static_friction_comp:
+    enable_speed: 0.05
+    gain: [0.2, 0.2, 0.2, 0.1, 0.1, 0.1,0.2] #原来是0.1 # [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  joint_limit_barrier:
+    kp: 0.803561658022 
+    kd: 0.04315069084
+  joint_position_control:
+    interpolation_step_size: 0.5
+    kp: 0.803561658022   # aligned to left (was 1.035); TELEOP 稳定性  kp: 1.03561658022 
+    kd: 0.04315069084
+
+  gripper_feedback:
+    enable: True
+    gain: 20.0
+    ema_beta: 0.8
+    effort_threshold: -0.27    # 从臂夹爪力矩低于此值才视为有效夹紧力
+    damping: 0.04             # 夹紧方向速度阻尼系数
+    ema_fast_alpha: 0.3       # 夹紧方向（力增大）EMA 系数，越小越快
+
+  # --- 走位 / 保持模式控制参数 ---
+  # hold_kp/kd/ki/i_max/i_thresh/ruckig_kp/kd: n+1 维 (前 n=7 为臂关节, 最后 1 为夹爪)
+  # ruckig_gravity_comp_gain / hold_gravity_comp_gain: n=7 维 (仅臂关节)
+  hold_ruckig_control:
+    ruckig_kp:              [0.35, 0.35, 0.50, 0.50, 0.35, 0.35, 0.35, 0.35]  # J3/J4 sync 加速
+    ruckig_kd:              [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
+    hold_kp:                [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35]
+    hold_kd:                [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
+    hold_ki:                [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15]
+    hold_i_max:             [0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10]
+    hold_i_thresh:          [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15]
+    ruckig_gravity_comp_gain: [0.15, 0.15, 0.50, 0.60, 0.3, 0.3, 0.3]  # J3/J4 sync 重力补偿
+    hold_gravity_comp_gain:   [0.15, 0.15, 0.50, 0.60, 0.3, 0.3, 0.3]

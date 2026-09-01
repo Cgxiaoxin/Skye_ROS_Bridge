@@ -49,6 +49,9 @@ class DriverNode : public rclcpp::Node {
       DriverCore::Arm arm, const JointState::SharedPtr message);
   void handle_gripper_command(
       DriverCore::Arm arm, const JointState::SharedPtr message);
+  bool gripper_invert_for(DriverCore::Arm arm) const;
+  double factr_to_motor_norm(DriverCore::Arm arm, double factr_norm) const;
+  double motor_to_factr_norm(double motor_norm) const;
   void handle_set_mode(
       const std::shared_ptr<SetMode::Request> request,
       std::shared_ptr<SetMode::Response> response);
@@ -69,7 +72,8 @@ class DriverNode : public rclcpp::Node {
   DriverCore core_;
   GripperBridge gripper_{core_};
   bool gripper_enabled_{false};
-  bool gripper_invert_{true};
+  bool gripper_invert_left_{true};
+  bool gripper_invert_right_{true};
   std::array<int, 7> left_joint_order_{0, 1, 2, 3, 4, 5, 6};
   std::array<int, 7> right_joint_order_{0, 1, 2, 3, 4, 5, 6};
   JointArray left_signs_{};

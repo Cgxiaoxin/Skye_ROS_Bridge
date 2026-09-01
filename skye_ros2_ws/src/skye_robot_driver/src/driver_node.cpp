@@ -117,7 +117,12 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   const auto enable_gripper = declare_parameter<bool>("enable_gripper", true);
   const auto gripper_rate_hz =
       declare_parameter<double>("gripper_rate_hz", 100.0);
-  gripper_invert_ = declare_parameter<bool>("gripper_invert", true);
+  const auto gripper_invert_default =
+      declare_parameter<bool>("gripper_invert", true);
+  gripper_invert_left_ = declare_parameter<bool>(
+      "gripper_left_invert", gripper_invert_default);
+  gripper_invert_right_ = declare_parameter<bool>(
+      "gripper_right_invert", gripper_invert_default);
 
   GripperBridge::Config gripper_config;
   gripper_config.left.type =
@@ -397,10 +402,12 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       RCLCPP_INFO(
           get_logger(),
           "Executor: control+gripper callback groups (MultiThreaded, 2). "
-          "Gripper enabled: L=%s R=%s invert=%s rate=%.1f Hz | %s",
+          "Gripper enabled: L=%s R=%s invert L/R=%s/%s rate=%.1f Hz | %s",
           gripper_.type_name(DriverCore::Arm::kLeft),
           gripper_.type_name(DriverCore::Arm::kRight),
-          gripper_invert_ ? "true" : "false", gripper_rate_hz,
+          gripper_invert_left_ ? "true" : "false",
+          gripper_invert_right_ ? "true" : "false",
+          gripper_rate_hz,
           gripper_.start_report().c_str());
       if (gripper_.start_report().find("fb=NONE") != std::string::npos ||
           gripper_.start_report().find("activated=FAIL") != std::string::npos) {
@@ -950,11 +957,24 @@ void DriverNode::handle_gripper_command(
         "gripper command ignored: need finite position[0]");
     return;
   }
-  double cmd = message->position[0];
-  if (gripper_invert_) {
-    cmd = 1.0 - cmd;
+  gripper_.set_target(arm, factr_to_motor_norm(arm, message->position[0]));
+}
+
+bool DriverNode::gripper_invert_for(DriverCore::Arm arm) const {
+  return arm == DriverCore::Arm::kLeft ? gripper_invert_left_
+                                       : gripper_invert_right_;
+}
+
+double DriverNode::factr_to_motor_norm(
+    DriverCore::Arm arm, double factr_norm) const {
+  if (gripper_invert_for(arm)) {
+    return 1.0 - factr_norm;
   }
-  gripper_.set_target(arm, cmd);
+  return factr_norm;
+}
+
+double DriverNode::motor_to_factr_norm(double motor_norm) const {
+  return 1.0 - motor_norm;
 }
 
 void DriverNode::tick_gripper() {
@@ -975,17 +995,14 @@ void DriverNode::publish_gripper_state() {
     JointState msg;
     msg.header.stamp = now();
     msg.name = {"gripper_joint"};
-    auto maybe_invert = [this](double motor_norm) {
-      return gripper_invert_ ? 1.0 - motor_norm : motor_norm;
-    };
     if (fb.valid) {
       msg.header.frame_id = fb.frame_tag.empty() ? "gripper" : fb.frame_tag;
-      msg.position = {maybe_invert(fb.position)};
+      msg.position = {motor_to_factr_norm(fb.position)};
       msg.velocity = {fb.velocity};
       msg.effort = {fb.effort};
     } else {
       msg.header.frame_id = "no_feedback";
-      msg.position = {maybe_invert(gripper_.target(arm))};
+      msg.position = {motor_to_factr_norm(gripper_.target(arm))};
       msg.velocity = {0.0};
       msg.effort = {0.0};
       RCLCPP_WARN_THROTTLE(
