@@ -112,14 +112,14 @@ FACTR：`follower_joint_offset` 左=0、右=7（`grav_comp_m6_{left,right}.yaml`
 q_cmd[i] = q_gento_ref[i] + sign[i] * (q_leader[i] - q_leader_ref[i])
 ```
 
-现场标定 signs（不改 `joint_states`）：左 J5=-1，右 J6/J7=-1，其余 +1。  
+现场标定 signs（不改 `joint_states`）：右 J6/J7=-1；左全 +1。  
 限位对齐大臂 URDF（左右相同）。超出大臂行程走逐轴 clamp。  
 **不要**照搬 FACTR Dynamixel 的 `joint_signs`（那是小臂舵机方向）。
 
 ### 4. 安全默认（先抄后调）
 
 ```text
-left_signs:  [1, 1, 1, 1, -1, 1, 1]
+left_signs:  [1, 1, 1, 1, 1, 1, 1]
 right_signs: [1, 1, 1, 1, 1, -1, -1]
 limits_min: [-3.1067,-2.0944,-3.1067,-2.5307,-3.1067,-1.0472,-1.5708]
 limits_max: [ 3.1067, 2.0944, 3.1067, 1.0472, 3.1067, 1.0472, 1.5708]
