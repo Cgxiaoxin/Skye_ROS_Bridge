@@ -32,9 +32,29 @@ constexpr DriverCore::JointArray kDefaultCartK{
 constexpr DriverCore::JointArray kDefaultCartD{
     0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 1.0};
 
+constexpr std::size_t kArmDof = 7;
+
 const std::array<std::string, 14> kJointNames{
     "l_j1", "l_j2", "l_j3", "l_j4", "l_j5", "l_j6", "l_j7",
     "r_j1", "r_j2", "r_j3", "r_j4", "r_j5", "r_j6", "r_j7"};
+
+const std::array<std::string, kArmDof> kLeftJointNames{
+    "l_j1", "l_j2", "l_j3", "l_j4", "l_j5", "l_j6", "l_j7"};
+const std::array<std::string, kArmDof> kRightJointNames{
+    "r_j1", "r_j2", "r_j3", "r_j4", "r_j5", "r_j6", "r_j7"};
+
+sensor_msgs::msg::JointState make_arm_joint_state(
+    const rclcpp::Time &stamp,
+    const std::array<std::string, kArmDof> &names,
+    const DriverCore::JointArray &position,
+    const DriverCore::JointArray &velocity) {
+  sensor_msgs::msg::JointState message;
+  message.header.stamp = stamp;
+  message.name.assign(names.begin(), names.end());
+  message.position.assign(position.begin(), position.end());
+  message.velocity.assign(velocity.begin(), velocity.end());
+  return message;
+}
 
 rclcpp::QoS control_qos() {
   // Accepts FACTR (typically RELIABLE) publishers; drops old cmds.
@@ -276,6 +296,10 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   const auto cmd_qos = control_qos();
   const auto st_qos = state_qos();
   state_publisher_ = create_publisher<JointState>("/joint_states", st_qos);
+  left_state_publisher_ =
+      create_publisher<JointState>("/left_joint_states", st_qos);
+  right_state_publisher_ =
+      create_publisher<JointState>("/right_joint_states", st_qos);
   robot_state_publisher_ =
       create_publisher<std_msgs::msg::Int16MultiArray>("/robot_state", st_qos);
   left_command_subscription_ = create_subscription<JointState>(
@@ -1022,8 +1046,9 @@ void DriverNode::publish_gripper_state() {
 void DriverNode::publish_state() {
   const auto state = core_.read_state();
   if (state) {
+    const auto stamp = now();
     JointState message;
-    message.header.stamp = now();
+    message.header.stamp = stamp;
     message.name.assign(kJointNames.begin(), kJointNames.end());
     message.position.reserve(kJointNames.size());
     message.velocity.reserve(kJointNames.size());
@@ -1040,6 +1065,11 @@ void DriverNode::publish_state() {
         message.velocity.end(), state->right_velocity.begin(),
         state->right_velocity.end());
     state_publisher_->publish(message);
+    left_state_publisher_->publish(make_arm_joint_state(
+        stamp, kLeftJointNames, state->left_position, state->left_velocity));
+    right_state_publisher_->publish(make_arm_joint_state(
+        stamp, kRightJointNames, state->right_position,
+        state->right_velocity));
   }
 
   std_msgs::msg::Int16MultiArray robot_state;

@@ -46,8 +46,8 @@ def generate_launch_description():
     left_config = _grav_comp_config("grav_comp_m6_left.yaml")
     right_config = _grav_comp_config("grav_comp_m6_right.yaml")
 
-    # Both arms subscribe to the same 14-DOF /gento/joint_states;
-    # follower_joint_offset in yaml selects 0..6 vs 7..13.
+    # FACTR sync bug: offset ignored on 14-DOF topic → each arm uses 7-DOF side topic.
+    # yaml follower_joint_offset (0 / 7) unchanged for 14-DOF URDF gravity model.
     factr_left = Node(
         package="factr_teleop",
         executable="factr_teleop_robot_driver.py",
@@ -64,9 +64,10 @@ def generate_launch_description():
         ],
         remappings=[
             ("/joint_control", "/gento/left_joint_control"),
-            ("/joint_state", "/gento/joint_states"),
+            ("/joint_state", "/gento/left_joint_states"),
             ("/joint_move", "/left_joint_move"),
             ("/leader_arm/current_state", "/left_leader_arm/current_state"),
+            ("/leader_arm/target_joint_state", "/left_leader_arm/target_joint_state"),
             ("/gripper/ctrl", "/left_teleop_gripper/ctrl"),
             ("/gripper/state", "/left_gripper/state"),
         ],
@@ -88,9 +89,10 @@ def generate_launch_description():
         ],
         remappings=[
             ("/joint_control", "/gento/right_joint_control"),
-            ("/joint_state", "/gento/joint_states"),
+            ("/joint_state", "/gento/right_joint_states"),
             ("/joint_move", "/right_joint_move"),
             ("/leader_arm/current_state", "/right_leader_arm/current_state"),
+            ("/leader_arm/target_joint_state", "/right_leader_arm/target_joint_state"),
             ("/gripper/ctrl", "/right_teleop_gripper/ctrl"),
             ("/gripper/state", "/right_gripper/state"),
         ],

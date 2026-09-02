@@ -45,6 +45,7 @@ def generate_launch_description():
     left_config = _grav_comp_config("grav_comp_m6_left.yaml")
     right_config = _grav_comp_config("grav_comp_m6_right.yaml")
 
+    # FACTR sync workaround: 7-DOF side topics (see start_teleop_m6_dual_gento.launch.py).
     factr_left = Node(
         package="factr_teleop",
         executable="factr_teleop_robot_driver.py",
@@ -61,9 +62,10 @@ def generate_launch_description():
         ],
         remappings=[
             ("/joint_control", "/skye/teleop_action_left"),
-            ("/joint_state", "/gento/joint_states"),
+            ("/joint_state", "/gento/left_joint_states"),
             ("/joint_move", "/left_joint_move"),
             ("/leader_arm/current_state", "/left_leader_arm/current_state"),
+            ("/leader_arm/target_joint_state", "/left_leader_arm/target_joint_state"),
             ("/gripper/ctrl", "/skye/teleop_gripper_left"),
             ("/gripper/state", "/left_gripper/state"),
         ],
@@ -85,9 +87,10 @@ def generate_launch_description():
         ],
         remappings=[
             ("/joint_control", "/skye/teleop_action_right"),
-            ("/joint_state", "/gento/joint_states"),
+            ("/joint_state", "/gento/right_joint_states"),
             ("/joint_move", "/right_joint_move"),
             ("/leader_arm/current_state", "/right_leader_arm/current_state"),
+            ("/leader_arm/target_joint_state", "/right_leader_arm/target_joint_state"),
             ("/gripper/ctrl", "/skye/teleop_gripper_right"),
             ("/gripper/state", "/right_gripper/state"),
         ],

@@ -29,7 +29,9 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 
 | 方向 | Topic | 类型 | 说明 |
 |------|-------|------|------|
-| 发布 | `/gento/joint_states` | `sensor_msgs/JointState` | 14 轴 rad / rad·s⁻¹ |
+| 发布 | `/gento/joint_states` | `sensor_msgs/JointState` | 14 轴 rad / rad·s⁻¹；HITL/录包 |
+| 发布 | `/gento/left_joint_states` | `JointState` | 7 轴左大臂；FACTR sync |
+| 发布 | `/gento/right_joint_states` | `JointState` | 7 轴右大臂；FACTR sync |
 | 发布 | `/gento/robot_state` | `std_msgs/Int16MultiArray` | `[left_fx_state, right_fx_state]` |
 | 订阅 | `/gento/left_joint_control` | `JointState` | 7 轴 position（rad） |
 | 订阅 | `/gento/right_joint_control` | `JointState` | 7 轴 position（rad） |
