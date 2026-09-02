@@ -13,10 +13,12 @@ skye_robot_driver:
     connect_on_startup: true
     left_joint_order: [0, 1, 2, 3, 4, 5, 6]
     right_joint_order: [0, 1, 2, 3, 4, 5, 6]
-    # signs: 仅指令映射。现场 J4=-1 外形反了，改回全 +1。不改 joint_states。
+    # signs: 仅指令映射（relative: Δq_gento = sign * Δq_leader）。不改 joint_states。
+    # 现场标定: 左 J5、右 J6/J7 → -1；其余 +1。
+    # 注意: signs 仅在节点启动时加载，ros2 param set 不会更新控制回路。
     # limits: Marvin M6-S L/R CCS-696 V4.0 URDF（左右相同）。J4=-145°~+60°。
-    left_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-    right_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    left_joint_signs: [1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0]
+    right_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0]
     left_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     right_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     left_joint_limits_min: [-3.1067, -2.0944, -3.1067, -2.5307, -3.1067, -1.0472, -1.5708]
