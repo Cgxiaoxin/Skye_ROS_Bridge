@@ -43,6 +43,8 @@ def generate_launch_description():
                 ],
                 remappings=[
                     ("/joint_states", "/gento/joint_states"),
+                    ("/left_joint_states", "/gento/left_joint_states"),
+                    ("/right_joint_states", "/gento/right_joint_states"),
                     ("/left_joint_control", "/gento/left_joint_control"),
                     ("/right_joint_control", "/gento/right_joint_control"),
                     ("/left_joint_control_abs", "/gento/left_joint_control_abs"),

@@ -61,9 +61,11 @@
 
 ```text
 factr_teleop_{left,right}
-  ← /gento/joint_states          # 14-DOF 反馈，sync 用
+  ← /gento/{left,right}_joint_states   # 7-DOF，FACTR sync（workaround，见 design spec）
   → /gento/{left,right}_joint_control
-gento_robot_driver / skye_robot_driver   # 唯一 SDK 客户端
+skye_robot_driver
+  → /gento/joint_states                # 14-DOF，HITL/录包
+  → /gento/{left,right}_joint_states   # 7-DOF，与 14 轴同周期切片
   IP 6.6.7.190
 ```
 
@@ -74,7 +76,9 @@ gento_robot_driver / skye_robot_driver   # 唯一 SDK 客户端
 
 | 方向 | Topic / Service | 类型 | 约定 |
 |------|-----------------|------|------|
-| 反馈 | `/gento/joint_states` | `sensor_msgs/JointState` | **14** position(+velocity)，rad |
+| 反馈 | `/gento/joint_states` | `sensor_msgs/JointState` | **14** position(+velocity)，rad；HITL/录包 |
+| 反馈 | `/gento/left_joint_states` | `JointState` | **7** 左大臂；FACTR sync |
+| 反馈 | `/gento/right_joint_states` | `JointState` | **7** 右大臂；FACTR sync |
 | 指令 | `/gento/left_joint_control` | `JointState` | **7** position，rad；可忽略 `name` |
 | 指令 | `/gento/right_joint_control` | `JointState` | 同上 |
 | 服务 | `/gento/hold_current` | `std_srvs/Trigger` | 保持当前反馈位，仍可接新指令 |
@@ -94,7 +98,7 @@ gento_robot_driver / skye_robot_driver   # 唯一 SDK 客户端
 | 左臂对象 | `FX_OBJ_ARM0` |
 | 右臂对象 | `FX_OBJ_ARM1` |
 
-FACTR：`follower_joint_offset` 左=0、右=7（`grav_comp_m6_{left,right}.yaml`）。
+FACTR：`follower_joint_offset` 左=0、右=7（`grav_comp_m6_{left,right}.yaml`），对应 14-DOF URDF 段号；sync 订 7 轴 side topic（`docs/superpowers/specs/2026-09-02-factr-sync-7dof-joint-states-design.md`）。
 
 ### 3. 语义映射（驱动侧，不是舵机接线符号）
 
@@ -130,7 +134,7 @@ left/right_velocity_ratio: 20
 
 | 键 | 行为 |
 |----|------|
-| `1` sync | 读大臂 `/gento/joint_states`，小臂跟到同步 |
+| `1` sync | 读大臂 `/gento/{left,right}_joint_states`（7 轴），小臂跟到同步 |
 | `2` teleop | 发 `/gento/{left,right}_joint_control` |
 | `3` stop | 停主手输出 |
 

@@ -106,6 +106,8 @@ class DriverNode : public rclcpp::Node {
   bool left_abs_streaming_{false};
   bool right_abs_streaming_{false};
   rclcpp::Publisher<JointState>::SharedPtr state_publisher_;
+  rclcpp::Publisher<JointState>::SharedPtr left_state_publisher_;
+  rclcpp::Publisher<JointState>::SharedPtr right_state_publisher_;
   rclcpp::Publisher<std_msgs::msg::Int16MultiArray>::SharedPtr
       robot_state_publisher_;
   rclcpp::Publisher<JointState>::SharedPtr left_gripper_state_publisher_;
