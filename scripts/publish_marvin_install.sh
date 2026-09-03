@@ -29,12 +29,20 @@ read_version() {
   elif [[ -f "${VERSION_FILE}" ]]; then
     tr -d '[:space:]' < "${VERSION_FILE}"
   else
-    printf '1.0.0'
+    printf '1.0.1'
   fi
 }
 
+# Return 0 if ${1}/api/v4/version answers on HTTP at all (any status code,
+# including 401 "Unauthorized" — that is still a live GitLab API).
+gitlab_base_is_live() {
+  local code
+  code="$(curl -sS -o /dev/null -m 2 -w '%{http_code}' "${1}/api/v4/version" 2>/dev/null || true)"
+  [[ -n "${code}" && "${code}" != "000" ]]
+}
+
 default_gitlab_api() {
-  local remote url host project
+  local remote host project proto tries base
   remote="$(git -C "${REPO_ROOT}" remote get-url alex 2>/dev/null \
     || git -C "${REPO_ROOT}" remote get-url origin 2>/dev/null \
     || true)"
@@ -43,13 +51,30 @@ default_gitlab_api() {
   if [[ "${remote}" =~ ^git@([^:]+):(.+)\.git$ ]]; then
     host="${BASH_REMATCH[1]}"
     project="${BASH_REMATCH[2]//\//%2F}"
-  elif [[ "${remote}" =~ ^https?://([^/]+)/(.+)\.git$ ]]; then
-    host="${BASH_REMATCH[1]}"
-    project="${BASH_REMATCH[2]//\//%2F}"
+    proto="http"
+  elif [[ "${remote}" =~ ^(https?)://([^/]+)/(.+)\.git$ ]]; then
+    proto="${BASH_REMATCH[1]}"
+    host="${BASH_REMATCH[2]}"
+    project="${BASH_REMATCH[3]//\//%2F}"
   else
     return 1
   fi
-  printf 'http://%s/api/v4/projects/%s' "${host}" "${project}"
+
+  # The git remote only reveals the SSH host; GitLab's Web/API often listens on
+  # a non-default HTTP port (e.g. 8929 for the official Docker image). Probe a
+  # few common ports and fall back to the plain remote-derived URL.
+  if [[ "${host}" == *:* ]]; then
+    tries=("http://${host}" "https://${host}")
+  else
+    tries=("${proto}://${host}" "http://${host}:8929" "https://${host}" "http://${host}:8080")
+  fi
+  for base in "${tries[@]}"; do
+    if gitlab_base_is_live "${base}"; then
+      printf '%s/api/v4/projects/%s' "${base}" "${project}"
+      return 0
+    fi
+  done
+  printf '%s://%s/api/v4/projects/%s' "${proto}" "${host}" "${project}"
 }
 
 [[ -f "${INSTALL}/setup.bash" ]] \

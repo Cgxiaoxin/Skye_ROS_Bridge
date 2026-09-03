@@ -54,3 +54,9 @@ marvin_ws/tele_operation/.idea/
 
 # 安装包（走 GitLab Package Registry）
 *.tgz
+
+# Codegraph 本地索引（勿提交）
+.codegraph/
+
+# Marvin 安装版本号（本地生成，勿提交）
+scripts/marvin_install.version
