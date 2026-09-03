@@ -12,6 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ROBOT_PROFILE="${ROBOT_PROFILE:-thor}"
+ROBOT_PROFILE="${ROBOT_PROFILE,,}"
 case "${ROBOT_PROFILE}" in
   thor|orin) ;;
   *)

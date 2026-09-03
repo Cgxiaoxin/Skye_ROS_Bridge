@@ -113,21 +113,25 @@ FACTR：`follower_joint_offset` 左=0、右=7（`grav_comp_m6_{left,right}.yaml`
 q_cmd[i] = q_gento_ref[i] + sign[i] * (q_leader[i] - q_leader_ref[i])
 ```
 
-现场标定 signs（不改 `joint_states`）：右 J6/J7=-1；左全 +1。  
+现场标定 signs（不改 `joint_states`）：`thor` 左右全 +1；`orin` 右 J6/J7=-1。见 `config/profiles/{thor,orin}.yaml`。  
 限位对齐大臂 URDF（左右相同）。超出大臂行程走逐轴 clamp。  
 **不要**照搬 FACTR Dynamixel 的 `joint_signs`（那是小臂舵机方向）。
 
 ### 4. 安全默认（先抄后调）
 
+`skye_robot.yaml` + `profiles/thor.yaml`（默认）：
+
 ```text
 left_signs:  [1, 1, 1, 1, 1, 1, 1]
-right_signs: [1, 1, 1, 1, 1, -1, -1]
+right_signs: [1, 1, 1, 1, 1,  1,  1]
 limits_min: [-3.1067,-2.0944,-3.1067,-2.5307,-3.1067,-1.0472,-1.5708]
 limits_max: [ 3.1067, 2.0944, 3.1067, 1.0472, 3.1067, 1.0472, 1.5708]
 max_delta_per_cycle: 0.05   # rad / 周期
 command_timeout_s:   0.50   # 超时 → 按臂 hold
 left/right_velocity_ratio: 20
 ```
+
+`profiles/orin.yaml` 覆盖右腕：`right_signs: [1, 1, 1, 1, 1, -1, -1]`。
 
 超限：**逐轴 clamp**。NaN / 非 7 轴仍整帧拒绝。  
 不要把 FACTR 小臂 J4 min 收到 `-1.0`。

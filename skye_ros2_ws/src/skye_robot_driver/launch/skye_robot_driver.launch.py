@@ -44,7 +44,7 @@ def _launch_setup(context, *args, **kwargs):
     ]
     if robot_profile == "thor" and robotiq_dual.lower() in ("1", "true", "yes"):
         node_params.append(
-            os.path.join(pkg_share, "config", "profiles", "orin.yaml")
+            os.path.join(pkg_share, "config", "skye_robot_robotiq_dual.yaml")
         )
     elif robot_profile == "thor" and robotiq_right.lower() in ("1", "true", "yes"):
         node_params.append(
@@ -97,7 +97,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "robotiq_dual_gripper",
                 default_value="false",
-                description="Legacy: if true with robot_profile:=thor, also load orin.yaml",
+                description="Legacy: if true with robot_profile:=thor, load robotiq_dual overlay (not orin signs)",
             ),
             DeclareLaunchArgument(
                 "robotiq_right_gripper",

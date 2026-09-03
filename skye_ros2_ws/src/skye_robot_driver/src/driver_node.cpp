@@ -997,8 +997,12 @@ double DriverNode::factr_to_motor_norm(
   return factr_norm;
 }
 
-double DriverNode::motor_to_factr_norm(double motor_norm) const {
-  return 1.0 - motor_norm;
+double DriverNode::motor_to_factr_norm(
+    DriverCore::Arm arm, double motor_norm) const {
+  if (gripper_invert_for(arm)) {
+    return 1.0 - motor_norm;
+  }
+  return motor_norm;
 }
 
 void DriverNode::tick_gripper() {
@@ -1021,12 +1025,12 @@ void DriverNode::publish_gripper_state() {
     msg.name = {"gripper_joint"};
     if (fb.valid) {
       msg.header.frame_id = fb.frame_tag.empty() ? "gripper" : fb.frame_tag;
-      msg.position = {motor_to_factr_norm(fb.position)};
+      msg.position = {motor_to_factr_norm(arm, fb.position)};
       msg.velocity = {fb.velocity};
       msg.effort = {fb.effort};
     } else {
       msg.header.frame_id = "no_feedback";
-      msg.position = {motor_to_factr_norm(gripper_.target(arm))};
+      msg.position = {motor_to_factr_norm(arm, gripper_.target(arm))};
       msg.velocity = {0.0};
       msg.effort = {0.0};
       RCLCPP_WARN_THROTTLE(

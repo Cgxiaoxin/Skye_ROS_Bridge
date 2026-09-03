@@ -42,6 +42,7 @@ Expected offline profile values:
 
 - [ ] **Step 6:** Pull/sync same `main`, then `ROBOT_PROFILE=orin` for **both** host driver and Docker
 - [ ] **Step 7:** Confirm robotiq start + force-open; right J6/J7 follow leader
+- [ ] **Step 7b:** `ros2 topic hz /gento/joint_states` — stable rate with gripper enabled
 - [ ] **Step 8:** Right sync targets **right** big arm (not left)
 
 ---

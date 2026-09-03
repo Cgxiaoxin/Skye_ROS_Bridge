@@ -51,7 +51,7 @@ class DriverNode : public rclcpp::Node {
       DriverCore::Arm arm, const JointState::SharedPtr message);
   bool gripper_invert_for(DriverCore::Arm arm) const;
   double factr_to_motor_norm(DriverCore::Arm arm, double factr_norm) const;
-  double motor_to_factr_norm(double motor_norm) const;
+  double motor_to_factr_norm(DriverCore::Arm arm, double motor_norm) const;
   void handle_set_mode(
       const std::shared_ptr<SetMode::Request> request,
       std::shared_ptr<SetMode::Response> response);
