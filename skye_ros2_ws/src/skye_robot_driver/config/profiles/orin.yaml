@@ -1,0 +1,21 @@
+# Orin machine overlay (Robotiq Hand-E + right wrist signs)
+skye_robot_driver:
+  ros__parameters:
+    left_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    right_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0]
+    gripper_left_type: "robotiq"
+    gripper_right_type: "robotiq"
+    gripper_invert: true
+    gripper_left_invert: true
+    gripper_right_invert: true
+    gripper_close_limit: 1.0
+    gripper_left_robotiq_terminal: 0
+    gripper_right_robotiq_terminal: 1
+    gripper_left_robotiq_485_channel: "485A"
+    gripper_right_robotiq_485_channel: "485A"
+    gripper_left_robotiq_slave_id: 9
+    gripper_right_robotiq_slave_id: 9
+    gripper_left_robotiq_pos_min_mm: 2.0
+    gripper_right_robotiq_pos_min_mm: 13.0
+    gripper_left_robotiq_pos_max_mm: 50.0
+    gripper_right_robotiq_pos_max_mm: 50.0

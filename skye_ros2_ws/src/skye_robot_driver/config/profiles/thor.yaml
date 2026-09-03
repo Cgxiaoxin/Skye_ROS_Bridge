@@ -1,0 +1,11 @@
+# Thor machine overlay (explicit; mostly matches skye_robot.yaml defaults)
+skye_robot_driver:
+  ros__parameters:
+    left_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    right_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    gripper_left_type: "dm4310"
+    gripper_right_type: "dm4310"
+    gripper_invert: true
+    gripper_left_invert: true
+    gripper_right_invert: true
+    gripper_close_limit: 0.93

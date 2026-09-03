@@ -13,12 +13,10 @@ skye_robot_driver:
     connect_on_startup: true
     left_joint_order: [0, 1, 2, 3, 4, 5, 6]
     right_joint_order: [0, 1, 2, 3, 4, 5, 6]
-    # signs: 仅指令映射（relative: Δq_gento = sign * Δq_leader）。不改 joint_states。
-    # 现场标定: 右 J6/J7 → -1；左全 +1（J5 取 -1 后 log 证实 Δ大=-Δ小，外观反向，已回退）。
-    # 注意: signs 仅在节点启动时加载，ros2 param set 不会更新控制回路。
+    # signs: 仅指令映射（relative）。不改 joint_states。默认 Thor 全 +1。
     # limits: Marvin M6-S L/R CCS-696 V4.0 URDF（左右相同）。J4=-145°~+60°。
     left_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-    right_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0]
+    right_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     left_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     right_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     left_joint_limits_min: [-3.1067, -2.0944, -3.1067, -2.5307, -3.1067, -1.0472, -1.5708]
@@ -34,48 +32,39 @@ skye_robot_driver:
     impedance_damping: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
     cartesian_stiffness: [2000.0, 2000.0, 2000.0, 100.0, 100.0, 100.0, 50.0]
     cartesian_damping: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 1.0]
-    # Per-arm driver: dm4310 (CAN) | robotiq (RS485 Modbus Hand-E)
-    # 实测: 左 ARM0/485A/slave9，右 ARM1/485A/slave9
-    gripper_left_type: "robotiq"
-    gripper_right_type: "robotiq"
+    # Per-arm driver: dm4310 | robotiq. Default Thor = dm4310.
+    gripper_left_type: "dm4310"
+    gripper_right_type: "dm4310"
 
     enable_gripper: true
     gripper_left_motor_id: 1
     gripper_right_motor_id: 2
-    gripper_right_terminal: 1   # 0=ARM0 (share left bus) 1=ARM1
-    # 0/1 映射（与 DM4310 一致；gripper_invert:=true）:
-    #   FACTR 扳机 /left|right_teleop_gripper/ctrl position[0]: 1=松开/张开, 0=按下/闭合
-    #   driver 内部 motor norm: 0=张开, 1=闭合 (invert 后)
-    #   /left|right_gripper/state 再 motor→FACTR: 1=开 0=闭
+    gripper_right_terminal: 1
     gripper_invert: true
     gripper_left_invert: true
     gripper_right_invert: true
     gripper_kp: 3.0
     gripper_kd: 0.12
     gripper_rate_hz: 100.0
-    # Runtime terminal_set/get timeout (DM4310 CAN). Must stay short: SDK mutex
-    # is shared with joint cmds even with MultiThreadedExecutor.
     gripper_feedback_timeout_ms: 1
     gripper_pos_min: 0.0
     gripper_pos_max: 1.6
-    # motor norm 上限 1.0 = 完全闭合；与 FACTR 0 对应
-    gripper_close_limit: 1.0
+    gripper_close_limit: 0.93
 
-    # Robotiq Hand-E (when gripper_*_type=robotiq). RS485 Modbus via Gento terminal.
-    # 启动后 driver 强制张开至 pos_max_mm；与 control_dual_gripper.py OPEN 对齐。
+    # Robotiq keys present so declare_parameter defaults are documented;
+    # active only when gripper_*_type=robotiq (overridden by profiles/orin.yaml).
     gripper_left_robotiq_slave_id: 9
     gripper_right_robotiq_slave_id: 9
-    gripper_left_robotiq_485_channel: "485A"   # 485A | 485B
+    gripper_left_robotiq_485_channel: "485A"
     gripper_right_robotiq_485_channel: "485A"
-    gripper_left_robotiq_terminal: 0          # 0=ARM0 1=ARM1
+    gripper_left_robotiq_terminal: 0
     gripper_right_robotiq_terminal: 1
-    gripper_robotiq_speed: 136                 # 0~255
-    gripper_robotiq_force: 16                  # 0~255 (~20N~185N)
-    gripper_robotiq_pos_min_mm: 0.0            # fallback（未单独配置时）
-    # 遥操 norm=1 / FACTR 按下 0 → 闭合开度 (mm)，与 scripts/robotiq/control_dual_gripper.py 对齐
-    gripper_left_robotiq_pos_min_mm: 2.0       # 左臂闭合：2 mm
-    gripper_right_robotiq_pos_min_mm: 13.0     # 右臂闭合：13 mm
-    gripper_robotiq_pos_max_mm: 50.0           # fallback 张开开度 (mm)
-    gripper_left_robotiq_pos_max_mm: 50.0      # 左臂张开：50 mm
-    gripper_right_robotiq_pos_max_mm: 50.0     # 右臂张开：50 mm
+    gripper_robotiq_speed: 136
+    gripper_robotiq_force: 16
+    gripper_robotiq_pos_min_mm: 0.0
+    gripper_left_robotiq_pos_min_mm: 2.0
+    gripper_right_robotiq_pos_min_mm: 13.0
+    gripper_robotiq_pos_max_mm: 50.0
+    gripper_left_robotiq_pos_max_mm: 50.0
+    gripper_right_robotiq_pos_max_mm: 50.0
     gripper_robotiq_modbus_timeout_ms: 200
