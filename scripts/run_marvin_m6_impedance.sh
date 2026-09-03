@@ -48,6 +48,7 @@ if [[ ! -f "${MARVIN_WS}/install/setup.bash" ]]; then
 fi
 
 # Keep package launch/config in sync with tracked overlay (install/ is often gitignored).
+export ROBOT_PROFILE="${ROBOT_PROFILE:-thor}"
 bash "${SCRIPT_DIR}/sync_marvin_overlay.sh"
 
 DOCKER_ARGS=(
@@ -67,6 +68,7 @@ DOCKER_ARGS=(
   -e "USE_RIGHT_GRIPPER=${USE_RIGHT_GRIPPER}"
   -e "ROBOT_LEADER_DYNAMIXEL_PORT_LEFT=${ROBOT_LEADER_DYNAMIXEL_PORT_LEFT}"
   -e "ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT=${ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT}"
+  -e "ROBOT_PROFILE=${ROBOT_PROFILE}"
   -e "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-21}"
   -e "RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
   -e "FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml"

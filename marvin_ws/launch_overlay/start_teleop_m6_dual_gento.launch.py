@@ -14,16 +14,19 @@ import os
 
 
 def _grav_comp_config(name: str) -> str:
-    """Prefer repo overlay configs/, then install (bind_leader_arms.py patches port)."""
+    """Prefer marvin_ws/configs/<ROBOT_PROFILE>/, then configs/, then install."""
     marvin = os.environ.get("MARVIN_WS", "/marvin_ws")
-    overlay = os.path.join(marvin, "configs", name)
-    if os.path.isfile(overlay):
-        return overlay
-    mounted = os.path.join(
-        marvin, "install", "share", "factr_teleop", "configs", name
-    )
-    if os.path.isfile(mounted):
-        return mounted
+    profile = os.environ.get("ROBOT_PROFILE", os.environ.get("MARVIN_PROFILE", "thor")).strip().lower()
+    if profile not in ("thor", "orin"):
+        profile = "thor"
+    candidates = [
+        os.path.join(marvin, "configs", profile, name),
+        os.path.join(marvin, "configs", name),
+        os.path.join(marvin, "install", "share", "factr_teleop", "configs", name),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
     pkg_share = get_package_share_directory("factr_teleop")
     return os.path.join(pkg_share, "configs", name)
 

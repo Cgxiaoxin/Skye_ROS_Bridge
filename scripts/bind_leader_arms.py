@@ -165,33 +165,42 @@ def set_latency(names: list[str]) -> None:
 def apply(marvin: Path, left: str, right: str, dry: bool) -> None:
     env = marvin / ".skye" / "leader_arms.env"
     yml = marvin / ".skye" / "leader_arms.yaml"
-    cfg_dir = marvin / "install/share/factr_teleop/configs"
-    overlay_dir = marvin / "configs"
+    profile = os.environ.get("ROBOT_PROFILE", os.environ.get("MARVIN_PROFILE", "thor")).strip().lower()
+    if profile not in ("thor", "orin"):
+        profile = "thor"
+    left_cfg = marvin / "configs" / profile / "grav_comp_m6_left.yaml"
+    right_cfg = marvin / "configs" / profile / "grav_comp_m6_right.yaml"
+    install_left = marvin / "install/share/factr_teleop/configs/grav_comp_m6_left.yaml"
+    install_right = marvin / "install/share/factr_teleop/configs/grav_comp_m6_right.yaml"
 
     print("\n将写入:")
     print(f"  {env}")
     print(f"  {yml}")
-    print(f"  {cfg_dir}/grav_comp*.yaml (dynamixel_port only)")
-    if overlay_dir.is_dir():
-        print(f"  {overlay_dir}/grav_comp*.yaml (dynamixel_port only)")
+    print(f"  profile={profile}: {left_cfg.name}, {right_cfg.name} (dynamixel_port)")
+    if install_left.is_file() or install_right.is_file():
+        print(f"  install copies (if present): grav_comp_m6_left/right.yaml")
     if dry:
         print("[dry-run] 未写盘")
         return
 
     write_env(env, left, right)
     write_yaml_map(yml, left, right)
-    patch_all_grav_comp_configs(cfg_dir, left, right)
-    if overlay_dir.is_dir():
-        patch_all_grav_comp_configs(overlay_dir, left, right)
+    for path, port in ((left_cfg, left), (right_cfg, right)):
+        if path.is_file():
+            ok = patch_dynamixel_port(path, port)
+            print(f"  {'OK' if ok else 'SKIP'}  {path} -> {port}")
+    for path, port in ((install_left, left), (install_right, right)):
+        if path.is_file():
+            ok = patch_dynamixel_port(path, port)
+            print(f"  {'OK' if ok else 'SKIP'}  {path} -> {port}")
     print("设置 latency_timer=1 …")
     set_latency([left, right])
     print("\n验证 dynamixel_port:")
-    for name in ("grav_comp_m6_left.yaml", "grav_comp_m6_right.yaml"):
-        path = cfg_dir / name
+    for path in (install_left, install_right):
         if path.is_file():
             for line in path.read_text().splitlines():
                 if "dynamixel_port" in line:
-                    print(f"  {name}: {line.strip()}")
+                    print(f"  {path.name}: {line.strip()}")
                     break
     print("\n已写入。当前 shell 请执行:")
     print(f"  source {env}")

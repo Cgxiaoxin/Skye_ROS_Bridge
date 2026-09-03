@@ -59,14 +59,33 @@ for src in "${launch_files[@]}"; do
   echo "  launch: $(basename "${src}")"
 done
 
-if [[ -d "${OVERLAY_CFG}" ]]; then
-  mkdir -p "${INSTALL_CFG}"
-  cfg_files=("${OVERLAY_CFG}"/*.yaml)
-  for src in "${cfg_files[@]}"; do
-    cp -f "${src}" "${INSTALL_CFG}/"
-    echo "  config: $(basename "${src}")"
-  done
+PROFILE="${ROBOT_PROFILE:-${MARVIN_PROFILE:-thor}}"
+case "${PROFILE}" in
+  thor|orin) ;;
+  *)
+    echo "ERROR: ROBOT_PROFILE must be thor|orin (got: ${PROFILE})" >&2
+    exit 1
+    ;;
+esac
+
+PROFILE_CFG="${MARVIN_WS}/configs/${PROFILE}"
+if [[ ! -d "${PROFILE_CFG}" ]]; then
+  echo "ERROR: missing profile configs: ${PROFILE_CFG}" >&2
+  exit 1
 fi
 
+mkdir -p "${INSTALL_CFG}"
+shopt -s nullglob
+cfg_files=("${PROFILE_CFG}"/grav_comp_m6_*.yaml)
+if ((${#cfg_files[@]} == 0)); then
+  echo "ERROR: no grav_comp_m6_*.yaml under ${PROFILE_CFG}" >&2
+  exit 1
+fi
+for src in "${cfg_files[@]}"; do
+  cp -f "${src}" "${INSTALL_CFG}/"
+  echo "  config[${PROFILE}]: $(basename "${src}")"
+done
+echo "OK: profile=${PROFILE} overlay synced"
+
 echo "OK: overlay -> ${INSTALL_LAUNCH}"
-echo "    grav_comp launch prefers ${OVERLAY_CFG} when present (see _grav_comp_config)."
+echo "    grav_comp launch prefers configs/<profile>/ (see _grav_comp_config)."
