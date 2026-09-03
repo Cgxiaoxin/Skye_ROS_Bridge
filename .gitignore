@@ -25,6 +25,9 @@ skye_ros2_ws/build/
 skye_ros2_ws/install/
 skye_ros2_ws/log/
 
+# CodeGraph index (local, per-machine)
+.codegraph/
+
 # Editor / OS
 .vscode/
 .idea/

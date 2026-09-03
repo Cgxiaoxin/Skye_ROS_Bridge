@@ -1,0 +1,11 @@
+# Overlay: left DM4310 + right Robotiq Hand-E (实测 ARM1/485A/slave=9).
+# Usage:
+#   ros2 launch skye_robot_driver skye_robot.launch.py \
+#     params_file:=.../skye_robot.yaml params_file:=.../skye_robot_robotiq_right.yaml
+skye_robot_driver:
+  ros__parameters:
+    gripper_left_type: "dm4310"
+    gripper_right_type: "robotiq"
+    gripper_right_robotiq_485_channel: "485A"
+    gripper_right_robotiq_terminal: 1
+    gripper_right_robotiq_slave_id: 9

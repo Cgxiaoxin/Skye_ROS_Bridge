@@ -47,16 +47,8 @@ if [[ ! -f "${MARVIN_WS}/install/setup.bash" ]]; then
   bash "${SCRIPT_DIR}/bootstrap_marvin_install.sh"
 fi
 
-# Keep package launch in sync with tracked overlay (install/ is often gitignored).
-OVERLAY_LAUNCH="${MARVIN_WS}/launch_overlay/start_teleop_m6_dual_gento.launch.py"
-INSTALL_LAUNCH="${MARVIN_WS}/install/share/factr_teleop/launch/start_teleop_m6_dual_gento.launch.py"
-if [[ -f "${OVERLAY_LAUNCH}" ]]; then
-  mkdir -p "$(dirname "${INSTALL_LAUNCH}")"
-  cp -f "${OVERLAY_LAUNCH}" "${INSTALL_LAUNCH}"
-fi
-
-# 右臂夹爪 joint_signs[7] 须为 +1（与左臂一致）；-1 会使松开扳机归一化为 0（sync 显示闭合）。
-# 不要改小臂 J4 限位：大臂限位在 skye_robot.yaml，超出由驱动 clamp。
+# Keep package launch/config in sync with tracked overlay (install/ is often gitignored).
+bash "${SCRIPT_DIR}/sync_marvin_overlay.sh"
 
 DOCKER_ARGS=(
   --rm

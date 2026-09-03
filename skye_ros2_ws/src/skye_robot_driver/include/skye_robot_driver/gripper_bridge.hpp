@@ -1,43 +1,31 @@
 #pragma once
 
-#include <cstdint>
-#include <mutex>
+#include <memory>
 #include <string>
 
-#include "skye_robot_driver/dm_mit.hpp"
 #include "skye_robot_driver/driver_core.hpp"
+#include "skye_robot_driver/gripper_arm_backend.hpp"
+#include "skye_robot_driver/gripper_common.hpp"
+#include "skye_robot_driver/dm4310_gripper_arm.hpp"
+#include "skye_robot_driver/robotiq_gripper_arm.hpp"
 
 namespace skye_robot_driver {
 
-// DM4310 gripper via Gento Terminal CANFD (same SDK link as DriverCore).
-// SDK has no dedicated gripper API; Hand-24 is a different end-effector.
+// Per-arm gripper facade: DM4310 (CAN) or Robotiq Hand-E (RS485 Modbus).
 class GripperBridge {
  public:
   using Arm = DriverCore::Arm;
+  using Feedback = GripperFeedback;
 
-  struct Config {
-    int left_motor_id{1};
-    int right_motor_id{2};
-    // Right gripper terminal: 0=ARM0 (shared bus with left), 1=ARM1.
-    int right_terminal{1};
-    double kp{3.0};
-    double kd{0.12};
-    double pos_min{0.0};
-    double pos_max{1.6};
-    // Motor-space close cap in [0,1]. 1.0 = pos_max rad; 0.93 avoids hard stop.
-    double close_limit{0.93};
-    // Non-blocking CAN read; long timeouts block the single-threaded executor.
-    unsigned int feedback_timeout_ms{1};
+  struct ArmConfig {
+    GripperDriverType type{GripperDriverType::kDm4310};
+    Dm4310GripperArm::Config dm{};
+    RobotiqGripperArm::Config robotiq{};
   };
 
-  // Normalized feedback for FACTR: position in [0,1] (0=open, 1=closed).
-  struct Feedback {
-    bool valid{false};
-    double position{0.0};
-    double velocity{0.0};
-    double effort{0.0};
-    int err_code{0};
-    std::uint32_t can_id{0};
+  struct Config {
+    ArmConfig left;
+    ArmConfig right;
   };
 
   explicit GripperBridge(DriverCore &core);
@@ -47,44 +35,26 @@ class GripperBridge {
   bool started() const;
   const std::string &start_report() const;
 
-  // Target in [0, close_limit]: 0=fully open, 1=fully closed (capped).
   void set_target(Arm arm, double value);
   double target(Arm arm) const;
-  int motor_id(Arm arm) const;
-
   void tick_control();
   void tick_feedback();
-
   Feedback feedback(Arm arm) const;
+  const char *type_name(Arm arm) const;
+  std::string describe(Arm arm) const;
+  // Legacy logging helper (DM4310 motor id or Robotiq slave id).
+  int device_id(Arm arm) const;
 
  private:
-  FXTerminalType terminal_for_arm(Arm arm) const;
-  int motor_id_unlocked(Arm arm) const;
-  bool send_raw(
-      Arm arm, const std::uint8_t *data8, unsigned int timeout_ms);
-  bool send_mit(Arm arm, double norm);
-  bool enable_motors();
-  bool disable_motors();
-  bool read_one_feedback(Arm arm, unsigned int timeout_ms, Feedback *out);
-  bool wait_for_feedback(Arm arm, unsigned int timeout_ms, int attempts);
-  bool probe_motor_id(Arm arm);
-  void maybe_reenable();
-  double norm_to_rad(double norm) const;
-  double rad_to_norm(double rad) const;
+  static std::unique_ptr<GripperArmBackend> make_backend(
+      DriverCore &core, Arm arm, const ArmConfig &cfg);
 
   DriverCore &core_;
   Config config_{};
+  std::unique_ptr<GripperArmBackend> left_;
+  std::unique_ptr<GripperArmBackend> right_;
   bool started_{false};
   std::string start_report_;
-
-  mutable std::mutex target_mutex_;
-  double target_left_{0.0};
-  double target_right_{0.0};
-
-  mutable std::mutex fb_mutex_;
-  Feedback fb_left_{};
-  Feedback fb_right_{};
-
-  std::uint32_t control_ticks_{0};
 };
+
 }  // namespace skye_robot_driver

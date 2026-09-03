@@ -107,6 +107,13 @@ class DriverCore {
 
   bool connect_and_enable(
       const std::array<unsigned char, 4> &ip, const ConnectConfig &config);
+  // Link only (no control mode). Use before RS485 gripper init if runtime
+  // thread would contend with terminal I/O.
+  bool link_controller(const std::array<unsigned char, 4> &ip);
+  // Apply cycle time + enter control mode after optional gripper setup.
+  bool configure_and_enable(const ConnectConfig &config);
+  // PD cycle time only; safe to call before RS485 gripper init.
+  bool apply_comm_config(int cmd_cycle_time_ms);
   bool switch_control_mode(ControlMode mode);
   bool command_allowed() const;
   ControlMode control_mode() const;
@@ -119,6 +126,7 @@ class DriverCore {
   std::optional<DualArmState> read_state() const;
   std::optional<int> get_cmd_cycle_time_ms() const;
   bool linked() const;
+  const std::string &last_error() const;
 
   // End-effector terminal passthrough (CANFD / 485). Requires linked_.
   bool terminal_clear(FXTerminalType terminal);
@@ -133,7 +141,7 @@ class DriverCore {
 
  private:
   static constexpr unsigned int kThreadId = 1;
-  static constexpr unsigned int kModeTimeoutMs = 3000;
+  static constexpr unsigned int kModeTimeoutMs = 10000;
 
   bool reset_errors_unlocked();
   bool enter_mode_unlocked(ControlMode mode);
@@ -145,6 +153,7 @@ class DriverCore {
   bool control_ready_{false};
   ControlMode mode_{ControlMode::kImpJoint};
   ConnectConfig config_{};
+  std::string last_error_;
 };
 
 }  // namespace skye_robot_driver

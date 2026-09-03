@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include "skye_robot_driver/gripper_common.hpp"
+
 namespace skye_robot_driver {
 namespace {
 
@@ -70,6 +72,46 @@ rclcpp::QoS state_qos() {
   return qos;
 }
 
+FXChnType parse_robotiq_485_channel(const std::string &value) {
+  std::string key = value;
+  std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  if (key == "485b" || key == "b") {
+    return FX_CHN_485B;
+  }
+  return FX_CHN_485A;
+}
+
+GripperDriverType load_gripper_type(rclcpp::Node &node, const std::string &param) {
+  const auto raw = node.declare_parameter<std::string>(param, "dm4310");
+  const auto parsed = parse_gripper_type(raw);
+  if (!parsed) {
+    throw std::invalid_argument("invalid " + param + ": " + raw);
+  }
+  return *parsed;
+}
+
+void validate_dm4310_arm(const Dm4310GripperArm::Config &cfg) {
+  if (!std::isfinite(cfg.kp) || !std::isfinite(cfg.kd) ||
+      !std::isfinite(cfg.pos_min) || !std::isfinite(cfg.pos_max) ||
+      !std::isfinite(cfg.close_limit) || cfg.pos_max <= cfg.pos_min ||
+      cfg.close_limit <= 0.0 || cfg.close_limit > 1.0 ||
+      cfg.feedback_timeout_ms == 0 ||
+      (cfg.terminal != 0 && cfg.terminal != 1)) {
+    throw std::invalid_argument("invalid dm4310 gripper params");
+  }
+}
+
+void validate_robotiq_arm(const RobotiqGripperArm::Config &cfg) {
+  if (cfg.slave_id <= 0 || cfg.slave_id > 247 ||
+      cfg.pos_max_mm <= cfg.pos_min_mm || cfg.close_limit <= 0.0 ||
+      cfg.close_limit > 1.0 || cfg.modbus_timeout_ms == 0 ||
+      (cfg.terminal != 0 && cfg.terminal != 1)) {
+    throw std::invalid_argument("invalid robotiq gripper params");
+  }
+}
+
 }  // namespace
 
 DriverNode::DriverNode(const rclcpp::NodeOptions &options)
@@ -95,22 +137,75 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   const auto enable_gripper = declare_parameter<bool>("enable_gripper", true);
   const auto gripper_rate_hz =
       declare_parameter<double>("gripper_rate_hz", 100.0);
+  const auto gripper_invert_default =
+      declare_parameter<bool>("gripper_invert", true);
+  gripper_invert_left_ = declare_parameter<bool>(
+      "gripper_left_invert", gripper_invert_default);
+  gripper_invert_right_ = declare_parameter<bool>(
+      "gripper_right_invert", gripper_invert_default);
+
   GripperBridge::Config gripper_config;
-  gripper_config.left_motor_id =
-      declare_parameter<int>("gripper_left_motor_id", 1);
-  gripper_config.right_motor_id =
-      declare_parameter<int>("gripper_right_motor_id", 2);
-  gripper_config.right_terminal =
-      declare_parameter<int>("gripper_right_terminal", 1);
-  gripper_invert_ = declare_parameter<bool>("gripper_invert", true);
-  gripper_config.kp = declare_parameter<double>("gripper_kp", 3.0);
-  gripper_config.kd = declare_parameter<double>("gripper_kd", 0.12);
-  gripper_config.pos_min = declare_parameter<double>("gripper_pos_min", 0.0);
-  gripper_config.pos_max = declare_parameter<double>("gripper_pos_max", 1.6);
-  gripper_config.close_limit =
+  gripper_config.left.type =
+      load_gripper_type(*this, "gripper_left_type");
+  gripper_config.right.type =
+      load_gripper_type(*this, "gripper_right_type");
+
+  const auto gripper_kp = declare_parameter<double>("gripper_kp", 3.0);
+  const auto gripper_kd = declare_parameter<double>("gripper_kd", 0.12);
+  const auto gripper_pos_min = declare_parameter<double>("gripper_pos_min", 0.0);
+  const auto gripper_pos_max = declare_parameter<double>("gripper_pos_max", 1.6);
+  const auto gripper_close_limit =
       declare_parameter<double>("gripper_close_limit", 0.93);
-  gripper_config.feedback_timeout_ms = static_cast<unsigned int>(
+  const auto gripper_feedback_timeout_ms = static_cast<unsigned int>(
       declare_parameter<int>("gripper_feedback_timeout_ms", 1));
+  const auto gripper_left_motor_id =
+      declare_parameter<int>("gripper_left_motor_id", 1);
+  const auto gripper_right_motor_id =
+      declare_parameter<int>("gripper_right_motor_id", 2);
+  const auto gripper_right_terminal =
+      declare_parameter<int>("gripper_right_terminal", 1);
+
+  gripper_config.left.dm = {
+      gripper_left_motor_id, 0, gripper_kp, gripper_kd, gripper_pos_min,
+      gripper_pos_max, gripper_close_limit, gripper_feedback_timeout_ms};
+  gripper_config.right.dm = {
+      gripper_right_motor_id, gripper_right_terminal, gripper_kp, gripper_kd,
+      gripper_pos_min, gripper_pos_max, gripper_close_limit,
+      gripper_feedback_timeout_ms};
+
+  const auto robotiq_speed = declare_parameter<int>("gripper_robotiq_speed", 136);
+  const auto robotiq_force = declare_parameter<int>("gripper_robotiq_force", 16);
+  const auto robotiq_pos_min_mm =
+      declare_parameter<double>("gripper_robotiq_pos_min_mm", 0.0);
+  const auto left_robotiq_pos_min_mm = declare_parameter<double>(
+      "gripper_left_robotiq_pos_min_mm", robotiq_pos_min_mm);
+  const auto right_robotiq_pos_min_mm = declare_parameter<double>(
+      "gripper_right_robotiq_pos_min_mm", robotiq_pos_min_mm);
+  const auto robotiq_pos_max_mm =
+      declare_parameter<double>("gripper_robotiq_pos_max_mm", 50.0);
+  const auto left_robotiq_pos_max_mm = declare_parameter<double>(
+      "gripper_left_robotiq_pos_max_mm", robotiq_pos_max_mm);
+  const auto right_robotiq_pos_max_mm = declare_parameter<double>(
+      "gripper_right_robotiq_pos_max_mm", robotiq_pos_max_mm);
+  const auto robotiq_modbus_timeout_ms = static_cast<unsigned int>(
+      declare_parameter<int>("gripper_robotiq_modbus_timeout_ms", 150));
+
+  gripper_config.left.robotiq = {
+      declare_parameter<int>("gripper_left_robotiq_slave_id", 9), robotiq_speed,
+      robotiq_force, left_robotiq_pos_min_mm, left_robotiq_pos_max_mm,
+      gripper_close_limit,
+      parse_robotiq_485_channel(declare_parameter<std::string>(
+          "gripper_left_robotiq_485_channel", "485A")),
+      declare_parameter<int>("gripper_left_robotiq_terminal", 0),
+      robotiq_modbus_timeout_ms};
+  gripper_config.right.robotiq = {
+      declare_parameter<int>("gripper_right_robotiq_slave_id", 9), robotiq_speed,
+      robotiq_force, right_robotiq_pos_min_mm, right_robotiq_pos_max_mm,
+      gripper_close_limit,
+      parse_robotiq_485_channel(declare_parameter<std::string>(
+          "gripper_right_robotiq_485_channel", "485A")),
+      declare_parameter<int>("gripper_right_robotiq_terminal", 1),
+      robotiq_modbus_timeout_ms};
 
   left_joint_order_ = load_joint_order(*this, "left_joint_order", kDefaultOrder);
   right_joint_order_ =
@@ -166,19 +261,15 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       throw std::invalid_argument(
           "gripper_rate_hz must be finite and greater than zero");
     }
-    if (!std::isfinite(gripper_config.kp) || !std::isfinite(gripper_config.kd) ||
-        !std::isfinite(gripper_config.pos_min) ||
-        !std::isfinite(gripper_config.pos_max) ||
-        !std::isfinite(gripper_config.close_limit) ||
-        gripper_config.pos_max <= gripper_config.pos_min ||
-        gripper_config.close_limit <= 0.0 ||
-        gripper_config.close_limit > 1.0 ||
-        gripper_config.feedback_timeout_ms == 0 ||
-        (gripper_config.right_terminal != 0 &&
-         gripper_config.right_terminal != 1)) {
-      throw std::invalid_argument(
-          "invalid gripper MIT / position range / close_limit / terminal / "
-          "feedback_timeout_ms params");
+    if (gripper_config.left.type == GripperDriverType::kDm4310) {
+      validate_dm4310_arm(gripper_config.left.dm);
+    } else {
+      validate_robotiq_arm(gripper_config.left.robotiq);
+    }
+    if (gripper_config.right.type == GripperDriverType::kDm4310) {
+      validate_dm4310_arm(gripper_config.right.dm);
+    } else {
+      validate_robotiq_arm(gripper_config.right.robotiq);
     }
   }
   auto ratio_ok = [](int value) { return value >= 1 && value <= 100; };
@@ -296,9 +387,23 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
 
   if (connect_on_startup) {
     const auto ip = parse_ipv4(robot_ip);
-    if (!core_.connect_and_enable(ip, connect_config)) {
+    if (!core_.link_controller(ip)) {
+      throw std::runtime_error("Gento SDK failed to link controller");
+    }
+    if (!core_.configure_and_enable(connect_config)) {
+      core_.shutdown();
       throw std::runtime_error(
-          "Gento SDK failed to connect or enter control mode");
+          std::string("Gento SDK failed to enter control mode: ") +
+          core_.last_error());
+    }
+    if (enable_gripper) {
+      if (!gripper_.start(gripper_config)) {
+        core_.shutdown();
+        throw std::runtime_error(
+            std::string("failed to start gripper bridge: ") +
+            gripper_.start_report());
+      }
+      gripper_enabled_ = true;
     }
     RCLCPP_INFO(
         get_logger(),
@@ -313,10 +418,6 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
         connect_config.right_acc_ratio, connect_config.cmd_cycle_time_ms);
 
     if (enable_gripper) {
-      if (!gripper_.start(gripper_config)) {
-        throw std::runtime_error("failed to enable DM gripper motors via Terminal");
-      }
-      gripper_enabled_ = true;
       const auto gripper_period =
           std::chrono::duration<double>(1.0 / gripper_rate_hz);
       gripper_timer_ = create_wall_timer(
@@ -325,24 +426,19 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       RCLCPP_INFO(
           get_logger(),
           "Executor: control+gripper callback groups (MultiThreaded, 2). "
-          "Gripper enabled: motor_id L/R=%d/%d term R=ARM%d invert=%s; "
-          "kp=%.3f kd=%.3f; "
-          "pos=[%.3f,%.3f] rad close_limit=%.3f; rate=%.1f Hz; "
-          "fb_timeout=%ums | %s",
-          gripper_.motor_id(DriverCore::Arm::kLeft),
-          gripper_.motor_id(DriverCore::Arm::kRight),
-          gripper_config.right_terminal,
-          gripper_invert_ ? "true" : "false", gripper_config.kp,
-          gripper_config.kd,
-          gripper_config.pos_min, gripper_config.pos_max,
-          gripper_config.close_limit, gripper_rate_hz,
-          gripper_config.feedback_timeout_ms, gripper_.start_report().c_str());
-      if (gripper_.start_report().find("silent") != std::string::npos ||
-          gripper_.start_report().find("fb=NONE") != std::string::npos) {
+          "Gripper enabled: L=%s R=%s invert L/R=%s/%s rate=%.1f Hz | %s",
+          gripper_.type_name(DriverCore::Arm::kLeft),
+          gripper_.type_name(DriverCore::Arm::kRight),
+          gripper_invert_left_ ? "true" : "false",
+          gripper_invert_right_ ? "true" : "false",
+          gripper_rate_hz,
+          gripper_.start_report().c_str());
+      if (gripper_.start_report().find("fb=NONE") != std::string::npos ||
+          gripper_.start_report().find("activated=FAIL") != std::string::npos) {
         RCLCPP_WARN(
             get_logger(),
-            "Gripper CAN incomplete: %s. /right_gripper/state frame_id="
-            "no_feedback means topic is echoing target, not motor pose.",
+            "Gripper init incomplete: %s. state may echo target without "
+            "hardware feedback.",
             gripper_.start_report().c_str());
       }
     }
@@ -885,11 +981,24 @@ void DriverNode::handle_gripper_command(
         "gripper command ignored: need finite position[0]");
     return;
   }
-  double cmd = message->position[0];
-  if (gripper_invert_) {
-    cmd = 1.0 - cmd;
+  gripper_.set_target(arm, factr_to_motor_norm(arm, message->position[0]));
+}
+
+bool DriverNode::gripper_invert_for(DriverCore::Arm arm) const {
+  return arm == DriverCore::Arm::kLeft ? gripper_invert_left_
+                                       : gripper_invert_right_;
+}
+
+double DriverNode::factr_to_motor_norm(
+    DriverCore::Arm arm, double factr_norm) const {
+  if (gripper_invert_for(arm)) {
+    return 1.0 - factr_norm;
   }
-  gripper_.set_target(arm, cmd);
+  return factr_norm;
+}
+
+double DriverNode::motor_to_factr_norm(double motor_norm) const {
+  return 1.0 - motor_norm;
 }
 
 void DriverNode::tick_gripper() {
@@ -910,24 +1019,21 @@ void DriverNode::publish_gripper_state() {
     JointState msg;
     msg.header.stamp = now();
     msg.name = {"gripper_joint"};
-    auto maybe_invert = [this](double motor_norm) {
-      return gripper_invert_ ? 1.0 - motor_norm : motor_norm;
-    };
     if (fb.valid) {
-      msg.header.frame_id = "can_" + std::to_string(fb.can_id);
-      msg.position = {maybe_invert(fb.position)};
+      msg.header.frame_id = fb.frame_tag.empty() ? "gripper" : fb.frame_tag;
+      msg.position = {motor_to_factr_norm(fb.position)};
       msg.velocity = {fb.velocity};
       msg.effort = {fb.effort};
     } else {
       msg.header.frame_id = "no_feedback";
-      msg.position = {maybe_invert(gripper_.target(arm))};
+      msg.position = {motor_to_factr_norm(gripper_.target(arm))};
       msg.velocity = {0.0};
       msg.effort = {0.0};
       RCLCPP_WARN_THROTTLE(
           get_logger(), *get_clock(), 2000,
-          "%s gripper: no CAN feedback (id=%d). state.position is target echo, "
-          "not motor pose. Check Terminal CAN / power / motor ID.",
-          side, gripper_.motor_id(arm));
+          "%s gripper (%s): no feedback (dev=%d). state.position is target "
+          "echo, not hardware pose.",
+          side, gripper_.type_name(arm), gripper_.device_id(arm));
     }
     pub->publish(msg);
   };
