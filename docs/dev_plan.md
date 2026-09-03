@@ -57,6 +57,7 @@
 ## 与 marvin_ws 必须对齐的信息
 
 本地现状：**小臂（FACTR 主手）+ 大臂（Gento 从臂）双臂**，同机 / 同 `ROS_DOMAIN_ID`（P4 固定 `21`）。  
+**双机（Thor / Orin）** 通过 `ROBOT_PROFILE=thor|orin`（或 launch `robot_profile:=…`）切换夹爪与关节 signs；主机与小臂 Docker 须同一 profile。  
 活跃链路（bridge-less）：
 
 ```text

@@ -57,6 +57,7 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
+| `robot_profile` | `thor` | launch 参数 / 环境变量 `ROBOT_PROFILE`：`thor`（DM4310 夹爪）或 `orin`（Robotiq Hand-E + 右 J6/J7 signs）。叠加 `config/profiles/{profile}.yaml`；见 `docs/小臂大臂启动步骤.md` |
 | `control_mode` | `imp_joint` | 启动模式（idle/position/imp_joint/imp_cart/pd） |
 | `cmd_cycle_time_ms` | `4` | `SetPDCmdCycleTime` |
 | `impedance_stiffness/damping` | 100 / 10 | 关节阻抗 K/D |
