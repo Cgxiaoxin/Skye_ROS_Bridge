@@ -8,29 +8,56 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
+_REMAPS = [
+    ("/joint_states", "/gento/joint_states"),
+    ("/left_joint_states", "/gento/left_joint_states"),
+    ("/right_joint_states", "/gento/right_joint_states"),
+    ("/left_joint_control", "/gento/left_joint_control"),
+    ("/right_joint_control", "/gento/right_joint_control"),
+    ("/left_joint_control_abs", "/gento/left_joint_control_abs"),
+    ("/right_joint_control_abs", "/gento/right_joint_control_abs"),
+    ("/robot_state", "/gento/robot_state"),
+    ("/set_mode", "/gento/set_mode"),
+    ("/hold_current", "/gento/hold_current"),
+    ("/stop_motion", "/gento/stop_motion"),
+    ("/emergency_stop", "/gento/emergency_stop"),
+]
+
+
 def _launch_setup(context, *args, **kwargs):
     pkg_share = get_package_share_directory("skye_robot_driver")
     params_file = LaunchConfiguration("params_file").perform(context)
     connect_on_startup = LaunchConfiguration("connect_on_startup").perform(context)
-    robotiq_right = LaunchConfiguration("robotiq_right_gripper").perform(context)
+    robot_profile = LaunchConfiguration("robot_profile").perform(context).strip().lower()
     robotiq_dual = LaunchConfiguration("robotiq_dual_gripper").perform(context)
+    robotiq_right = LaunchConfiguration("robotiq_right_gripper").perform(context)
 
+    if robot_profile not in ("thor", "orin"):
+        raise RuntimeError(
+            f"robot_profile must be 'thor' or 'orin', got: {robot_profile!r}"
+        )
+
+    # Legacy flags map to orin/partial overlays if profile still thor.
     node_params = [
         params_file,
+        os.path.join(pkg_share, "config", "profiles", f"{robot_profile}.yaml"),
+    ]
+    if robot_profile == "thor" and robotiq_dual.lower() in ("1", "true", "yes"):
+        node_params.append(
+            os.path.join(pkg_share, "config", "profiles", "orin.yaml")
+        )
+    elif robot_profile == "thor" and robotiq_right.lower() in ("1", "true", "yes"):
+        node_params.append(
+            os.path.join(pkg_share, "config", "skye_robot_robotiq_right.yaml")
+        )
+
+    node_params.append(
         {
             "connect_on_startup": ParameterValue(
                 connect_on_startup.lower() in ("1", "true", "yes"), value_type=bool
             )
-        },
-    ]
-    if robotiq_dual.lower() in ("1", "true", "yes"):
-        node_params.append(
-            os.path.join(pkg_share, "config", "skye_robot_robotiq_dual.yaml")
-        )
-    elif robotiq_right.lower() in ("1", "true", "yes"):
-        node_params.append(
-            os.path.join(pkg_share, "config", "skye_robot_robotiq_right.yaml")
-        )
+        }
+    )
 
     return [
         Node(
@@ -38,20 +65,7 @@ def _launch_setup(context, *args, **kwargs):
             executable="skye_robot_driver",
             name="skye_robot_driver",
             parameters=node_params,
-            remappings=[
-                ("/joint_states", "/gento/joint_states"),
-                ("/left_joint_states", "/gento/left_joint_states"),
-                ("/right_joint_states", "/gento/right_joint_states"),
-                ("/left_joint_control", "/gento/left_joint_control"),
-                ("/right_joint_control", "/gento/right_joint_control"),
-                ("/left_joint_control_abs", "/gento/left_joint_control_abs"),
-                ("/right_joint_control_abs", "/gento/right_joint_control_abs"),
-                ("/robot_state", "/gento/robot_state"),
-                ("/set_mode", "/gento/set_mode"),
-                ("/hold_current", "/gento/hold_current"),
-                ("/stop_motion", "/gento/stop_motion"),
-                ("/emergency_stop", "/gento/emergency_stop"),
-            ],
+            remappings=_REMAPS,
             output="screen",
         )
     ]
@@ -63,28 +77,32 @@ def generate_launch_description():
         "config",
         "skye_robot.yaml",
     )
-
     return LaunchDescription(
         [
             DeclareLaunchArgument(
                 "params_file",
                 default_value=default_params_file,
-                description="Full path to the Skye driver parameter file",
+                description="Base Skye driver parameter file",
             ),
             DeclareLaunchArgument(
                 "connect_on_startup",
                 default_value="true",
-                description="Link SDK and enter PD on startup",
+                description="Link SDK and enter control mode on startup",
             ),
             DeclareLaunchArgument(
-                "robotiq_right_gripper",
-                default_value="false",
-                description="Overlay: left dm4310 + right Robotiq Hand-E",
+                "robot_profile",
+                default_value="thor",
+                description="Machine profile: thor (DM4310) | orin (Robotiq)",
             ),
             DeclareLaunchArgument(
                 "robotiq_dual_gripper",
                 default_value="false",
-                description="Overlay: both arms Robotiq Hand-E",
+                description="Legacy: if true with robot_profile:=thor, also load orin.yaml",
+            ),
+            DeclareLaunchArgument(
+                "robotiq_right_gripper",
+                default_value="false",
+                description="Legacy: right-only Robotiq overlay (prefer robot_profile:=orin)",
             ),
             OpaqueFunction(function=_launch_setup),
         ]

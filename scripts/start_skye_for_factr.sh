@@ -11,6 +11,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROBOT_PROFILE="${ROBOT_PROFILE:-thor}"
+case "${ROBOT_PROFILE}" in
+  thor|orin) ;;
+  *)
+    echo "ERROR: ROBOT_PROFILE must be thor|orin (got: ${ROBOT_PROFILE})" >&2
+    exit 1
+    ;;
+esac
 WS="${REPO_ROOT}/skye_ros2_ws"
 
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-21}"
@@ -49,9 +57,10 @@ source /opt/ros/humble/setup.bash
 source install/setup.bash
 set -u
 
-echo "== skye_robot_driver ROS_DOMAIN_ID=${ROS_DOMAIN_ID} =="
+echo "== skye_robot_driver profile=${ROBOT_PROFILE} ROS_DOMAIN_ID=${ROS_DOMAIN_ID} =="
 echo "   FASTRTPS_DEFAULT_PROFILES_FILE=${FASTRTPS_DEFAULT_PROFILES_FILE}"
 echo "Expect FACTR remap: /gento/joint_states + /gento/{left,right}_joint_control"
 echo "Mode default: imp_joint (2). Keyboard in docker: 1=sync 2=teleop 3=stop"
 exec ros2 launch skye_robot_driver skye_robot_driver.launch.py \
-  connect_on_startup:="${CONNECT_ON_STARTUP:-true}"
+  connect_on_startup:="${CONNECT_ON_STARTUP:-true}" \
+  robot_profile:="${ROBOT_PROFILE}"
