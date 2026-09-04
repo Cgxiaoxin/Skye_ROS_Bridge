@@ -4,7 +4,7 @@
 
 ## Commits
 
-- `docs: document 1 → s → 2 follower align flow` (docs only)
+- `4b8cef0` — `docs: document 1 → s → 2 follower align flow`
 
 ## Summary
 
@@ -21,3 +21,7 @@
 
 - `skye_follower_align` nodes + `scripts/start_follower_align.sh`
 - `skye_robot_driver/srv/SetMotionRates` remapped to `/gento/set_motion_rates`
+
+## Fix
+
+- `711221e` — `docs: fix align section hand launch to skye_follower_align` —「等价手写 launch」误写 `skye_robot_driver`，改为 `skye_follower_align` + `ROBOT_PROFILE`；补充按 `s` 前须已启动对齐 helper。

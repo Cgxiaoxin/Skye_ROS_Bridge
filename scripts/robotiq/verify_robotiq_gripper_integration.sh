@@ -41,8 +41,8 @@ echo "  gripper_right_robotiq_pos_min_mm=${RMIN}"
 python3 - <<PY
 import sys
 l, r = float("${LMIN:-0}"), float("${RMIN:-0}")
-ok = abs(l - 13.0) < 0.01 and abs(r - 2.0) < 0.01
-print(f"  期望: 左=13.0 mm 右=2.0 mm（2026-09-04 L/R 实体互换后）")
+ok = abs(l - 2.0) < 0.01 and abs(r - 13.0) < 0.01
+print(f"  期望: 左=2.0 mm 右=13.0 mm（实机遥操）")
 if not ok:
     print(f"FAIL: 闭合开度配置不符 (左={l}, 右={r})")
     sys.exit(1)

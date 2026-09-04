@@ -12,8 +12,8 @@ skye_robot_driver:
     gripper_left_robotiq_slave_id: 9
     gripper_right_robotiq_slave_id: 9
     gripper_close_limit: 1.0
-    # 2026-09-04 L/R 实体互换后：闭合开度随夹爪对调
-    gripper_left_robotiq_pos_min_mm: 13.0
-    gripper_right_robotiq_pos_min_mm: 2.0
+    # 闭合开度以实机遥操为准：左 2 / 右 13
+    gripper_left_robotiq_pos_min_mm: 2.0
+    gripper_right_robotiq_pos_min_mm: 13.0
     gripper_left_robotiq_pos_max_mm: 50.0
     gripper_right_robotiq_pos_max_mm: 50.0
