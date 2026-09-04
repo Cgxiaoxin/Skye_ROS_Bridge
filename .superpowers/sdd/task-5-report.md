@@ -1,21 +1,23 @@
-# Task 5 Report: Docs update
+# Task 5 Report — Docs + operator checklist
 
 **Status:** Complete
 
-**Commits:**
-- New: `docs: document robot_profile thor/orin startup` (4 files)
-- Design/plan already on main: `54ea2ed` (`docs/superpowers/specs/2026-09-03-robot-profile-merge-design.md`, `docs/superpowers/plans/2026-09-03-robot-profile-merge.md`)
+## Commits
+
+- `docs: document 1 → s → 2 follower align flow` (docs only)
 
 ## Summary
 
-- Added **双机切换（`robot_profile`）** section to `docs/小臂大臂启动步骤.md` (Thor/Orin table, host/Docker/launch commands, bind/sync profile warning).
-- Task 4 gaps: `ROBOT_PROFILE` required for bind/sync; sync sources `configs/<profile>/` not flat `configs/` — in startup doc §5/§install and `docs/新主臂串口绑定.md`.
-- `docs/ros_interfaces.md`: `robot_profile` row in key params.
-- `docs/dev_plan.md`: one-line dual-machine note under marvin alignment.
+- **`docs/Thor_Orin_遥操启动.md`**: Thor/Orin startup lines now `1 → s → 2`; added shared「对齐（FACTR sync 之后）」section with `start_follower_align.sh`, topic pub, `/align/status` echo; listed script in related files.
+- **`docs/ros_interfaces.md`**: Documented `/mode/align_follower`, `/mode/align_cancel`, `/align/status`, `/gento/set_motion_rates`, and follower-align topic graph.
+- **`docs/superpowers/specs/2026-09-04-follower-align-after-sync-design.md`**: Status → 已实现（软件）；待 Thor/Orin 实机 HW 验收.
+- **`docs/小臂大臂启动步骤.md`**: Link paragraph under 双机切换; keyboard table adds host `s` row.
 
 ## Concerns
 
-- Thor right leader `joint_signs` still unvalidated on hardware (Task 4/6).
-- Old “启用 Robotiq 夹爪的三种方式” section remains; dual-machine section is canonical for Orin.
+- None for docs scope. HW validation (ALIGNED threshold, Orin right wrist, TIMEOUT_WARN → teleop) remains operator checklist on real robots.
 
-**Report path:** `.superpowers/sdd/task-5-report.md`
+## APIs verified against code
+
+- `skye_follower_align` nodes + `scripts/start_follower_align.sh`
+- `skye_robot_driver/srv/SetMotionRates` remapped to `/gento/set_motion_rates`

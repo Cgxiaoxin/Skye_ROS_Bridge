@@ -1,7 +1,7 @@
 # Follower Align After Sync — Design
 
 **日期:** 2026-09-04  
-**状态:** 待用户确认后进入 implementation plan  
+**状态:** 已实现（软件）；待 Thor/Orin 实机 HW 验收  
 **相关:** FACTR `1` sync 后小臂 GC 不足导致位姿残差；相对遥操前需大臂跟小臂绝对对齐
 
 ## 1. 问题

@@ -92,6 +92,29 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 | `/gento/hold_current` | `std_srvs/Trigger` | 保持当前位姿 |
 | `/gento/stop_motion` | `std_srvs/Trigger` | 停止并进 IDLE |
 | `/gento/emergency_stop` | `std_srvs/Trigger` | 软件急停 → IDLE |
+| `/gento/set_motion_rates` | `skye_robot_driver/srv/SetMotionRates` | 左右 vel/acc ratio（1–100%）。对齐节点对齐前写 10/10，结束后写回 profile 默认（如 30/30） |
+
+```bash
+ros2 service call /gento/set_motion_rates skye_robot_driver/srv/SetMotionRates \
+  "{left_vel_ratio: 10, left_acc_ratio: 10, right_vel_ratio: 10, right_acc_ratio: 10}"
+```
+
+## Follower align（FACTR sync 之后，`skye_follower_align`）
+
+独立主机节点；FACTR Docker 内 `1/2/3` 不变。对齐方向：**大臂跟小臂**（绝对 `*_joint_control_abs`），对齐中 vel/acc 强制 10%。
+
+| 方向 | Topic | 类型 | 说明 |
+|------|-------|------|------|
+| 订阅 | `/mode/align_follower` | `std_msgs/String` | `data: align_follower` 开始对齐（主机键盘 `s` 与 CLI 共用） |
+| 订阅 | `/mode/align_cancel` | `std_msgs/String` | `data: align_cancel` 取消对齐（主机键盘 `x`） |
+| 发布 | `/align/status` | `std_msgs/String` | `IDLE` / `ALIGNING` / `ALIGNED` / `TIMEOUT_WARN` |
+| 订阅 | `/left_leader_arm/current_state` | `sensor_msgs/JointState` | 小臂左 7 轴（对齐目标源） |
+| 订阅 | `/right_leader_arm/current_state` | `sensor_msgs/JointState` | 小臂右 7 轴 |
+| 订阅 | `/gento/joint_states` | `sensor_msgs/JointState` | 大臂 14 轴反馈（误差计算） |
+| 发布 | `/gento/left_joint_control_abs` | `sensor_msgs/JointState` | 对齐绝对命令（左） |
+| 发布 | `/gento/right_joint_control_abs` | `sensor_msgs/JointState` | 对齐绝对命令（右） |
+
+启动: `ROBOT_PROFILE=thor|orin ./scripts/start_follower_align.sh`（`enable_keyboard:=true` 时终端焦点按 `s`/`x`）。操作流程见 `docs/Thor_Orin_遥操启动.md`。
 
 ## 关键参数
 
