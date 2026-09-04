@@ -14,19 +14,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-KEY_TO_ACTION = {
-    "s": "align_follower",
-    "x": "align_cancel",
-    "q": "quit",
-}
-
-
-def map_key(key: str) -> Optional[str]:
-    """Map a single key or line to an align action."""
-    normalized = key.strip().lower()
-    if not normalized:
-        return None
-    return KEY_TO_ACTION.get(normalized)
+from skye_follower_align.align_keys import map_key
 
 
 class KeyboardReader:
@@ -53,10 +41,15 @@ class KeyboardReader:
         )
         self._thread.start()
 
+    def request_stop(self) -> None:
+        self._running = False
+
     def stop(self) -> None:
         self._running = False
         if self._thread is not None:
-            self._thread.join(timeout=1.0)
+            # Quit ('q') runs on the reader thread; joining self deadlocks.
+            if threading.current_thread() is not self._thread:
+                self._thread.join(timeout=1.0)
             self._thread = None
         if self._old_term_attrs is not None:
             termios.tcsetattr(
@@ -96,7 +89,7 @@ class HostKeyboardAlignNode(Node):
     def _handle_action(self, action: str) -> None:
         if action == "quit":
             self.get_logger().info("quit requested")
-            self._reader.stop()
+            self._reader.request_stop()
             rclpy.shutdown()
             return
         if action == "align_follower":

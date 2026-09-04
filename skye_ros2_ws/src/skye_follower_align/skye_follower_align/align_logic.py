@@ -20,6 +20,24 @@ def map_leader_to_follower(leader: Sequence[float], signs: Sequence[float]) -> l
     return [float(signs[i]) * float(leader[i]) for i in range(DOF)]
 
 
+def leader_positions_for_abs_command(leader: Sequence[float]) -> list[float]:
+    """Raw leader joints for *_joint_control_abs; driver applies signs."""
+    if len(leader) != DOF:
+        raise ValueError("expected 7 joints")
+    return [float(v) for v in leader]
+
+
+def combine_phase(left: AlignPhase, right: AlignPhase) -> AlignPhase:
+    phases = {left, right}
+    if AlignPhase.TIMEOUT_WARN in phases:
+        return AlignPhase.TIMEOUT_WARN
+    if AlignPhase.ALIGNING in phases:
+        return AlignPhase.ALIGNING
+    if left == AlignPhase.ALIGNED and right == AlignPhase.ALIGNED:
+        return AlignPhase.ALIGNED
+    return AlignPhase.IDLE
+
+
 def max_abs_err(cmd: Sequence[float], measured: Sequence[float]) -> float:
     return max(abs(float(cmd[i]) - float(measured[i])) for i in range(DOF))
 

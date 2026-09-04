@@ -7,6 +7,8 @@ import time
 from typing import Optional, Sequence
 
 import rclpy
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import (
     DurabilityPolicy,
@@ -22,7 +24,8 @@ from std_srvs.srv import Trigger
 from skye_follower_align.align_logic import (
     AlignPhase,
     AlignSession,
-    map_leader_to_follower,
+    combine_phase,
+    leader_positions_for_abs_command,
 )
 
 DOF = 7
@@ -33,17 +36,6 @@ PHASE_TO_STATUS = {
     AlignPhase.TIMEOUT_WARN: "TIMEOUT_WARN",
 }
 DEFAULT_SIGNS = [1.0] * DOF
-
-
-def combine_phase(left: AlignPhase, right: AlignPhase) -> AlignPhase:
-    phases = {left, right}
-    if AlignPhase.TIMEOUT_WARN in phases:
-        return AlignPhase.TIMEOUT_WARN
-    if AlignPhase.ALIGNING in phases:
-        return AlignPhase.ALIGNING
-    if left == AlignPhase.ALIGNED and right == AlignPhase.ALIGNED:
-        return AlignPhase.ALIGNED
-    return AlignPhase.IDLE
 
 
 def joint_positions(msg: JointState, count: int = DOF) -> Optional[list[float]]:
@@ -111,12 +103,16 @@ class FollowerAlignNode(Node):
             history=HistoryPolicy.KEEP_LAST, depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE)
+        status_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST, depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL)
 
         self._left_cmd_pub = self.create_publisher(
             JointState, "/gento/left_joint_control_abs", cmd_qos)
         self._right_cmd_pub = self.create_publisher(
             JointState, "/gento/right_joint_control_abs", cmd_qos)
-        self._status_pub = self.create_publisher(String, "/align/status", 10)
+        self._status_pub = self.create_publisher(String, "/align/status", status_qos)
 
         self.create_subscription(
             String, "/mode/align_follower", self._align_callback, 10)
@@ -131,9 +127,14 @@ class FollowerAlignNode(Node):
         self.create_subscription(
             JointState, "/gento/joint_states", self._big_callback, state_qos)
 
+        # Reentrant group + MultiThreadedExecutor: spin_until_future_complete in
+        # callbacks would deadlock with the default MutuallyExclusive group.
+        service_cb_group = ReentrantCallbackGroup()
         self._rates_client = self.create_client(
-            SetMotionRates, "/gento/set_motion_rates")
-        self._hold_client = self.create_client(Trigger, "/gento/hold_current")
+            SetMotionRates, "/gento/set_motion_rates",
+            callback_group=service_cb_group)
+        self._hold_client = self.create_client(
+            Trigger, "/gento/hold_current", callback_group=service_cb_group)
 
         rate_hz = max(1.0, float(self.get_parameter("align_rate_hz").value))
         self.create_timer(1.0 / rate_hz, self._timer_callback)
@@ -163,6 +164,10 @@ class FollowerAlignNode(Node):
         if not self._call_set_motion_rates(
                 self._align_vel, self._align_acc,
                 self._align_vel, self._align_acc):
+            self.get_logger().error("failed to set align motion rates")
+            if not self._call_set_motion_rates(*self._restore_rates):
+                self.get_logger().error(
+                    "failed to restore motion rates after align rate failure")
             self._left_session.cancel()
             self._right_session.cancel()
             return
@@ -215,20 +220,21 @@ class FollowerAlignNode(Node):
             self._abort_align("leader feedback stale or missing")
             return
 
-        if not self._is_fresh(self._big_at, self._big_freshness_s):
+        if (self._left_leader is None or self._right_leader is None
+                or self._big_left is None or self._big_right is None):
             return
 
-        assert self._left_leader is not None
-        assert self._right_leader is not None
-        assert self._big_left is not None
-        assert self._big_right is not None
+        big_fresh = self._is_fresh(self._big_at, self._big_freshness_s)
+        if big_fresh:
+            # skye_robot_driver applies joint signs on *_joint_control_abs.
+            self._publish_abs(
+                self._left_cmd_pub,
+                leader_positions_for_abs_command(self._left_leader))
+            self._publish_abs(
+                self._right_cmd_pub,
+                leader_positions_for_abs_command(self._right_leader))
 
-        cmd_left = map_leader_to_follower(self._left_leader, self._left_signs)
-        cmd_right = map_leader_to_follower(
-            self._right_leader, self._right_signs)
-        self._publish_abs(self._left_cmd_pub, cmd_left)
-        self._publish_abs(self._right_cmd_pub, cmd_right)
-
+        # Keep advancing sessions (timeout) even when big feedback is stale.
         left_phase = self._left_session.on_tick(
             self._left_leader, self._big_left, self._left_signs)
         right_phase = self._right_session.on_tick(
@@ -264,6 +270,17 @@ class FollowerAlignNode(Node):
             self.get_logger().error(
                 "failed to restore motion rates after abort")
         self._publish_status("IDLE")
+
+    def _shutdown_cleanup(self) -> None:
+        if not self._streaming and self._phase() != AlignPhase.ALIGNING:
+            return
+        self.get_logger().warn("shutdown during align; holding and restoring rates")
+        self._streaming = False
+        self._call_hold()
+        if not self._call_set_motion_rates(*self._restore_rates):
+            self.get_logger().error("failed to restore motion rates on shutdown")
+        self._left_session.cancel()
+        self._right_session.cancel()
 
     def _call_set_motion_rates(
             self, left_vel: int, left_acc: int,
@@ -308,11 +325,14 @@ class FollowerAlignNode(Node):
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = FollowerAlignNode()
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        node._shutdown_cleanup()
         node.destroy_node()
         rclpy.shutdown()
 

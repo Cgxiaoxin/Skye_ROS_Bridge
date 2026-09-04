@@ -1,8 +1,11 @@
 from skye_follower_align.align_logic import (
     AlignPhase,
     AlignSession,
+    combine_phase,
+    leader_positions_for_abs_command,
     map_leader_to_follower,
 )
+from skye_follower_align.align_keys import map_key
 
 
 def test_map_leader_applies_signs():
@@ -42,3 +45,23 @@ def test_cancel_returns_idle():
     s.start()
     s.cancel()
     assert s.phase == AlignPhase.IDLE
+
+
+def test_abs_command_publishes_raw_leader():
+    leader = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
+    assert leader_positions_for_abs_command(leader) == leader
+
+
+def test_combine_phase_priority():
+    assert combine_phase(AlignPhase.ALIGNING, AlignPhase.ALIGNED) == AlignPhase.ALIGNING
+    assert combine_phase(AlignPhase.ALIGNED, AlignPhase.TIMEOUT_WARN) == AlignPhase.TIMEOUT_WARN
+    assert combine_phase(AlignPhase.ALIGNED, AlignPhase.ALIGNED) == AlignPhase.ALIGNED
+    assert combine_phase(AlignPhase.IDLE, AlignPhase.IDLE) == AlignPhase.IDLE
+
+
+def test_map_key_align_actions():
+    assert map_key("s") == "align_follower"
+    assert map_key("S\n") == "align_follower"
+    assert map_key("x") == "align_cancel"
+    assert map_key("q") == "quit"
+    assert map_key("a") is None

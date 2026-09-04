@@ -11,6 +11,9 @@ _ORIN_RIGHT_SIGNS = [1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0]
 def _launch_setup(context, *args, **kwargs):
     robot_profile = LaunchConfiguration("robot_profile").perform(
         context).strip().lower()
+    if robot_profile not in ("thor", "orin"):
+        raise RuntimeError(
+            f"robot_profile must be thor|orin (got: {robot_profile!r})")
     left_signs = list(_DEFAULT_SIGNS)
     right_signs = (
         list(_ORIN_RIGHT_SIGNS) if robot_profile == "orin"

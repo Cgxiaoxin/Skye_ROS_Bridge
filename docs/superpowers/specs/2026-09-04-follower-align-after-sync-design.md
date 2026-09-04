@@ -90,6 +90,8 @@ Docker:  factr_teleop（1/2/3 不变）
 q_big_cmd[i] = sign[i] * q_leader[i]
 ```
 
+对齐节点在 `*_joint_control_abs` 上发布**原始小臂关节角**；`skye_robot_driver` 在 `handle_absolute_command` 内应用 `left/right_joint_signs`。误差比较（`on_tick`）仍用 `sign[i] * q_leader[i]` 与 `/gento/joint_states` 对比。
+
 走 `*_joint_control_abs`，**不**走 relative，避免污染 teleop 会话基线。
 
 ## 6. 状态机与安全
