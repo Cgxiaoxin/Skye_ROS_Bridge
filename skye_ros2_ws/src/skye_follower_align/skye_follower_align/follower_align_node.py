@@ -62,10 +62,10 @@ class FollowerAlignNode(Node):
         self.declare_parameter("align_rate_hz", 50.0)
         self.declare_parameter("align_vel_ratio", 10)
         self.declare_parameter("align_acc_ratio", 10)
-        self.declare_parameter("restore_left_vel_ratio", 100)
-        self.declare_parameter("restore_left_acc_ratio", 100)
-        self.declare_parameter("restore_right_vel_ratio", 100)
-        self.declare_parameter("restore_right_acc_ratio", 100)
+        self.declare_parameter("restore_left_vel_ratio", 30)
+        self.declare_parameter("restore_left_acc_ratio", 30)
+        self.declare_parameter("restore_right_vel_ratio", 30)
+        self.declare_parameter("restore_right_acc_ratio", 30)
         self.declare_parameter("leader_freshness_s", 0.5)
         self.declare_parameter("big_freshness_s", 0.5)
         self.declare_parameter("left_joint_signs", DEFAULT_SIGNS)
@@ -92,7 +92,7 @@ class FollowerAlignNode(Node):
 
         self._left_session = AlignSession(threshold, hold_frames, timeout_s)
         self._right_session = AlignSession(threshold, hold_frames, timeout_s)
-        self._status = "IDLE"
+        self._status: Optional[str] = None
         self._streaming = False
 
         self._left_leader: Optional[list[float]] = None
