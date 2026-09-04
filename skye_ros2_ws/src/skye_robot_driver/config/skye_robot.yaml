@@ -4,10 +4,10 @@ skye_robot_driver:
     robot_ip: "6.6.7.190"
     # 0=idle 1=position 2=imp_joint 3=imp_cart (FX_STATE); default teleop=2
     control_mode: "imp_joint"
-    left_velocity_ratio: 30
-    right_velocity_ratio: 30
-    left_acceleration_ratio: 30
-    right_acceleration_ratio: 30
+    left_velocity_ratio: 50
+    right_velocity_ratio: 50
+    left_acceleration_ratio: 50
+    right_acceleration_ratio: 50
     state_publish_hz: 250.0
     cmd_cycle_time_ms: 4
     connect_on_startup: true

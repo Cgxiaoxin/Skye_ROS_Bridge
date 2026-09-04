@@ -122,6 +122,8 @@ ros2 topic pub --once /mode/align_follower std_msgs/msg/String "{data: align_fol
 ros2 topic echo /align/status
 ```
 
+
+
 ### 终端 B — 小臂 Docker（必须同一 orin）
 
 ```bash
@@ -142,6 +144,28 @@ ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_k
 
 同样：`1` sync → 等稳 → **对齐（见下）** → `2` teleop。
 
+### 同步对齐
+
+```bash
+export ROS_DOMAIN_ID=21
+ros2 topic pub --once /mode/switch_stop  std_msgs/msg/String "{data: switch_stop}"
+sleep 1
+ros2 topic pub --once /mode/switch_sync  std_msgs/msg/String "{data: switch_sync}"
+# 启动之前需要先另开一个终端（运行该脚本）： cmd2，其他全部cmd1
+scripts/start_follower_align.sh
+#  大臂与小臂对齐
+ros2 topic pub --once /mode/align_follower std_msgs/msg/String "{data: align_follower}"
+# 查看同步的状态
+ros2 topic echo /align/status
+# IDLE → ALIGNING → ALIGNED（或 TIMEOUT_WARN，仍可开遥操）
+
+# 托住小臂，等 SYNCED（可能数秒～十几秒）
+ros2 topic echo /teleop/state --once \
+  --qos-durability transient_local --qos-reliability reliable
+# 看到 SYNCED 后再：
+ros2 topic pub --once /mode/switch_teleop std_msgs/msg/String "{data: switch_teleop}"
+```
+
 ---
 
 
@@ -152,10 +176,10 @@ FACTR `1` 让小臂跟大臂；小臂重力补偿偏弱时 sync 后仍可能有�
 
 **推荐流程（可保持 SYNC，小臂不易下垂）：**
 
-1. Docker：`1` sync 完成并稳住  
-2. 主机：已运行 `start_follower_align.sh`，按 **`s`**（或 pub `align_follower`）  
-3. 驱动在 abs 对齐期间会**暂时忽略** FACTR 的相对 `/gento/*_joint_control`（方案 B）  
-4. `/align/status` → `ALIGNED` / `TIMEOUT_WARN` 后，对齐节点 `hold` 并清会话 → **相对流自动可恢复**  
+1. Docker：`1` sync 完成并稳住
+2. 主机：已运行 `start_follower_align.sh`，按 `s`（或 pub `align_follower`）
+3. 驱动在 abs 对齐期间会**暂时忽略** FACTR 的相对 `/gento/*_joint_control`（方案 B）
+4. `/align/status` → `ALIGNED` / `TIMEOUT_WARN` 后，对齐节点 `hold` 并清会话 → **相对流自动可恢复**
 5. Docker：`2` 开相对遥操（首帧会重新 capture leader/gento ref，大臂不会被旧会话带着跑）
 
 不必再强制 `3`/STOP；若仍习惯 `1 → 3 → s → 2` 也可以。

@@ -69,13 +69,15 @@ controller:
     kd: 0.01
   static_friction_comp:
     enable_speed: 0.05
-    gain: [0.2, 0.2, 0.2, 0.1, 0.1, 0.1,0.2] #原来是0.1 # [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    # [0.2, 0.2, 0.2, 0.1, 0.1, 0.1,0.2]
+    gain: [0.15, 0.15, 0.15, 0.1, 0.1, 0.1,0.2] #原来是0.1 # [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   joint_limit_barrier:
-    kp: 0.803561658022 
+    kp: 0.603561658022 
     kd: 0.04315069084
   joint_position_control:
+    # 插值步长，单位为关节空间的位置增量（弧度）
     interpolation_step_size: 0.5
-    kp: 0.803561658022   # aligned to left (was 1.035); TELEOP 稳定性  kp: 1.03561658022 
+    kp: 0.603561658022   # aligned to left (was 1.035); TELEOP 稳定性  kp: 1.03561658022 
     kd: 0.04315069084
 
   gripper_feedback:
