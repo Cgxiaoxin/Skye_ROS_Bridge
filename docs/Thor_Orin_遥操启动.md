@@ -64,7 +64,10 @@ export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/marvin_ws/fastrtps_no_shm.xml"
 ### 终端 A — 大臂驱动
 
 ```bash
-cd /Skye_ROS_Bridge
+export ROS_DOMAIN_ID=21
+unset ROS_LOCALHOST_ONLY
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/marvin_ws/fastrtps_no_shm.xml"
 ./scripts/start_skye_for_factr.sh
 # 等价: ROBOT_PROFILE=thor ./scripts/start_skye_for_factr.sh
 ```
@@ -134,7 +137,7 @@ source /marvin_ws/install/setup.bash
 export ROS_DOMAIN_ID=21
 export ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-export FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml
+export FASTRTPS_DEFAULT_PROFILES_6FILE=/marvin_ws/fastrtps_no_shm.xml
 ls "$FASTRTPS_DEFAULT_PROFILES_FILE"   # 必须存在；须在 launch 之前 export
 echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
 echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB1/latency_timer

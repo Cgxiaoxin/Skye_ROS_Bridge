@@ -3,7 +3,7 @@ name: grav_comp_demo
 
 dynamixel:
   # USB port name given by the command: ls /dev/serial/by-id/
-  dynamixel_port: "usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0"
+  dynamixel_port: "usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0"
   # Servo types
   servo_types: [
     "XM430-W350", "XM430-W350", "XC330-T288", "XC330-T288", 
