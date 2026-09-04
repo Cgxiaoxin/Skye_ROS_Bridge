@@ -3,7 +3,9 @@
 单位：**rad**。  
 指令 QoS：`KeepLast(1)` + `BEST_EFFORT`。  
 状态 QoS：`KeepLast(1)` + `RELIABLE`（供 FACTR sync）。  
-细节与开发顺序见 `dev_plan.md`；FACTR 对接见 `小臂大臂启动步骤.md`。
+数采 applied QoS：`KeepLast(≥10，默认 20)` + `RELIABLE`（仅 `*_action_applied`；与指令分离，降漏录）。  
+细节与开发顺序见 `dev_plan.md`；FACTR 对接见 `小臂大臂启动步骤.md`。  
+遥操 applied 数采设计：`docs/superpowers/specs/2026-09-04-applied-action-data-collection-design.md`。
 
 ## 控制模式（对齐 Gento `FXStateType`）
 
@@ -39,10 +41,48 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 | 订阅 | `/gento/right_joint_control_abs` | `JointState` | 同上 |
 | 订阅 | `/left_teleop_gripper/ctrl` | `JointState` | 夹爪指令 `position[0]∈[0,1]`。`gripper_invert:=true`（默认）时按 FACTR 扳机：1=松开/开，0=按下/闭；内部再 `1-x` 到电机 0=开 1=闭 |
 | 订阅 | `/right_teleop_gripper/ctrl` | `JointState` | 同上 |
-| 发布 | `/left_gripper/state` | `JointState` | `name=[gripper_joint]`；归一化位/速/力矩 |
+| 发布 | `/left_gripper/state` | `JointState` | `name=[gripper_joint]`；归一化位/速/力矩（FACTR 语义回映；**observation**，非 applied action） |
 | 发布 | `/right_gripper/state` | `JointState` | 同上 |
+| 发布 | `/gento/left_joint_action_applied` | `JointState` | **数采真源（关节）**。`skye_robot_driver` 在预处理（relative/absolute、signs、限位、Δ限制）后、`SetJointPosCmd` **成功**时发布；7×`position` **rad** = 内存 `last_command_`。**不是**入站 `/gento/left_joint_control`。QoS：`RELIABLE` + `KeepLast(≥10，默认 20)`（与指令 BEST_EFFORT 分离，降漏录） |
+| 发布 | `/gento/right_joint_action_applied` | `JointState` | 同上（右臂） |
+| 发布 | `/gento/left_gripper_action_applied` | `JointState` | **数采真源（夹爪）**。电机空间 `position[0]`：0=张开、1=闭合（invert + `close_limit` 之后，与夹爪硬件下发同源）。**不是**扳机 `/left_teleop_gripper/ctrl`。QoS 同关节 applied |
+| 发布 | `/gento/right_gripper_action_applied` | `JointState` | 同上（右爪） |
 
-夹爪走 **Terminal CANFD + DM4310 MIT**（非 Hand 24）。参数见 `enable_gripper` / `gripper_*`。
+夹爪走 **Terminal CANFD + DM4310 MIT**（非 Hand 24；`orin` profile 可为 Robotiq）。参数见 `enable_gripper` / `gripper_*`。
+
+> **数采注意：** 训练 action 请订 `*_action_applied`，不要订 `*_joint_control` / `*_teleop_gripper/ctrl`。状态用 `/gento/joint_states` 与 `/left|right_gripper/state`。设计见 `docs/superpowers/specs/2026-09-04-applied-action-data-collection-design.md`。
+
+## 遥操数采节点 `skye_data_recorder`（新增）
+
+独立于 HITL 的 `episode_recorder`（`/skye/recorder/*`）。本节点**只订阅、写 mcap，不控制机械臂**。
+
+| 项 | 说明 |
+|----|------|
+| 节点名 | `skye_data_recorder` |
+| 作用 | 把 driver 发布的 applied action + 臂/夹爪状态录成 episode mcap，供遥操数采 / 训练 |
+| 落盘 | rosbag2 **mcap**；目录参数 `output_dir`，每集 `episode_XXXX/` |
+| 与 HITL 区别 | HITL recorder 默认录预处理前的 control/ctrl；本节点默认录 **`*_action_applied` 真源** |
+
+**默认订阅（可参数 `topics` 覆盖）：**
+
+| Topic | 用途 |
+|-------|------|
+| `/gento/left_joint_action_applied` | 左臂 action 标签 |
+| `/gento/right_joint_action_applied` | 右臂 action 标签 |
+| `/gento/left_gripper_action_applied` | 左爪 action 标签（电机空间） |
+| `/gento/right_gripper_action_applied` | 右爪 action 标签 |
+| `/gento/joint_states` | 双臂 observation |
+| `/left_gripper/state` | 左爪 observation |
+| `/right_gripper/state` | 右爪 observation |
+
+**服务：**
+
+| Service | 类型 | 说明 |
+|---------|------|------|
+| `/skye/data_recorder/start` | `std_srvs/Trigger` | 开始新 episode；成功时 `message` 含路径 |
+| `/skye/data_recorder/stop` | `std_srvs/Trigger` | 结束并关闭 bag |
+
+订阅 applied 时须匹配 driver 的 **RELIABLE + 足够 depth**（参数 `applied_qos_depth`，默认 20）。建议与 `skye_robot_driver` **同机、同 `ROS_DOMAIN_ID`**。v1 默认不录相机。
 
 ## Service
 
