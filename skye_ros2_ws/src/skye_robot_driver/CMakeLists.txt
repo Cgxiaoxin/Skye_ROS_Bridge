@@ -23,6 +23,7 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetMode.srv"
+  "srv/SetMotionRates.srv"
 )
 
 find_library(GENTO_SDK_LIBRARY NAMES GentoSDK

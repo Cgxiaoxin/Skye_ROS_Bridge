@@ -352,6 +352,18 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
         handle_set_mode(request, response);
       },
       rmw_qos_profile_services_default, control_callback_group_);
+  set_motion_rates_service_ = create_service<SetMotionRates>(
+      "/set_motion_rates",
+      [this](
+          const std::shared_ptr<SetMotionRates::Request> request,
+          std::shared_ptr<SetMotionRates::Response> response) {
+        const bool ok = core_.set_speed_rates(
+            request->left_vel_ratio, request->left_acc_ratio,
+            request->right_vel_ratio, request->right_acc_ratio);
+        response->success = ok;
+        response->message = ok ? "ok" : core_.last_error();
+      },
+      rmw_qos_profile_services_default, control_callback_group_);
   hold_current_service_ = create_service<Trigger>(
       "/hold_current",
       [this](

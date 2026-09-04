@@ -8,6 +8,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "skye_robot_driver/srv/set_mode.hpp"
+#include "skye_robot_driver/srv/set_motion_rates.hpp"
 #include "std_msgs/msg/int16_multi_array.hpp"
 #include "std_srvs/srv/trigger.hpp"
 
@@ -29,6 +30,7 @@ class DriverNode : public rclcpp::Node {
   using JointArray = DriverCore::JointArray;
   using Trigger = std_srvs::srv::Trigger;
   using SetMode = skye_robot_driver::srv::SetMode;
+  using SetMotionRates = skye_robot_driver::srv::SetMotionRates;
 
   static std::array<unsigned char, 4> parse_ipv4(const std::string &value);
   static JointArray load_joint_array(
@@ -125,6 +127,7 @@ class DriverNode : public rclcpp::Node {
   rclcpp::Subscription<JointState>::SharedPtr left_gripper_subscription_;
   rclcpp::Subscription<JointState>::SharedPtr right_gripper_subscription_;
   rclcpp::Service<SetMode>::SharedPtr set_mode_service_;
+  rclcpp::Service<SetMotionRates>::SharedPtr set_motion_rates_service_;
   rclcpp::Service<Trigger>::SharedPtr hold_current_service_;
   rclcpp::Service<Trigger>::SharedPtr stop_motion_service_;
   rclcpp::Service<Trigger>::SharedPtr emergency_stop_service_;

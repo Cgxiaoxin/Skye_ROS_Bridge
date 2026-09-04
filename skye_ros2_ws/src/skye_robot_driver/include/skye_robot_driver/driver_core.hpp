@@ -115,6 +115,7 @@ class DriverCore {
   // PD cycle time only; safe to call before RS485 gripper init.
   bool apply_comm_config(int cmd_cycle_time_ms);
   bool switch_control_mode(ControlMode mode);
+  bool set_speed_rates(int left_vel, int left_acc, int right_vel, int right_acc);
   bool command_allowed() const;
   ControlMode control_mode() const;
   FXStateType current_state(Arm arm) const;

@@ -411,6 +411,37 @@ bool DriverCore::switch_control_mode(ControlMode mode) {
   return true;
 }
 
+bool DriverCore::set_speed_rates(int left_vel, int left_acc, int right_vel,
+                                 int right_acc) {
+  auto ok_r = [](int v) { return v >= 1 && v <= 100; };
+  if (!ok_r(left_vel) || !ok_r(left_acc) || !ok_r(right_vel) ||
+      !ok_r(right_acc)) {
+    last_error_ = "motion rates must be in [1,100]";
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!linked_ || !control_ready_) {
+    last_error_ = "SDK not ready for SetSpeedRatio";
+    return false;
+  }
+  if (FX_L1_Runtime_SetSpeedRatio(
+          kThreadId, FX_OBJ_ARM0, left_vel, left_acc) != 0) {
+    last_error_ = "ARM0 SetSpeedRatio failed";
+    return false;
+  }
+  if (FX_L1_Runtime_SetSpeedRatio(
+          kThreadId, FX_OBJ_ARM1, right_vel, right_acc) != 0) {
+    last_error_ = "ARM1 SetSpeedRatio failed";
+    return false;
+  }
+  config_.left_vel_ratio = left_vel;
+  config_.left_acc_ratio = left_acc;
+  config_.right_vel_ratio = right_vel;
+  config_.right_acc_ratio = right_acc;
+  last_error_.clear();
+  return true;
+}
+
 bool DriverCore::command_allowed() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return linked_ && control_ready_ && mode_ != ControlMode::kIdle;

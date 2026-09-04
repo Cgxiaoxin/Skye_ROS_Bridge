@@ -18,6 +18,7 @@ _REMAPS = [
     ("/right_joint_control_abs", "/gento/right_joint_control_abs"),
     ("/robot_state", "/gento/robot_state"),
     ("/set_mode", "/gento/set_mode"),
+    ("/set_motion_rates", "/gento/set_motion_rates"),
     ("/hold_current", "/gento/hold_current"),
     ("/stop_motion", "/gento/stop_motion"),
     ("/emergency_stop", "/gento/emergency_stop"),

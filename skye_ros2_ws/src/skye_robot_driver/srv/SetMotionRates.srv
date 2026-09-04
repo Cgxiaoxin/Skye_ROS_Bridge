@@ -1,0 +1,8 @@
+# Set per-arm velocity/acceleration ratios (1-100 percent).
+int16 left_vel_ratio
+int16 left_acc_ratio
+int16 right_vel_ratio
+int16 right_acc_ratio
+---
+bool success
+string message
