@@ -65,12 +65,13 @@ from test_robotiq_right_485 import (  # noqa: E402
 ROBOT_IP = "6.6.7.190"
 
 # --- 左臂目标开度 (mm) ---
+# 2026-09-04 实体 L/R 互换后：闭合开度随夹爪对调（原左2/右13 → 左13/右2）
 LEFT_OPEN_MM = 50.0   # 张开：改这里
-LEFT_CLOSE_MM = 2.0   # 闭合：改这里
+LEFT_CLOSE_MM = 13.0  # 闭合：改这里
 
 # --- 右臂目标开度 (mm) ---
 RIGHT_OPEN_MM = 50.0  # 张开：改这里
-RIGHT_CLOSE_MM = 13.0  # 闭合：改这里
+RIGHT_CLOSE_MM = 2.0  # 闭合：改这里
 
 # 运动参数
 SPEED = 0x88   # 0~255
