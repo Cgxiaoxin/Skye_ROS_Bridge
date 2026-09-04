@@ -655,6 +655,18 @@ void DriverNode::handle_set_mode(
 void DriverNode::handle_command(
     DriverCore::Arm arm, const JointState::SharedPtr message) {
   const char *arm_name = arm == DriverCore::Arm::kLeft ? "left" : "right";
+  // Scheme B: while absolute align (or any abs stream) is active, ignore relative
+  // / teleop joint_control so FACTR SYNC can stay on without fighting abs.
+  // When abs stops (publisher gone + timeout, or hold_current), path_active(abs)
+  // becomes false and the next relative frame reseeds a fresh teleop session.
+  if (path_active(arm, /*absolute=*/true)) {
+    RCLCPP_INFO_THROTTLE(
+        get_logger(), *get_clock(), 2000,
+        "%s relative/teleop cmd ignored while absolute path is active "
+        "(align or abs stream); relative will resume after abs ends",
+        arm_name);
+    return;
+  }
   if (message->position.size() != DriverCore::JointArray{}.size()) {
     RCLCPP_ERROR(
         get_logger(),

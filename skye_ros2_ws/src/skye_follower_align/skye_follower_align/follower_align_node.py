@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from typing import Optional, Sequence
 
@@ -59,6 +60,8 @@ class FollowerAlignNode(Node):
         self.declare_parameter("restore_right_vel_ratio", 30)
         self.declare_parameter("restore_right_acc_ratio", 30)
         self.declare_parameter("leader_freshness_s", 0.5)
+        # Relative teleop on /gento/*_joint_control fights abs; refuse align if recent.
+        self.declare_parameter("relative_cmd_block_s", 0.25)
         self.declare_parameter("big_freshness_s", 0.5)
         self.declare_parameter("left_joint_signs", DEFAULT_SIGNS)
         self.declare_parameter("right_joint_signs", DEFAULT_SIGNS)
@@ -76,6 +79,8 @@ class FollowerAlignNode(Node):
         )
         self._leader_freshness_s = float(
             self.get_parameter("leader_freshness_s").value)
+        self._relative_cmd_block_s = float(
+            self.get_parameter("relative_cmd_block_s").value)
         self._big_freshness_s = float(self.get_parameter("big_freshness_s").value)
         self._left_signs = [
             float(v) for v in self.get_parameter("left_joint_signs").value]
@@ -94,8 +99,15 @@ class FollowerAlignNode(Node):
         self._big_left: Optional[list[float]] = None
         self._big_right: Optional[list[float]] = None
         self._big_at: Optional[float] = None
+        self._rel_left_at: Optional[float] = None
+        self._rel_right_at: Optional[float] = None
 
         cmd_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST, depth=1,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE)
+        # FACTR relative publishers are RELIABLE; BEST_EFFORT subscriber still matches.
+        rel_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST, depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE)
@@ -126,9 +138,15 @@ class FollowerAlignNode(Node):
             self._right_leader_callback, state_qos)
         self.create_subscription(
             JointState, "/gento/joint_states", self._big_callback, state_qos)
+        self.create_subscription(
+            JointState, "/gento/left_joint_control",
+            self._rel_left_callback, rel_qos)
+        self.create_subscription(
+            JointState, "/gento/right_joint_control",
+            self._rel_right_callback, rel_qos)
 
-        # Reentrant group + MultiThreadedExecutor: spin_until_future_complete in
-        # callbacks would deadlock with the default MutuallyExclusive group.
+        # Reentrant group + MultiThreadedExecutor: service responses must complete
+        # while a timer/sub callback waits on threading.Event (not spin_until_*).
         service_cb_group = ReentrantCallbackGroup()
         self._rates_client = self.create_client(
             SetMotionRates, "/gento/set_motion_rates",
@@ -154,9 +172,20 @@ class FollowerAlignNode(Node):
             return False
         return (time.monotonic() - received_at) < max_age_s
 
+    def _relative_cmds_active(self) -> bool:
+        """True if FACTR (or other) is still streaming relative joint_control."""
+        return (
+            self._is_fresh(self._rel_left_at, self._relative_cmd_block_s)
+            or self._is_fresh(self._rel_right_at, self._relative_cmd_block_s))
+
     def _align_callback(self, msg: String) -> None:
         if msg.data != "align_follower":
             return
+        if self._relative_cmds_active():
+            # Driver ignores relative while abs is active (scheme B); SYNC may stay on.
+            self.get_logger().warn(
+                "relative /gento/*_joint_control still streaming — driver will "
+                "ignore it during abs align (Docker may stay on SYNC/1)")
         if not self._left_session.start():
             self.get_logger().info("align ignored: already aligning")
             return
@@ -206,12 +235,29 @@ class FollowerAlignNode(Node):
         self._big_right = [float(v) for v in msg.position[DOF:DOF * 2]]
         self._big_at = time.monotonic()
 
+    def _rel_left_callback(self, msg: JointState) -> None:
+        if len(msg.position) < DOF:
+            return
+        self._rel_left_at = time.monotonic()
+
+    def _rel_right_callback(self, msg: JointState) -> None:
+        if len(msg.position) < DOF:
+            return
+        self._rel_right_at = time.monotonic()
+
     def _phase(self) -> AlignPhase:
         return combine_phase(self._left_session.phase, self._right_session.phase)
 
     def _timer_callback(self) -> None:
         if self._phase() != AlignPhase.ALIGNING or not self._streaming:
             return
+
+        if self._relative_cmds_active():
+            self.get_logger().warn(
+                "relative /gento/*_joint_control still streaming during align; "
+                "driver should be ignoring it while abs is active",
+                throttle_duration_sec=2.0)
+            # Do not abort — scheme B: abs owns the arm until align ends.
 
         leaders_ok = (
             self._is_fresh(self._left_leader_at, self._leader_freshness_s)
@@ -282,6 +328,19 @@ class FollowerAlignNode(Node):
         self._left_session.cancel()
         self._right_session.cancel()
 
+    @staticmethod
+    def _wait_future(future, timeout_sec: float) -> bool:
+        """Wait without rclpy.spin_until_future_complete (deadlocks in callbacks)."""
+        done = threading.Event()
+
+        def _on_done(_fut) -> None:
+            done.set()
+
+        future.add_done_callback(_on_done)
+        if future.done():
+            return True
+        return done.wait(timeout=timeout_sec)
+
     def _call_set_motion_rates(
             self, left_vel: int, left_acc: int,
             right_vel: int, right_acc: int) -> bool:
@@ -294,8 +353,7 @@ class FollowerAlignNode(Node):
         request.right_vel_ratio = int(right_vel)
         request.right_acc_ratio = int(right_acc)
         future = self._rates_client.call_async(request)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
-        if not future.done():
+        if not self._wait_future(future, 5.0):
             self.get_logger().error("set_motion_rates call timed out")
             return False
         response = future.result()
@@ -310,8 +368,7 @@ class FollowerAlignNode(Node):
             self.get_logger().error("hold_current service unavailable")
             return False
         future = self._hold_client.call_async(Trigger.Request())
-        rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
-        if not future.done():
+        if not self._wait_future(future, 5.0):
             self.get_logger().error("hold_current call timed out")
             return False
         response = future.result()
@@ -325,7 +382,8 @@ class FollowerAlignNode(Node):
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = FollowerAlignNode()
-    executor = MultiThreadedExecutor()
+    # >=2 threads so service responses complete while a callback waits on Event.
+    executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(node)
     try:
         executor.spin()

@@ -93,27 +93,83 @@ cd /Skye_ROS_Bridge
 
 ```bash
 cd /Skye_ROS_Bridge
+
+export ROS_DOMAIN_ID=21
+unset ROS_LOCALHOST_ONLY
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/marvin_ws/fastrtps_no_shm.xml"
 ROBOT_PROFILE=orin ./scripts/start_skye_for_factr.sh
 ```
 
 日志应出现 profile=`orin`，夹爪类型 `robotiq`。
+
+### 终端 B — 对齐辅助（需新开）
+
+```bash
+ROBOT_PROFILE=orin ./scripts/start_follower_align.sh
+# 焦点在该终端，按 s 开始对齐
+```
+
+或用命令发布对齐模式：
+
+```bash
+ros2 topic pub --once /mode/align_follower std_msgs/msg/String "{data: align_follower}"
+```
+
+查看当前对齐状态：
+
+```bash
+ros2 topic echo /align/status
+```
 
 ### 终端 B — 小臂 Docker（必须同一 orin）
 
 ```bash
 cd /Skye_ROS_Bridge
 ROBOT_PROFILE=orin ./scripts/run_marvin_m6_impedance.sh
+
+source /marvin_ws/install/setup.bash
+export ROS_DOMAIN_ID=21
+export ROS_LOCALHOST_ONLY=0
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml
+ls "$FASTRTPS_DEFAULT_PROFILES_FILE"   # 必须存在；须在 launch 之前 export
+echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
+echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB1/latency_timer
+# 推荐：直接 launch overlay（无需 cp，始终最新）
+ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_keyboard:=false
 ```
 
 同样：`1` sync → 等稳 → **对齐（见下）** → `2` teleop。
 
 ---
 
+
+
 ## 对齐（FACTR sync 之后）
 
 FACTR `1` 让小臂跟大臂；小臂重力补偿偏弱时 sync 后仍可能有位姿残差。在进相对遥操前，主机用 **Docker 外** 终端让大臂以小速度绝对跟小臂。
 
-主机另开终端（焦点在该终端）；FACTR `1` sync 前后均可启动，**按 `s` 前须已运行**对齐 helper：
+**推荐流程（可保持 SYNC，小臂不易下垂）：**
+
+1. Docker：`1` sync 完成并稳住  
+2. 主机：已运行 `start_follower_align.sh`，按 **`s`**（或 pub `align_follower`）  
+3. 驱动在 abs 对齐期间会**暂时忽略** FACTR 的相对 `/gento/*_joint_control`（方案 B）  
+4. `/align/status` → `ALIGNED` / `TIMEOUT_WARN` 后，对齐节点 `hold` 并清会话 → **相对流自动可恢复**  
+5. Docker：`2` 开相对遥操（首帧会重新 capture leader/gento ref，大臂不会被旧会话带着跑）
+
+不必再强制 `3`/STOP；若仍习惯 `1 → 3 → s → 2` 也可以。
+
+核对对齐在动：
+
+```bash
+ros2 topic hz /gento/left_joint_control_abs
+ros2 topic echo /align/status --qos-durability transient_local --qos-reliability reliable
+```
+
+驱动日志若出现 `relative/teleop cmd ignored while absolute path is active` 属正常（SYNC 仍在发相对、但被忽略）。
+
+主机启动对齐 helper：
 
 ```bash
 ROBOT_PROFILE=orin ./scripts/start_follower_align.sh   # 或 thor
@@ -130,9 +186,11 @@ ros2 topic pub --once /mode/align_follower std_msgs/msg/String "{data: align_fol
 观察状态:
 
 ```bash
-ros2 topic echo /align/status
+ros2 topic echo /align/status --qos-durability transient_local --qos-reliability reliable
 # IDLE → ALIGNING → ALIGNED（或 TIMEOUT_WARN，仍可开遥操）
 ```
+
+
 
 ### 等价手写 launch
 
@@ -213,14 +271,14 @@ ros2 topic echo /gento/right_joint_states --once # 7 轴，应对右大臂
 ## 相关文件
 
 
-| 路径                                   | 作用                         |
-| ------------------------------------ | -------------------------- |
-| `scripts/start_skye_for_factr.sh`    | 主机起 `skye_robot_driver`    |
+| 路径                                   | 作用                            |
+| ------------------------------------ | ----------------------------- |
+| `scripts/start_skye_for_factr.sh`    | 主机起 `skye_robot_driver`       |
 | `scripts/start_follower_align.sh`    | 主机对齐节点 + 键盘 `s`/`x`（Docker 外） |
-| `scripts/run_marvin_m6_impedance.sh` | 小臂 Docker + sync overlay   |
-| `scripts/sync_marvin_overlay.sh`     | 按 profile 同步 launch/config |
-| `scripts/bind_leader_arms.py`        | 绑定左右主臂 FTDI                |
-| `config/profiles/{thor,orin}.yaml`   | 大臂 / 夹爪机台参数                |
-| `marvin_ws/configs/{thor,orin}/`     | 小臂 FACTR `grav_comp`       |
+| `scripts/run_marvin_m6_impedance.sh` | 小臂 Docker + sync overlay      |
+| `scripts/sync_marvin_overlay.sh`     | 按 profile 同步 launch/config    |
+| `scripts/bind_leader_arms.py`        | 绑定左右主臂 FTDI                   |
+| `config/profiles/{thor,orin}.yaml`   | 大臂 / 夹爪机台参数                   |
+| `marvin_ws/configs/{thor,orin}/`     | 小臂 FACTR `grav_comp`          |
 
 

@@ -103,6 +103,8 @@ ros2 service call /gento/set_motion_rates skye_robot_driver/srv/SetMotionRates \
 
 独立主机节点；FACTR Docker 内 `1/2/3` 不变。对齐方向：**大臂跟小臂**（绝对 `*_joint_control_abs`），对齐中 vel/acc 强制 10%。
 
+对齐进行时 `skye_robot_driver` 对仍在发的相对 `/gento/*_joint_control` **忽略**（abs 优先），因此 Docker 可保持 **SYNC/`1`**，不必先 STOP。对齐结束 `hold_current` 会清 abs/relative 会话，随后相对流/按 `2` 会重新 seed，不会把旧相对会话「杀掉后起不来」。
+
 | 方向 | Topic | 类型 | 说明 |
 |------|-------|------|------|
 | 订阅 | `/mode/align_follower` | `std_msgs/String` | `data: align_follower` 开始对齐（主机键盘 `s` 与 CLI 共用） |
