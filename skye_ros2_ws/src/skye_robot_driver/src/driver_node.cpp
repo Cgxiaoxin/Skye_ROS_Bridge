@@ -926,6 +926,14 @@ void DriverNode::check_command_timeout() {
     if (!core_.hold_current(arm)) {
       RCLCPP_ERROR(
           get_logger(), "hold_current(%s) after timeout failed", arm_name);
+    } else {
+      const auto state = core_.read_state();
+      if (state) {
+        publish_joint_action_applied(
+            arm,
+            arm == DriverCore::Arm::kLeft ? state->left_position
+                                          : state->right_position);
+      }
     }
     if (absolute) {
       reset_absolute_session(arm);
@@ -960,6 +968,13 @@ void DriverNode::handle_hold_current(
     reset_teleop_session(DriverCore::Arm::kRight);
     reset_absolute_session(DriverCore::Arm::kLeft);
     reset_absolute_session(DriverCore::Arm::kRight);
+    const auto state = core_.read_state();
+    if (state) {
+      publish_joint_action_applied(
+          DriverCore::Arm::kLeft, state->left_position);
+      publish_joint_action_applied(
+          DriverCore::Arm::kRight, state->right_position);
+    }
   }
 }
 
