@@ -54,4 +54,4 @@ $ ROBOT_PROFILE=thor timeout 3 ./scripts/start_follower_align.sh
 
 ### Commits
 
-- `28958eb` — `fix(align): unblock service calls, signs, start script, shutdown safety`
+- `5257334` — `fix(align): unblock service calls, signs, start script, shutdown safety`
