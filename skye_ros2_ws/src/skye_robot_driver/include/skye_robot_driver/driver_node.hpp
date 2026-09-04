@@ -56,6 +56,8 @@ class DriverNode : public rclcpp::Node {
       const std::shared_ptr<SetMode::Request> request,
       std::shared_ptr<SetMode::Response> response);
   void publish_state();
+  void publish_joint_action_applied(
+      DriverCore::Arm arm, const JointArray &mapped);
   void publish_gripper_state();
   void tick_gripper();
   void check_command_timeout();
@@ -116,6 +118,8 @@ class DriverNode : public rclcpp::Node {
       robot_state_publisher_;
   rclcpp::Publisher<JointState>::SharedPtr left_gripper_state_publisher_;
   rclcpp::Publisher<JointState>::SharedPtr right_gripper_state_publisher_;
+  rclcpp::Publisher<JointState>::SharedPtr left_joint_action_applied_publisher_;
+  rclcpp::Publisher<JointState>::SharedPtr right_joint_action_applied_publisher_;
   rclcpp::Subscription<JointState>::SharedPtr left_command_subscription_;
   rclcpp::Subscription<JointState>::SharedPtr right_command_subscription_;
   rclcpp::Subscription<JointState>::SharedPtr

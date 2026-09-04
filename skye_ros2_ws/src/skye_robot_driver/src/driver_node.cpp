@@ -72,6 +72,14 @@ rclcpp::QoS state_qos() {
   return qos;
 }
 
+rclcpp::QoS applied_action_qos(int depth) {
+  const int d = std::max(10, depth);
+  rclcpp::QoS qos(rclcpp::KeepLast(static_cast<size_t>(d)));
+  qos.reliable();
+  qos.durability_volatile();
+  return qos;
+}
+
 FXChnType parse_robotiq_485_channel(const std::string &value) {
   std::string key = value;
   std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
@@ -302,6 +310,13 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       create_publisher<JointState>("/right_joint_states", st_qos);
   robot_state_publisher_ =
       create_publisher<std_msgs::msg::Int16MultiArray>("/robot_state", st_qos);
+  const int applied_depth =
+      declare_parameter<int>("applied_action_qos_depth", 20);
+  const auto applied_qos = applied_action_qos(applied_depth);
+  left_joint_action_applied_publisher_ =
+      create_publisher<JointState>("/left_joint_action_applied", applied_qos);
+  right_joint_action_applied_publisher_ =
+      create_publisher<JointState>("/right_joint_action_applied", applied_qos);
   left_command_subscription_ = create_subscription<JointState>(
       "/left_joint_control", cmd_qos,
       [this](JointState::SharedPtr message) {
@@ -770,6 +785,7 @@ void DriverNode::handle_command(
     return;
   }
 
+  publish_joint_action_applied(arm, mapped);
   last_command = mapped;
   last_command_time = now();
   streaming = true;
@@ -861,6 +877,7 @@ void DriverNode::handle_absolute_command(
     return;
   }
 
+  publish_joint_action_applied(arm, mapped);
   last_command = mapped;
   last_command_time = now();
   streaming = true;
@@ -1045,6 +1062,17 @@ void DriverNode::publish_gripper_state() {
       DriverCore::Arm::kLeft, left_gripper_state_publisher_, "left");
   publish_one(
       DriverCore::Arm::kRight, right_gripper_state_publisher_, "right");
+}
+
+void DriverNode::publish_joint_action_applied(
+    DriverCore::Arm arm, const JointArray &mapped) {
+  const auto &names =
+      arm == DriverCore::Arm::kLeft ? kLeftJointNames : kRightJointNames;
+  auto *pub = arm == DriverCore::Arm::kLeft
+                  ? left_joint_action_applied_publisher_.get()
+                  : right_joint_action_applied_publisher_.get();
+  JointArray zero_vel{};
+  pub->publish(make_arm_joint_state(now(), names, mapped, zero_vel));
 }
 
 void DriverNode::publish_state() {

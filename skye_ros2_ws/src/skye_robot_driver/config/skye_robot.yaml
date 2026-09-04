@@ -68,3 +68,6 @@ skye_robot_driver:
     gripper_left_robotiq_pos_max_mm: 50.0
     gripper_right_robotiq_pos_max_mm: 50.0
     gripper_robotiq_modbus_timeout_ms: 200
+
+    # Data-collection applied-action pubs (RELIABLE). Depth >=10; default 20.
+    applied_action_qos_depth: 20
