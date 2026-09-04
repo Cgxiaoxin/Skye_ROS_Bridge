@@ -253,7 +253,29 @@ Thor 可省略或 `export ROBOT_PROFILE=thor`。
 
 ---
 
+## 数采节点使用说明
 
+**1. 启动环境（进入 ROS2 工作空间）：**
+```bash
+source skye_ros2_ws/install/setup.bash
+```
+
+**2. 启动数采节点：**
+```bash
+ros2 launch skye_data_recorder data_recorder.launch.py
+```
+> 上述命令将启动 `skye_data_recorder` 节点并自动载入配置。数据采集可设为自动开始，或由服务手动控制。
+
+**3.（可选）手动控制数采流程（适用于需精确控制采集起止时）：**
+```bash
+ros2 service call /skye/data_recorder/start std_srvs/srv/Trigger {}
+ros2 service call /skye/data_recorder/stop  std_srvs/srv/Trigger {}
+```
+
+**使用建议：**
+- 启动节点后，可通过上述 service 命令手动开始或结束数据录制。
+- 若设置为自动录制，无需调用 start/stop 服务，具体行为受节点参数配置影响。
+- 录制完成后，数据通常保存在配置指定的目录下，具体路径可查看实际 launch 文件参数配置。
 
 ## 启动后自检
 
