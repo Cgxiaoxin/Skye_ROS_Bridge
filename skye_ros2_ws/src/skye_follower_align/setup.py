@@ -25,6 +25,7 @@ setup(
     entry_points={
         "console_scripts": [
             "follower_align_node = skye_follower_align.follower_align_node:main",
+            "host_keyboard_align = skye_follower_align.host_keyboard:main",
         ],
     },
 )

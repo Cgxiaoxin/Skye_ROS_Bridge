@@ -1,5 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -31,8 +32,16 @@ def _launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
+    enable_keyboard = LaunchConfiguration("enable_keyboard")
     return LaunchDescription([
         DeclareLaunchArgument("enable_keyboard", default_value="true"),
         DeclareLaunchArgument("robot_profile", default_value="thor"),
         OpaqueFunction(function=_launch_setup),
+        Node(
+            package="skye_follower_align",
+            executable="host_keyboard_align",
+            name="host_keyboard_align",
+            output="screen",
+            condition=IfCondition(enable_keyboard),
+        ),
     ])
