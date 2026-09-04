@@ -113,7 +113,7 @@ ROBOT_PROFILE=orin ./scripts/run_marvin_m6_impedance.sh
 
 FACTR `1` 让小臂跟大臂；小臂重力补偿偏弱时 sync 后仍可能有位姿残差。在进相对遥操前，主机用 **Docker 外** 终端让大臂以小速度绝对跟小臂。
 
-主机另开终端（焦点在该终端）:
+主机另开终端（焦点在该终端）；FACTR `1` sync 前后均可启动，**按 `s` 前须已运行**对齐 helper：
 
 ```bash
 ROBOT_PROFILE=orin ./scripts/start_follower_align.sh   # 或 thor
@@ -137,13 +137,13 @@ ros2 topic echo /align/status
 ### 等价手写 launch
 
 ```bash
+export ROBOT_PROFILE=orin   # 或 thor，须与 Docker / 大臂一致
 source skye_ros2_ws/install/setup.bash
 export ROS_DOMAIN_ID=21
 export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/marvin_ws/fastrtps_no_shm.xml"
-ros2 launch skye_robot_driver skye_robot_driver.launch.py robot_profile:=orin
+ros2 launch skye_follower_align follower_align.launch.py \
+  robot_profile:=${ROBOT_PROFILE} enable_keyboard:=true
 ```
-
-优先用 `robot_profile:=orin`，不要只改 base `skye_robot.yaml`。
 
 ---
 
