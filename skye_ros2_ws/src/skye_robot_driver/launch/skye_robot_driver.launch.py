@@ -22,6 +22,10 @@ _REMAPS = [
     ("/hold_current", "/gento/hold_current"),
     ("/stop_motion", "/gento/stop_motion"),
     ("/emergency_stop", "/gento/emergency_stop"),
+    ("/left_joint_action_applied", "/gento/left_joint_action_applied"),
+    ("/right_joint_action_applied", "/gento/right_joint_action_applied"),
+    ("/left_gripper_action_applied", "/gento/left_gripper_action_applied"),
+    ("/right_gripper_action_applied", "/gento/right_gripper_action_applied"),
 ]
 
 

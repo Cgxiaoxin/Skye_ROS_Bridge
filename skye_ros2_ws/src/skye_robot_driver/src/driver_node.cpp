@@ -72,6 +72,14 @@ rclcpp::QoS state_qos() {
   return qos;
 }
 
+rclcpp::QoS applied_action_qos(int depth) {
+  const int d = std::max(10, depth);
+  rclcpp::QoS qos(rclcpp::KeepLast(static_cast<size_t>(d)));
+  qos.reliable();
+  qos.durability_volatile();
+  return qos;
+}
+
 FXChnType parse_robotiq_485_channel(const std::string &value) {
   std::string key = value;
   std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
@@ -302,6 +310,17 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       create_publisher<JointState>("/right_joint_states", st_qos);
   robot_state_publisher_ =
       create_publisher<std_msgs::msg::Int16MultiArray>("/robot_state", st_qos);
+  const int applied_depth =
+      declare_parameter<int>("applied_action_qos_depth", 20);
+  const auto applied_qos = applied_action_qos(applied_depth);
+  left_joint_action_applied_publisher_ =
+      create_publisher<JointState>("/left_joint_action_applied", applied_qos);
+  right_joint_action_applied_publisher_ =
+      create_publisher<JointState>("/right_joint_action_applied", applied_qos);
+  left_gripper_action_applied_publisher_ =
+      create_publisher<JointState>("/left_gripper_action_applied", applied_qos);
+  right_gripper_action_applied_publisher_ =
+      create_publisher<JointState>("/right_gripper_action_applied", applied_qos);
   left_command_subscription_ = create_subscription<JointState>(
       "/left_joint_control", cmd_qos,
       [this](JointState::SharedPtr message) {
@@ -794,6 +813,7 @@ void DriverNode::handle_command(
     return;
   }
 
+  publish_joint_action_applied(arm, mapped);
   last_command = mapped;
   last_command_time = now();
   streaming = true;
@@ -885,6 +905,7 @@ void DriverNode::handle_absolute_command(
     return;
   }
 
+  publish_joint_action_applied(arm, mapped);
   last_command = mapped;
   last_command_time = now();
   streaming = true;
@@ -929,6 +950,14 @@ void DriverNode::check_command_timeout() {
     if (!core_.hold_current(arm)) {
       RCLCPP_ERROR(
           get_logger(), "hold_current(%s) after timeout failed", arm_name);
+    } else {
+      const auto state = core_.read_state();
+      if (state) {
+        publish_joint_action_applied(
+            arm,
+            arm == DriverCore::Arm::kLeft ? state->left_position
+                                          : state->right_position);
+      }
     }
     if (absolute) {
       reset_absolute_session(arm);
@@ -963,6 +992,13 @@ void DriverNode::handle_hold_current(
     reset_teleop_session(DriverCore::Arm::kRight);
     reset_absolute_session(DriverCore::Arm::kLeft);
     reset_absolute_session(DriverCore::Arm::kRight);
+    const auto state = core_.read_state();
+    if (state) {
+      publish_joint_action_applied(
+          DriverCore::Arm::kLeft, state->left_position);
+      publish_joint_action_applied(
+          DriverCore::Arm::kRight, state->right_position);
+    }
   }
 }
 
@@ -1034,8 +1070,28 @@ void DriverNode::tick_gripper() {
     return;
   }
   gripper_.tick_control();
+  publish_gripper_action_applied();
   gripper_.tick_feedback();
   publish_gripper_state();
+}
+
+void DriverNode::publish_gripper_action_applied() {
+  if (!gripper_enabled_ || !gripper_.started()) {
+    return;
+  }
+  auto publish_one =
+      [this](DriverCore::Arm arm,
+             const rclcpp::Publisher<JointState>::SharedPtr &pub) {
+        JointState msg;
+        msg.header.stamp = now();
+        msg.name = {"gripper_joint"};
+        msg.position = {gripper_.target(arm)};  // motor space
+        msg.velocity = {0.0};
+        msg.effort = {0.0};
+        pub->publish(msg);
+      };
+  publish_one(DriverCore::Arm::kLeft, left_gripper_action_applied_publisher_);
+  publish_one(DriverCore::Arm::kRight, right_gripper_action_applied_publisher_);
 }
 
 void DriverNode::publish_gripper_state() {
@@ -1069,6 +1125,17 @@ void DriverNode::publish_gripper_state() {
       DriverCore::Arm::kLeft, left_gripper_state_publisher_, "left");
   publish_one(
       DriverCore::Arm::kRight, right_gripper_state_publisher_, "right");
+}
+
+void DriverNode::publish_joint_action_applied(
+    DriverCore::Arm arm, const JointArray &mapped) {
+  const auto &names =
+      arm == DriverCore::Arm::kLeft ? kLeftJointNames : kRightJointNames;
+  auto *pub = arm == DriverCore::Arm::kLeft
+                  ? left_joint_action_applied_publisher_.get()
+                  : right_joint_action_applied_publisher_.get();
+  JointArray zero_vel{};
+  pub->publish(make_arm_joint_state(now(), names, mapped, zero_vel));
 }
 
 void DriverNode::publish_state() {

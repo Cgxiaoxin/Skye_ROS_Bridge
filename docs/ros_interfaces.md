@@ -51,6 +51,8 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 夹爪走 **Terminal CANFD + DM4310 MIT**（非 Hand 24；`orin` profile 可为 Robotiq）。参数见 `enable_gripper` / `gripper_*`。
 
 > **数采注意：** 训练 action 请订 `*_action_applied`，不要订 `*_joint_control` / `*_teleop_gripper/ctrl`。状态用 `/gento/joint_states` 与 `/left|right_gripper/state`。设计见 `docs/superpowers/specs/2026-09-04-applied-action-data-collection-design.md`。
+>
+> **同机录包：** applied topic 面向本机 `skye_data_recorder`；不要在机械臂运行时经 WiFi/远程订阅 RELIABLE 的 `*_action_applied`（会拖慢驱动控制回调）。`command_timeout_s` 超时 hold 与 `/gento/hold_current` 在 hold 成功时也会发布关节 applied（当前测得位姿）。
 
 ## 遥操数采节点 `skye_data_recorder`（新增）
 
@@ -60,7 +62,7 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 |----|------|
 | 节点名 | `skye_data_recorder` |
 | 作用 | 把 driver 发布的 applied action + 臂/夹爪状态录成 episode mcap，供遥操数采 / 训练 |
-| 落盘 | rosbag2 **mcap**；目录参数 `output_dir`，每集 `episode_XXXX/` |
+| 落盘 | rosbag2 **mcap**（需 `sudo apt install ros-humble-rosbag2-storage-mcap`）；目录参数 `output_dir`，每集 `episode_XXXX/` |
 | 与 HITL 区别 | HITL recorder 默认录预处理前的 control/ctrl；本节点默认录 **`*_action_applied` 真源** |
 
 **默认订阅（可参数 `topics` 覆盖）：**
@@ -82,14 +84,14 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 | `/skye/data_recorder/start` | `std_srvs/Trigger` | 开始新 episode；成功时 `message` 含路径 |
 | `/skye/data_recorder/stop` | `std_srvs/Trigger` | 结束并关闭 bag |
 
-订阅 applied 时须匹配 driver 的 **RELIABLE + 足够 depth**（参数 `applied_qos_depth`，默认 20）。建议与 `skye_robot_driver` **同机、同 `ROS_DOMAIN_ID`**。v1 默认不录相机。
+订阅 applied 时须匹配 driver 的 **RELIABLE + 足够 depth**（参数 `applied_qos_depth`，默认 20）。建议与 `skye_robot_driver` **同机、同 `ROS_DOMAIN_ID`**。v1 默认不录相机。参数 `topics` 只能从默认白名单里选/删，不能添加未知 topic 或类型。
 
 ## Service
 
 | Service | 类型 | 说明 |
 |---------|------|------|
 | `/gento/set_mode` | `skye_robot_driver/srv/SetMode` | `mode`→切换；回 `success/message/left_state/right_state` |
-| `/gento/hold_current` | `std_srvs/Trigger` | 保持当前位姿 |
+| `/gento/hold_current` | `std_srvs/Trigger` | 保持当前位姿；成功时发布两臂 `*_joint_action_applied`（测得位姿） |
 | `/gento/stop_motion` | `std_srvs/Trigger` | 停止并进 IDLE |
 | `/gento/emergency_stop` | `std_srvs/Trigger` | 软件急停 → IDLE |
 | `/gento/set_motion_rates` | `skye_robot_driver/srv/SetMotionRates` | 左右 vel/acc ratio（1–100%）。对齐节点对齐前写 10/10，结束后写回 profile 默认（如 30/30） |
