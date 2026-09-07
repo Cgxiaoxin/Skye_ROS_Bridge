@@ -4,10 +4,10 @@ skye_robot_driver:
     robot_ip: "6.6.7.190"
     # 0=idle 1=position 2=imp_joint 3=imp_cart (FX_STATE); default teleop=2
     control_mode: "imp_joint"
-    left_velocity_ratio: 60
-    right_velocity_ratio: 60
-    left_acceleration_ratio: 60
-    right_acceleration_ratio: 60
+    left_velocity_ratio: 100
+    right_velocity_ratio: 100
+    left_acceleration_ratio: 100
+    right_acceleration_ratio: 100
     state_publish_hz: 250.0
     cmd_cycle_time_ms: 4
     connect_on_startup: true
@@ -24,7 +24,7 @@ skye_robot_driver:
     right_joint_limits_min: [-3.1067, -2.0944, -3.1067, -2.5307, -3.1067, -1.0472, -1.5708]
     right_joint_limits_max: [3.1067, 2.0944, 3.1067, 1.0472, 3.1067, 1.0472, 1.5708]
     # # 每个控制周期允许的最大关节增量（弧度），用于限制单步运动幅度，防止指令异常或抖动。0.02 即每个周期最大变化约1.15°。
-    max_delta_per_cycle: 0.15   # rad per command frame 
+    max_delta_per_cycle: 0.30   # rad per command frame 
     command_timeout_s: 0.50
     # relative: delta from teleop entry (safe if sync incomplete). absolute: legacy.
     teleop_mapping_mode: relative     # relative | absolute
