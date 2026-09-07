@@ -42,8 +42,8 @@ class DriverCore {
   };
 
   struct ImpedanceGains {
-    JointArray k{{100, 100, 100, 100, 100, 100, 100}};
-    JointArray d{{10, 10, 10, 10, 10, 10, 10}};
+    JointArray k{{2.0, 2.0, 2.0, 2.0, 2.0, 1.0, 1.0}};
+    JointArray d{{0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4}};
   };
 
   struct ConnectConfig {

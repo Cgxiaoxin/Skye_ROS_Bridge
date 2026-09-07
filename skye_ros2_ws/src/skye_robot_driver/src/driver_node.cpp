@@ -24,9 +24,9 @@ constexpr DriverCore::JointArray kDefaultOffsets{
     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 constexpr std::array<int, 7> kDefaultOrder{0, 1, 2, 3, 4, 5, 6};
 constexpr DriverCore::JointArray kDefaultJointK{
-    100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0};
+    2.0, 2.0, 2.0, 2.0, 2.0, 1.0, 1.0};
 constexpr DriverCore::JointArray kDefaultJointD{
-    10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0};
+    0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4};
 constexpr DriverCore::JointArray kDefaultCartK{
     2000.0, 2000.0, 2000.0, 100.0, 100.0, 100.0, 50.0};
 constexpr DriverCore::JointArray kDefaultCartD{

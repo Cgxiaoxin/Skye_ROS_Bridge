@@ -28,8 +28,10 @@ skye_robot_driver:
     command_timeout_s: 0.50
     # relative: delta from teleop entry (safe if sync incomplete). absolute: legacy.
     teleop_mapping_mode: relative     # relative | absolute
-    impedance_stiffness: [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
-    impedance_damping: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
+    # 关节阻抗 K/D（imp_joint）。对齐旧 Marvin left_pd/right_pd，原样进 SDK。
+    impedance_stiffness: [2.0, 2.0, 2.0, 2.0, 2.0, 1.0, 1.0]
+    impedance_damping: [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4]
+    # 笛卡尔空间阻抗k,d, 用于阻尼控制
     cartesian_stiffness: [2000.0, 2000.0, 2000.0, 100.0, 100.0, 100.0, 50.0]
     cartesian_damping: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 1.0]
     # Per-arm driver: dm4310 | robotiq. Default Thor = dm4310.
