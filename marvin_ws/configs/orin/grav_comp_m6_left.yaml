@@ -46,6 +46,8 @@ gripper_teleop:
 
 controller:
   frequency: 500
+  # FACTR 默认 5s；左臂 J3/J4 走位慢时易超时并触发 logger bug 崩溃
+  teleop_sync_timeout: 10.0
   torque_feedback:
     enable: False
     # 每关节增益 μ_f，可按手感独立调节（近端关节感觉弱可适当调大）
