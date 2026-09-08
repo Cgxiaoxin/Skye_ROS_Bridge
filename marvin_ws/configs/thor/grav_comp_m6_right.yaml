@@ -11,9 +11,9 @@ dynamixel:
   ]
   # Servo joint directions to match leader URDF / follower (大臂) frame.
   # 左臂对照: J6/J7 = -1；右臂同构需 J6/J7 = -1（旧值 +1 导致腕部与遥操反向）。
-  # J8 夹爪: 右小臂厂商基线 -1（左臂 +1）；配合 skye gripper_right_invert=false
-  #   → FACTR 语义仍为 1=松开/张开、0=按下/闭合；sync 时跟随 /right_gripper/state≈1 张开。
-  joint_signs: [1, -1, 1, -1, 1, -1, -1, -1]
+  # J8 夹爪: Thor 右臂与左臂同用 +1（旧 -1 会在 sync 时把张开目标打成物理闭合）。
+  # 大臂 gripper_right_invert 必须为 true（FACTR 1=开 / 电机 0=开）。
+  joint_signs: [1, -1, 1, -1, 1, -1, -1, 1]
 
 arm_teleop:
   # URDF used for creating leader arm dynamics model to compute gravity compensation
@@ -62,7 +62,7 @@ controller:
     motor_scalar: [43.9, 43.9, 66, 66, 18, 18, 18]
   gravity_comp:
     enable: True
-    gain: [0.25, 0.2, 1.0, 1.0, 1.0, 0.8, 1.0]  #J1 恢复 0.6 (2026-08-25: 0.25 补偿不足致 J1 重力下坠)
+    gain: [0.4, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]  #J1 恢复 0.6 (2026-08-25: 0.25 补偿不足致 J1 重力下坠)
   null_space_regulation:
     enable: False
     null_space_joint_target: [0.0, -0.8, 0.0, -1.3, 0.0, -0.5, 0.0]

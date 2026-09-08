@@ -10,8 +10,8 @@ dynamixel:
   ]
   # Servo joint directions to match leader URDF / follower (大臂) frame.
   # 左臂对照: J6/J7 = -1；右臂同构需 J6/J7 = -1（旧值 +1 导致腕部与遥操反向）。
-  # J8 夹爪: 右小臂厂商基线 -1（左臂 +1）；配合 skye gripper_right_invert=false
-  #   → FACTR 语义仍为 1=松开/张开、0=按下/闭合；sync 时跟随 /right_gripper/state≈1 张开。
+  # J8 夹爪: 右小臂厂商基线 -1（左臂 +1）；配合 skye gripper_right_invert=true
+  #   → FACTR 1=松开/开、0=按下/闭；电机 0=开。sync 跟 /right_gripper/state≈1 时小臂应张开。
   joint_signs: [1, -1, 1, -1, 1, -1, -1, -1]
 
 arm_teleop:

@@ -7,5 +7,5 @@ skye_robot_driver:
     gripper_right_type: "dm4310"
     gripper_invert: true
     gripper_left_invert: true
-    gripper_right_invert: false
+    gripper_right_invert: true
     gripper_close_limit: 0.93
