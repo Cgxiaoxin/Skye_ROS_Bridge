@@ -29,8 +29,8 @@ skye_robot_driver:
     # relative: delta from teleop entry (safe if sync incomplete). absolute: legacy.
     teleop_mapping_mode: relative     # relative | absolute
     # 关节阻抗 K/D（imp_joint）。对齐旧 Marvin left_pd/right_pd，原样进 SDK。
-    impedance_stiffness: [2.0, 2.0, 2.0, 2.0, 2.0, 1.0, 1.0]
-    impedance_damping: [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4]
+    impedance_stiffness: [60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0]
+    impedance_damping: [6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0]
     # 笛卡尔空间阻抗k,d, 用于阻尼控制
     cartesian_stiffness: [2000.0, 2000.0, 2000.0, 100.0, 100.0, 100.0, 50.0]
     cartesian_damping: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 1.0]
