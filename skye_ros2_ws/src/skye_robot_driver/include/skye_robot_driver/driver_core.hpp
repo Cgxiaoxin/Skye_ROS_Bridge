@@ -39,6 +39,8 @@ class DriverCore {
     JointArray right_position{};
     JointArray left_velocity{};
     JointArray right_velocity{};
+    JointArray left_effort{};
+    JointArray right_effort{};
   };
 
   struct ImpedanceGains {
@@ -104,6 +106,8 @@ class DriverCore {
       double max_delta_per_cycle);
   static JointArray ros_radians_to_sdk_degrees(const JointArray &radians);
   static JointArray sdk_degrees_to_ros_radians(const JointArray &degrees);
+  // Copy 7 SDK floats (e.g. ExternalTorEst) into JointArray. No unit/sign change.
+  static void copy_joint_floats(const float *src, JointArray *dst);
 
   bool connect_and_enable(
       const std::array<unsigned char, 4> &ip, const ConnectConfig &config);

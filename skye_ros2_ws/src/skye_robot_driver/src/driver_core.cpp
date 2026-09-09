@@ -188,6 +188,12 @@ DriverCore::JointArray DriverCore::sdk_degrees_to_ros_radians(
   return radians;
 }
 
+void DriverCore::copy_joint_floats(const float *src, JointArray *dst) {
+  for (std::size_t i = 0; i < dst->size(); ++i) {
+    (*dst)[i] = static_cast<double>(src[i]);
+  }
+}
+
 bool DriverCore::reset_errors_unlocked() {
   unsigned int code = 0;
   FX_L1_State_ResetError(FX_OBJ_ARM0, kModeTimeoutMs, &code);
@@ -570,6 +576,12 @@ std::optional<DriverCore::DualArmState> DriverCore::read_state() const {
   state.right_position = sdk_degrees_to_ros_radians(right_position_degrees);
   state.left_velocity = sdk_degrees_to_ros_radians(left_velocity_degrees);
   state.right_velocity = sdk_degrees_to_ros_radians(right_velocity_degrees);
+  copy_joint_floats(
+      feedback->m_ARMS[0].m_ARM_OUT.m_ARM_FBK_Joint_ExternalTorEst,
+      &state.left_effort);
+  copy_joint_floats(
+      feedback->m_ARMS[1].m_ARM_OUT.m_ARM_FBK_Joint_ExternalTorEst,
+      &state.right_effort);
   return state;
 }
 

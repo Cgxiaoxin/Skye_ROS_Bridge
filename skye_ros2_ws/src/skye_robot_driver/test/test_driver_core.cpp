@@ -32,6 +32,15 @@ DriverCore::JointArray map_frame(
 
 }  // namespace
 
+TEST(DriverCore, CopyJointFloatsCopiesSevenValues) {
+  const float src[7] = {-1.9f, 0.4f, -0.2f, 0.4f, -0.14f, 0.11f, 1.08f};
+  DriverCore::JointArray dst{};
+  DriverCore::copy_joint_floats(src, &dst);
+  for (std::size_t i = 0; i < 7; ++i) {
+    EXPECT_NEAR(dst[i], static_cast<double>(src[i]), 1e-6);
+  }
+}
+
 TEST(DriverCore, ClutchLeavesRefsUnchangedWhenInsideLimits) {
   const DriverCore::JointArray desired{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7};
   const auto clamped = DriverCore::clamp_to_limits(desired, kMin, kMax);
