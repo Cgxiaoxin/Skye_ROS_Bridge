@@ -27,8 +27,9 @@ arm_teleop:
     # The expected leader arm joint position before launching the script
     calibration_joint_pos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     initial_match_joint_pos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0,0.0]
-  # Follower (big arm) dynamics model for external torque estimation (τ_ext = τ_total - τ_gravity)
-  enable_follower_gravity_comp: True
+  # Follower external torque is published by skye as JointState.effort
+  # (SDK ExternalTorEst). Do NOT subtract Pinocchio gravity again.
+  enable_follower_gravity_comp: False
   follower_urdf_package: "marvin_m6_description"
   follower_urdf: "marvin_m6.urdf"
   follower_joint_offset: 0          # left arm occupies DOF 0-6 in the 14-DOF model
@@ -49,7 +50,7 @@ controller:
   # FACTR 默认 5s；左臂 J3/J4 走位慢时易超时并触发 logger bug 崩溃
   teleop_sync_timeout: 10.0
   torque_feedback:
-    enable: False
+    enable: True
     # 每关节增益 μ_f，可按手感独立调节（近端关节感觉弱可适当调大）
     gain:         [0.2, 0.2, 0.5, 0.5, 0.5, 0.5, 0.5]
     # 每关节阻尼 K_{f,d}，抑制小臂震荡
