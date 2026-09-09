@@ -74,6 +74,14 @@ rclcpp::QoS state_qos() {
   return qos;
 }
 
+rclcpp::QoS teleop_state_qos() {
+  // Match FACTR /teleop/state (Transient Local + Reliable).
+  rclcpp::QoS qos(rclcpp::KeepLast(1));
+  qos.reliable();
+  qos.transient_local();
+  return qos;
+}
+
 rclcpp::QoS applied_action_qos(int depth) {
   const int d = std::max(10, depth);
   rclcpp::QoS qos(rclcpp::KeepLast(static_cast<size_t>(d)));
@@ -142,6 +150,10 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   const auto cmd_cycle_time_ms = declare_parameter<int>("cmd_cycle_time_ms", 4);
   max_delta_per_cycle_ = declare_parameter<double>("max_delta_per_cycle", 0.25);
   command_timeout_s_ = declare_parameter<double>("command_timeout_s", 0.50);
+  effort_deadzone_nm_ = declare_parameter<double>("effort_deadzone_nm", 2.0);
+  effort_ema_beta_ = declare_parameter<double>("effort_ema_beta", 0.5);
+  effort_require_teleop_ = declare_parameter<bool>("effort_require_teleop", true);
+  teleop_effort_allowed_.store(!effort_require_teleop_, std::memory_order_relaxed);
   teleop_mapping_mode_ = parse_teleop_mapping_mode(
       declare_parameter<std::string>("teleop_mapping_mode", "relative"));
   const auto enable_gripper = declare_parameter<bool>("enable_gripper", true);
@@ -360,6 +372,14 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
         handle_gripper_command(DriverCore::Arm::kRight, std::move(message));
       },
       gripper_sub_opts);
+  const auto teleop_state_topic =
+      declare_parameter<std::string>("teleop_state_topic", "/teleop/state");
+  teleop_state_subscription_ = create_subscription<std_msgs::msg::String>(
+      teleop_state_topic, teleop_state_qos(),
+      [this](std_msgs::msg::String::SharedPtr message) {
+        handle_teleop_state(std::move(message));
+      },
+      control_sub_opts);
   left_gripper_state_publisher_ =
       create_publisher<JointState>("/left_gripper/state", st_qos);
   right_gripper_state_publisher_ =
@@ -441,14 +461,17 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
     RCLCPP_INFO(
         get_logger(),
         "Connected to controller %s; mode=%s(%d); teleop_mapping=%s; "
-        "vel L/R=%d/%d; acc L/R=%d/%d; cmd_cycle=%dms",
+        "vel L/R=%d/%d; acc L/R=%d/%d; cmd_cycle=%dms; "
+        "effort_deadzone=%.2fNm ema_beta=%.2f require_teleop=%s",
         robot_ip.c_str(), DriverCore::mode_name(connect_config.mode),
         static_cast<int>(connect_config.mode),
         teleop_mapping_mode_ == TeleopMappingMode::kRelative ? "relative"
                                                              : "absolute",
         connect_config.left_vel_ratio,
         connect_config.right_vel_ratio, connect_config.left_acc_ratio,
-        connect_config.right_acc_ratio, connect_config.cmd_cycle_time_ms);
+        connect_config.right_acc_ratio, connect_config.cmd_cycle_time_ms,
+        effort_deadzone_nm_, effort_ema_beta_,
+        effort_require_teleop_ ? "true" : "false");
 
     if (enable_gripper) {
       const auto gripper_period =
@@ -1140,10 +1163,36 @@ void DriverNode::publish_joint_action_applied(
   pub->publish(make_arm_joint_state(now(), names, mapped, zero_vel));
 }
 
+void DriverNode::handle_teleop_state(
+    const std_msgs::msg::String::SharedPtr message) {
+  const bool allowed = DriverCore::is_teleop_state(message->data);
+  const bool previous =
+      teleop_effort_allowed_.exchange(allowed, std::memory_order_relaxed);
+  if (previous && !allowed) {
+    left_effort_ema_ = JointArray{};
+    right_effort_ema_ = JointArray{};
+  }
+}
+
+DriverNode::JointArray DriverNode::filter_effort_for_publish(
+    const JointArray &raw, JointArray *ema_state) {
+  if (effort_require_teleop_ &&
+      !teleop_effort_allowed_.load(std::memory_order_relaxed)) {
+    *ema_state = JointArray{};
+    return JointArray{};
+  }
+  const auto gated = DriverCore::soft_deadzone_effort(raw, effort_deadzone_nm_);
+  return DriverCore::ema_effort(gated, ema_state, effort_ema_beta_);
+}
+
 void DriverNode::publish_state() {
   const auto state = core_.read_state();
   if (state) {
     const auto stamp = now();
+    const auto left_effort =
+        filter_effort_for_publish(state->left_effort, &left_effort_ema_);
+    const auto right_effort =
+        filter_effort_for_publish(state->right_effort, &right_effort_ema_);
     JointState message;
     message.header.stamp = stamp;
     message.name.assign(kJointNames.begin(), kJointNames.end());
@@ -1163,18 +1212,16 @@ void DriverNode::publish_state() {
         message.velocity.end(), state->right_velocity.begin(),
         state->right_velocity.end());
     message.effort.insert(
-        message.effort.end(), state->left_effort.begin(),
-        state->left_effort.end());
+        message.effort.end(), left_effort.begin(), left_effort.end());
     message.effort.insert(
-        message.effort.end(), state->right_effort.begin(),
-        state->right_effort.end());
+        message.effort.end(), right_effort.begin(), right_effort.end());
     state_publisher_->publish(message);
     left_state_publisher_->publish(make_arm_joint_state(
         stamp, kLeftJointNames, state->left_position, state->left_velocity,
-        state->left_effort));
+        left_effort));
     right_state_publisher_->publish(make_arm_joint_state(
         stamp, kRightJointNames, state->right_position,
-        state->right_velocity, state->right_effort));
+        state->right_velocity, right_effort));
   }
 
   std_msgs::msg::Int16MultiArray robot_state;

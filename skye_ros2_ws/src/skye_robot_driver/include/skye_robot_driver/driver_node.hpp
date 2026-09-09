@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <string>
@@ -10,6 +11,7 @@
 #include "skye_robot_driver/srv/set_mode.hpp"
 #include "skye_robot_driver/srv/set_motion_rates.hpp"
 #include "std_msgs/msg/int16_multi_array.hpp"
+#include "std_msgs/msg/string.hpp"
 #include "std_srvs/srv/trigger.hpp"
 
 #include "skye_robot_driver/driver_core.hpp"
@@ -58,6 +60,9 @@ class DriverNode : public rclcpp::Node {
       const std::shared_ptr<SetMode::Request> request,
       std::shared_ptr<SetMode::Response> response);
   void publish_state();
+  JointArray filter_effort_for_publish(
+      const JointArray &raw, JointArray *ema_state);
+  void handle_teleop_state(const std_msgs::msg::String::SharedPtr message);
   void publish_joint_action_applied(
       DriverCore::Arm arm, const JointArray &mapped);
   void publish_gripper_action_applied();
@@ -91,6 +96,12 @@ class DriverNode : public rclcpp::Node {
   JointArray right_maximum_{};
   double max_delta_per_cycle_{0.05};
   double command_timeout_s_{0.20};
+  double effort_deadzone_nm_{2.0};
+  double effort_ema_beta_{0.5};
+  bool effort_require_teleop_{true};
+  std::atomic<bool> teleop_effort_allowed_{false};
+  JointArray left_effort_ema_{};
+  JointArray right_effort_ema_{};
   TeleopMappingMode teleop_mapping_mode_{TeleopMappingMode::kRelative};
   std::optional<JointArray> left_gento_ref_;
   std::optional<JointArray> right_gento_ref_;
@@ -133,6 +144,8 @@ class DriverNode : public rclcpp::Node {
       right_abs_command_subscription_;
   rclcpp::Subscription<JointState>::SharedPtr left_gripper_subscription_;
   rclcpp::Subscription<JointState>::SharedPtr right_gripper_subscription_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr
+      teleop_state_subscription_;
   rclcpp::Service<SetMode>::SharedPtr set_mode_service_;
   rclcpp::Service<SetMotionRates>::SharedPtr set_motion_rates_service_;
   rclcpp::Service<Trigger>::SharedPtr hold_current_service_;

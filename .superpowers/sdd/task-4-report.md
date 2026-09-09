@@ -1,83 +1,36 @@
-# Task 4 Report: Host keyboard + start script
+# Task 4 Report: Document effort semantics + live acceptance checklist
 
-**Status:** Complete  
-**Date:** 2026-09-04  
-**Commit:** `66bdb28` — `feat(align): host keyboard s/x and start_follower_align.sh`
+**Status:** Complete (docs + commit); live HW acceptance deferred to operator.
 
-## Summary
+## Step 1 — `docs/ros_interfaces.md`
 
-Implemented the host-side keyboard bridge and one-shot start script for follower align after FACTR sync. The keyboard node mirrors the `skye_hitl_dagger` tty/cbreak pattern; the launch file conditionally starts it when `enable_keyboard:=true`.
+- Updated three `joint_states` topic rows: 14-DoF and left/right 7-DoF now document `effort` = SDK `ExternalTorEst` (Nm, axis external torque) and FACTR `torque_feedback` usage.
+- Added blockquote under Topic table: `ExternalTorEst` vs `SensorTor`, `enable_follower_gravity_comp: False` requirement, probe script path.
 
-## Deliverables
-
-### 1. `skye_follower_align/host_keyboard.py`
-
-- Entry point: `host_keyboard_align`
-- Node name: `host_keyboard_align`
-- **Keys:**
-  - `s` → publish `std_msgs/String` on `/mode/align_follower` with `data=align_follower`
-  - `x` → publish on `/mode/align_cancel` with `data=align_cancel`
-  - `q` → stop reader and call `rclpy.shutdown()`
-- TTY: `tty.setcbreak` + `select` when stdin is a TTY; line mode fallback otherwise
-- Banner logged on TTY startup: `s=align x=cancel q=quit`
-- Pattern aligned with `skye_hitl_dagger/hitl_keyboard_node.py` (`KeyboardReader`, `map_key`, `destroy_node` cleanup)
-
-### 2. `launch/follower_align.launch.py`
-
-- Added `IfCondition(LaunchConfiguration("enable_keyboard"))` around `host_keyboard_align` node
-- Existing `OpaqueFunction` for `robot_profile` joint signs unchanged
-
-### 3. `setup.py`
-
-- Added console script: `host_keyboard_align = skye_follower_align.host_keyboard:main`
-
-### 4. `scripts/start_follower_align.sh`
-
-- Executable (`chmod +x`)
-- `ROS_DOMAIN_ID=21`, `rmw_fastrtps_cpp`, `FASTRTPS_DEFAULT_PROFILES_FILE` → `marvin_ws/fastrtps_no_shm.xml`
-- `ROBOT_PROFILE` default `thor`
-- Sources ROS Humble + workspace install
-- `exec ros2 launch skye_follower_align follower_align.launch.py robot_profile:=… enable_keyboard:=true`
-
-## Build / smoke
-
-```bash
-cd skye_ros2_ws && ./scripts/build.sh skye_follower_align
-source install/setup.bash
-ros2 pkg executables skye_follower_align
-```
-
-**Result:**
+## Step 2 — Commit
 
 ```
-skye_follower_align follower_align_node
-skye_follower_align host_keyboard_align
+docs: document joint_states effort as SDK ExternalTorEst
+
+Clarify FACTR torque-feedback contract and yaml gravity flag.
 ```
 
-Build: success (0.52s).
+Commit: `d215964` — docs: document joint_states effort as SDK ExternalTorEst
 
-## Files in commit
+## Step 3 — Live acceptance (operator; deferred)
 
-| Path | Change |
-|------|--------|
-| `skye_ros2_ws/src/skye_follower_align/skye_follower_align/host_keyboard.py` | created |
-| `skye_ros2_ws/src/skye_follower_align/launch/follower_align.launch.py` | modified |
-| `skye_ros2_ws/src/skye_follower_align/setup.py` | modified |
-| `scripts/start_follower_align.sh` | created |
+Not run in this session — robot/stack may be busy. Operator checklist when ready:
 
-## Concerns / follow-ups
+1. Rebuild driver; restart with `ROBOT_PROFILE=orin ./scripts/start_skye_for_factr.sh` (Docker yaml refresh).
+2. `ros2 topic echo /gento/{left,right}_joint_states --once` and `/gento/joint_states --once` (ROS_DOMAIN_ID=21, FastRTPS profile per repo).
+3. Verify: `effort` length 7 per side / 14 combined; idle `|effort|` ~±2; `[0:7]`/`[7:14]` match side topics.
+4. Docker TELEOP (`2`): gentle push on big-arm tip → leader contact feel (`enable_follower_gravity_comp: False` in grav_comp yaml).
 
-1. **No unit tests** for `host_keyboard.py` — HITL has `test_hitl_keyboard_node.py` for `map_key` only; optional to add `test_host_keyboard.py` in a later task.
-2. **TTY required for best UX** — launch must keep the terminal foreground (same as HITL); non-TTY falls back to line mode with Enter.
-3. **`q` shuts down keyboard node only** — does not stop `follower_align_node`; launch continues until Ctrl+C or process group kill. Matches brief (“shutdown node”); full stack teardown is operator responsibility.
-4. **Runtime integration** not exercised here — needs live `/gento/*` services and leader joint topics on domain 21.
+No `docs/log.md` entry (optional per brief).
 
-## Usage
+## Spec coverage
 
-```bash
-./scripts/start_follower_align.sh
-# or
-ROBOT_PROFILE=orin ./scripts/start_follower_align.sh
-```
-
-After FACTR sync, press `s` to start align, `x` to cancel, `q` to quit keyboard node.
+| Requirement | Done |
+|-------------|------|
+| `ros_interfaces.md` effort semantics | Yes |
+| Live echo + TELEOP feel | Deferred — operator |

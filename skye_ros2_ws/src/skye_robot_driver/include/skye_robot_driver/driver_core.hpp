@@ -108,6 +108,16 @@ class DriverCore {
   static JointArray sdk_degrees_to_ros_radians(const JointArray &degrees);
   // Copy 7 SDK floats (e.g. ExternalTorEst) into JointArray. No unit/sign change.
   static void copy_joint_floats(const float *src, JointArray *dst);
+  // Soft deadzone: |x|<d → x*(|x|/d)^2 (attenuate residual); |x|>=d unchanged.
+  static double soft_deadzone(double value, double deadzone_nm);
+  static JointArray soft_deadzone_effort(
+      const JointArray &effort, double deadzone_nm);
+  // EMA: y = beta*y_prev + (1-beta)*x. beta in [0,1); beta<=0 or >=1 → pass-through.
+  static double ema_step(double previous, double sample, double beta);
+  static JointArray ema_effort(
+      const JointArray &sample, JointArray *state, double beta);
+  // FACTR /teleop/state token: exact "TELEOP" after trim+upper (not TELEOP_SYNCING).
+  static bool is_teleop_state(const std::string &state);
 
   bool connect_and_enable(
       const std::array<unsigned char, 4> &ip, const ConnectConfig &config);

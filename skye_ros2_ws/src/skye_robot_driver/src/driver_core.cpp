@@ -1,6 +1,7 @@
 #include "skye_robot_driver/driver_core.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 
@@ -192,6 +193,71 @@ void DriverCore::copy_joint_floats(const float *src, JointArray *dst) {
   for (std::size_t i = 0; i < dst->size(); ++i) {
     (*dst)[i] = static_cast<double>(src[i]);
   }
+}
+
+double DriverCore::soft_deadzone(double value, double deadzone_nm) {
+  if (!(deadzone_nm > 0.0) || !std::isfinite(value)) {
+    return value;
+  }
+  const double abs_value = std::abs(value);
+  if (abs_value >= deadzone_nm) {
+    return value;
+  }
+  const double ratio = abs_value / deadzone_nm;
+  return value * ratio * ratio;
+}
+
+DriverCore::JointArray DriverCore::soft_deadzone_effort(
+    const JointArray &effort, double deadzone_nm) {
+  JointArray out{};
+  for (std::size_t i = 0; i < effort.size(); ++i) {
+    out[i] = soft_deadzone(effort[i], deadzone_nm);
+  }
+  return out;
+}
+
+double DriverCore::ema_step(double previous, double sample, double beta) {
+  if (!(beta > 0.0) || !(beta < 1.0) || !std::isfinite(sample)) {
+    return sample;
+  }
+  if (!std::isfinite(previous)) {
+    return sample;
+  }
+  return beta * previous + (1.0 - beta) * sample;
+}
+
+DriverCore::JointArray DriverCore::ema_effort(
+    const JointArray &sample, JointArray *state, double beta) {
+  JointArray out{};
+  for (std::size_t i = 0; i < sample.size(); ++i) {
+    out[i] = ema_step((*state)[i], sample[i], beta);
+    (*state)[i] = out[i];
+  }
+  return out;
+}
+
+bool DriverCore::is_teleop_state(const std::string &state) {
+  std::size_t begin = 0;
+  while (begin < state.size() &&
+         std::isspace(static_cast<unsigned char>(state[begin]))) {
+    ++begin;
+  }
+  std::size_t end = state.size();
+  while (end > begin &&
+         std::isspace(static_cast<unsigned char>(state[end - 1]))) {
+    --end;
+  }
+  if (end - begin != 6) {
+    return false;
+  }
+  static constexpr char kTeleop[] = "TELEOP";
+  for (std::size_t i = 0; i < 6; ++i) {
+    if (std::toupper(static_cast<unsigned char>(state[begin + i])) !=
+        kTeleop[i]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool DriverCore::reset_errors_unlocked() {

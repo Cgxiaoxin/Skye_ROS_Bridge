@@ -26,6 +26,11 @@ skye_robot_driver:
     # # 每个控制周期允许的最大关节增量（弧度），用于限制单步运动幅度，防止指令异常或抖动。0.02 即每个周期最大变化约1.15°。
     max_delta_per_cycle: 0.30   # rad per command frame 
     command_timeout_s: 0.50
+    # effort = ExternalTorEst → FACTR torque_feedback。软死区削弱 0~d 残差；大力峰值不变。
+    effort_deadzone_nm: 2.0
+    effort_ema_beta: 0.5
+    effort_require_teleop: true   # SYNC/IDLE 发 effort=0；仅 TELEOP 开力反馈
+    teleop_state_topic: "/teleop/state"
     # relative: delta from teleop entry (safe if sync incomplete). absolute: legacy.
     teleop_mapping_mode: relative     # relative | absolute
     # 关节阻抗 K/D（imp_joint）。对齐旧 Marvin left_pd/right_pd，原样进 SDK。

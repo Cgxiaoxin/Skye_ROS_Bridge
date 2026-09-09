@@ -201,3 +201,54 @@ TEST(DriverCore, RelativeKeepsLegitimateLargeSwing) {
   EXPECT_NEAR(step(-1.0), -3.0, 1e-9);
   EXPECT_NEAR(step(-2.0), -4.0, 1e-9);
 }
+
+// Soft deadzone: attenuate |τ|<d with (τ/d)^2 scale; leave |τ|>=d unchanged.
+TEST(DriverCore, SoftDeadzoneAttenuatesSmallPreservesPeaks) {
+  constexpr double d = 2.0;
+  EXPECT_NEAR(DriverCore::soft_deadzone(0.0, d), 0.0, 1e-12);
+  EXPECT_NEAR(DriverCore::soft_deadzone(1.0, d), 0.25, 1e-12);   // 1*(0.5)^2
+  EXPECT_NEAR(DriverCore::soft_deadzone(-1.0, d), -0.25, 1e-12);
+  EXPECT_NEAR(DriverCore::soft_deadzone(2.0, d), 2.0, 1e-12);
+  EXPECT_NEAR(DriverCore::soft_deadzone(5.0, d), 5.0, 1e-12);     // peak intact
+  EXPECT_NEAR(DriverCore::soft_deadzone(-8.0, d), -8.0, 1e-12);
+  EXPECT_NEAR(DriverCore::soft_deadzone(1.0, 0.0), 1.0, 1e-12);   // disabled
+}
+
+TEST(DriverCore, SoftDeadzoneJointArrayAppliesPerJoint) {
+  DriverCore::JointArray in{0.5, 2.0, 4.0, -0.5, -2.0, -4.0, 0.0};
+  const auto out = DriverCore::soft_deadzone_effort(in, 2.0);
+  EXPECT_NEAR(out[0], 0.03125, 1e-12);
+  EXPECT_NEAR(out[1], 2.0, 1e-12);
+  EXPECT_NEAR(out[2], 4.0, 1e-12);
+  EXPECT_NEAR(out[3], -0.03125, 1e-12);
+  EXPECT_NEAR(out[4], -2.0, 1e-12);
+  EXPECT_NEAR(out[5], -4.0, 1e-12);
+  EXPECT_NEAR(out[6], 0.0, 1e-12);
+}
+
+TEST(DriverCore, EmaStepSmoothsTowardInput) {
+  EXPECT_NEAR(DriverCore::ema_step(0.0, 10.0, 0.0), 10.0, 1e-12);
+  EXPECT_NEAR(DriverCore::ema_step(0.0, 10.0, 0.5), 5.0, 1e-12);
+  EXPECT_NEAR(DriverCore::ema_step(5.0, 10.0, 0.5), 7.5, 1e-12);
+  // beta>=1 or invalid → pass-through
+  EXPECT_NEAR(DriverCore::ema_step(1.0, 9.0, 1.0), 9.0, 1e-12);
+}
+
+TEST(DriverCore, EmaEffortUpdatesStateInPlace) {
+  DriverCore::JointArray state{};
+  DriverCore::JointArray sample{10.0, -10.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  const auto out1 = DriverCore::ema_effort(sample, &state, 0.5);
+  EXPECT_NEAR(out1[0], 5.0, 1e-12);
+  EXPECT_NEAR(state[0], 5.0, 1e-12);
+  const auto out2 = DriverCore::ema_effort(sample, &state, 0.5);
+  EXPECT_NEAR(out2[0], 7.5, 1e-12);
+  EXPECT_NEAR(out2[1], -7.5, 1e-12);
+}
+
+TEST(DriverCore, IsTeleopStateTokenExact) {
+  EXPECT_TRUE(DriverCore::is_teleop_state("TELEOP"));
+  EXPECT_TRUE(DriverCore::is_teleop_state(" teleop "));
+  EXPECT_FALSE(DriverCore::is_teleop_state("TELEOP_SYNCING"));
+  EXPECT_FALSE(DriverCore::is_teleop_state("SYNCED"));
+  EXPECT_FALSE(DriverCore::is_teleop_state(""));
+}

@@ -51,8 +51,11 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 夹爪走 **Terminal CANFD + DM4310 MIT**（非 Hand 24；`orin` profile 可为 Robotiq）。参数见 `enable_gripper` / `gripper_*`。
 
 > **臂力反馈：** `effort` 来自控制器 `ExternalTorEst`（非总力矩 `SensorTor`）。
+> 发布前处理：`soft_deadzone(|τ|<effort_deadzone_nm)` 削弱空载残差 + 轻量 EMA；**仅当** `/teleop/state == TELEOP` 时非零（SYNC/IDLE 发 0）。
+> 参数：`effort_deadzone_nm`（默认 2）、`effort_ema_beta`（默认 0.5）、`effort_require_teleop`（默认 true）。
 > FACTR yaml 须 `enable_follower_gravity_comp: False`，否则会再减 Pinocchio 重力。
 > 探针：`scripts/torque/probe_external_torque.py`（须先停 `skye_robot_driver`）。
+> 抖动诊断：`scripts/torque/record_effort_vs_cmd.py`（驱动运行中录 effort vs 指令）。
 
 > **数采注意：** 训练 action 请订 `*_action_applied`，不要订 `*_joint_control` / `*_teleop_gripper/ctrl`。状态用 `/gento/joint_states` 与 `/left|right_gripper/state`。设计见 `docs/superpowers/specs/2026-09-04-applied-action-data-collection-design.md`。
 >
@@ -136,6 +139,10 @@ ros2 service call /gento/set_motion_rates skye_robot_driver/srv/SetMotionRates \
 | `max_delta_per_cycle` | `0.25` | rad/周期 |
 | `teleop_mapping_mode` | `relative` | `relative`=增量遥操；`absolute`=旧绝对映射 |
 | `command_timeout_s` | `0.50` | 超时 hold（按臂独立，不拖死对侧） |
+| `effort_deadzone_nm` | `2.0` | soft-deadzone：`|τ|<d` 按 `(τ/d)²` 削弱，峰值不变 |
+| `effort_ema_beta` | `0.5` | effort EMA；越大越平滑；`0` 关闭 |
+| `effort_require_teleop` | `true` | 仅 `/teleop/state==TELEOP` 时发非零 effort（SYNC 期间为零） |
+| `teleop_state_topic` | `/teleop/state` | FACTR 模式字符串 topic |
 | `left/right_joint_limits_*` | 见 yaml | 超限逐轴 clamp。J4 大臂 URDF `[-2.5307, 1.0472]`（−145°~+60°） |
 | `left/right_joint_signs` | `thor`：左右全 `+1`；`orin`：右 `[1,1,1,1,1,-1,-1]` | 由 `robot_profile` 叠加 `profiles/{profile}.yaml`；相对遥操 |
 | `enable_gripper` | `true` | 同进程夹爪桥；`ros2 param set` 不会停已创建的定时器 |
