@@ -31,9 +31,9 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 
 | 方向 | Topic | 类型 | 说明 |
 |------|-------|------|------|
-| 发布 | `/gento/joint_states` | `sensor_msgs/JointState` | 14 轴 rad / rad·s⁻¹；HITL/录包 |
-| 发布 | `/gento/left_joint_states` | `JointState` | 7 轴左大臂；FACTR sync |
-| 发布 | `/gento/right_joint_states` | `JointState` | 7 轴右大臂；FACTR sync |
+| 发布 | `/gento/joint_states` | `sensor_msgs/JointState` | 14 轴 rad / rad·s⁻¹ / **effort=SDK ExternalTorEst (Nm，轴外力矩)**；HITL/录包 |
+| 发布 | `/gento/left_joint_states` | `JointState` | 7 轴左大臂；FACTR sync + **torque_feedback effort** |
+| 发布 | `/gento/right_joint_states` | `JointState` | 7 轴右大臂；FACTR sync + **torque_feedback effort** |
 | 发布 | `/gento/robot_state` | `std_msgs/Int16MultiArray` | `[left_fx_state, right_fx_state]` |
 | 订阅 | `/gento/left_joint_control` | `JointState` | 7 轴 position（rad） |
 | 订阅 | `/gento/right_joint_control` | `JointState` | 7 轴 position（rad） |
@@ -49,6 +49,10 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 | 发布 | `/gento/right_gripper_action_applied` | `JointState` | 同上（右爪） |
 
 夹爪走 **Terminal CANFD + DM4310 MIT**（非 Hand 24；`orin` profile 可为 Robotiq）。参数见 `enable_gripper` / `gripper_*`。
+
+> **臂力反馈：** `effort` 来自控制器 `ExternalTorEst`（非总力矩 `SensorTor`）。
+> FACTR yaml 须 `enable_follower_gravity_comp: False`，否则会再减 Pinocchio 重力。
+> 探针：`scripts/torque/probe_external_torque.py`（须先停 `skye_robot_driver`）。
 
 > **数采注意：** 训练 action 请订 `*_action_applied`，不要订 `*_joint_control` / `*_teleop_gripper/ctrl`。状态用 `/gento/joint_states` 与 `/left|right_gripper/state`。设计见 `docs/superpowers/specs/2026-09-04-applied-action-data-collection-design.md`。
 >
