@@ -47,12 +47,14 @@ sensor_msgs::msg::JointState make_arm_joint_state(
     const rclcpp::Time &stamp,
     const std::array<std::string, kArmDof> &names,
     const DriverCore::JointArray &position,
-    const DriverCore::JointArray &velocity) {
+    const DriverCore::JointArray &velocity,
+    const DriverCore::JointArray &effort = DriverCore::JointArray{}) {
   sensor_msgs::msg::JointState message;
   message.header.stamp = stamp;
   message.name.assign(names.begin(), names.end());
   message.position.assign(position.begin(), position.end());
   message.velocity.assign(velocity.begin(), velocity.end());
+  message.effort.assign(effort.begin(), effort.end());
   return message;
 }
 
@@ -1147,6 +1149,7 @@ void DriverNode::publish_state() {
     message.name.assign(kJointNames.begin(), kJointNames.end());
     message.position.reserve(kJointNames.size());
     message.velocity.reserve(kJointNames.size());
+    message.effort.reserve(kJointNames.size());
     message.position.insert(
         message.position.end(), state->left_position.begin(),
         state->left_position.end());
@@ -1159,12 +1162,19 @@ void DriverNode::publish_state() {
     message.velocity.insert(
         message.velocity.end(), state->right_velocity.begin(),
         state->right_velocity.end());
+    message.effort.insert(
+        message.effort.end(), state->left_effort.begin(),
+        state->left_effort.end());
+    message.effort.insert(
+        message.effort.end(), state->right_effort.begin(),
+        state->right_effort.end());
     state_publisher_->publish(message);
     left_state_publisher_->publish(make_arm_joint_state(
-        stamp, kLeftJointNames, state->left_position, state->left_velocity));
+        stamp, kLeftJointNames, state->left_position, state->left_velocity,
+        state->left_effort));
     right_state_publisher_->publish(make_arm_joint_state(
         stamp, kRightJointNames, state->right_position,
-        state->right_velocity));
+        state->right_velocity, state->right_effort));
   }
 
   std_msgs::msg::Int16MultiArray robot_state;
