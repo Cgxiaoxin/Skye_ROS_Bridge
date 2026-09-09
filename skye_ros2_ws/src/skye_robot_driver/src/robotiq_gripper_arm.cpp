@@ -11,7 +11,10 @@
 namespace skye_robot_driver {
 namespace {
 
-constexpr int kFeedbackEveryTicks = 10;
+// Feedback is Modbus-heavy; keep sparse so control writes stay responsive.
+constexpr int kFeedbackEveryTicks = 20;
+// ~0.8 mm; coalesce tiny FACTR streams into larger Hand-E steps at full speed.
+constexpr int kMinPosDeltaCounts = 4;
 
 }  // namespace
 
@@ -90,18 +93,19 @@ bool RobotiqGripperArm::modbus_write(std::uint16_t addr, std::uint16_t value) {
   if (!tx_modbus(req.data(), req.size())) {
     return false;
   }
+  // Teleop needs short ACK waits; 1s floor starved command updates.
   const auto write_budget_ms = std::max(
-      config_.modbus_timeout_ms, static_cast<unsigned int>(1000));
+      config_.modbus_timeout_ms, static_cast<unsigned int>(250));
   const auto deadline = std::chrono::steady_clock::now() +
                         std::chrono::milliseconds(write_budget_ms);
   while (std::chrono::steady_clock::now() < deadline) {
-    const auto packet = core_.terminal_get(terminal(), 100);
+    const auto packet = core_.terminal_get(terminal(), 50);
     if (packet && packet->data.size() >= 8 &&
         packet->data[0] == static_cast<std::uint8_t>(config_.slave_id) &&
         packet->data[1] == 0x06) {
       return true;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
   }
   return false;
 }
@@ -177,24 +181,36 @@ bool RobotiqGripperArm::write_pending() {
       0, std::min(
              255, static_cast<int>(std::lround(
                       (kFullPosMm - opening_mm) / kPosRatio))));
+  // Coalesce: skip no-op / tiny steps so each sent command can run at full speed.
+  const bool at_stop =
+      reg_pos == 0 || reg_pos == 255 ||
+      (config_.close_limit < 1.0 &&
+       std::abs(norm - config_.close_limit) < 1e-6);
+  if (last_sent_reg_pos_ >= 0 && !at_stop &&
+      std::abs(reg_pos - last_sent_reg_pos_) < kMinPosDeltaCounts) {
+    return true;
+  }
   if (!modbus_write(kRegPos, static_cast<std::uint16_t>(reg_pos))) {
     std::lock_guard<std::mutex> lock(target_mutex_);
     dirty_ = true;
     return false;
   }
-  const std::uint16_t speed_force =
-      static_cast<std::uint16_t>(
-          ((config_.speed & 0xFF) << 8) | (config_.force & 0xFF));
-  if (!modbus_write(kRegSpeed, speed_force)) {
-    std::lock_guard<std::mutex> lock(target_mutex_);
-    dirty_ = true;
-    return false;
+  if (!speed_force_sent_) {
+    const std::uint16_t speed_force = static_cast<std::uint16_t>(
+        ((config_.speed & 0xFF) << 8) | (config_.force & 0xFF));
+    if (!modbus_write(kRegSpeed, speed_force)) {
+      std::lock_guard<std::mutex> lock(target_mutex_);
+      dirty_ = true;
+      return false;
+    }
+    speed_force_sent_ = true;
   }
   if (!modbus_write(kRegAction, action_reg(1, 1))) {
     std::lock_guard<std::mutex> lock(target_mutex_);
     dirty_ = true;
     return false;
   }
+  last_sent_reg_pos_ = reg_pos;
   return true;
 }
 
@@ -275,6 +291,9 @@ void RobotiqGripperArm::stop() {
   }
   modbus_write(kRegAction, action_reg(1, 0));
   started_ = false;
+  speed_force_sent_ = false;
+  last_sent_reg_pos_ = -1;
+  wrote_control_this_tick_ = false;
 }
 
 void RobotiqGripperArm::set_target(double norm) {
@@ -294,6 +313,7 @@ double RobotiqGripperArm::target() const {
 }
 
 void RobotiqGripperArm::tick_control() {
+  wrote_control_this_tick_ = false;
   if (!started_) {
     return;
   }
@@ -303,12 +323,16 @@ void RobotiqGripperArm::tick_control() {
     should_write = dirty_;
   }
   if (should_write) {
-    write_pending();
+    wrote_control_this_tick_ = write_pending();
   }
 }
 
 void RobotiqGripperArm::tick_feedback() {
   if (!started_) {
+    return;
+  }
+  // Prefer control latency over state: skip feedback after a command write.
+  if (wrote_control_this_tick_) {
     return;
   }
   ++feedback_ticks_;

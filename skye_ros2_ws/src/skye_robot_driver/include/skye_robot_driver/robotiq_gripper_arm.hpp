@@ -71,6 +71,10 @@ class RobotiqGripperArm : public GripperArmBackend {
   mutable std::mutex fb_mutex_;
   GripperFeedback fb_{};
   std::uint32_t feedback_ticks_{0};
+  // Teleop path: avoid re-sending identical pos / speed every FACTR tick.
+  int last_sent_reg_pos_{-1};
+  bool speed_force_sent_{false};
+  bool wrote_control_this_tick_{false};
 };
 
 }  // namespace skye_robot_driver
