@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sync tracked marvin_ws overlay (launch + configs) into install/share.
+# Sync tracked marvin_ws overlay (launch + configs + driver wrapper) into install/.
 #
 # Run on HOST (repo root) before docker, or INSIDE docker (/marvin_ws mounted):
 #   ./scripts/sync_marvin_overlay.sh
@@ -37,6 +37,7 @@ MARVIN_WS="$(resolve_marvin_ws)" || {
 
 INSTALL_LAUNCH="${MARVIN_WS}/install/share/factr_teleop/launch"
 INSTALL_CFG="${MARVIN_WS}/install/share/factr_teleop/configs"
+INSTALL_LIB="${MARVIN_WS}/install/lib/factr_teleop"
 OVERLAY_LAUNCH="${MARVIN_WS}/launch_overlay"
 OVERLAY_CFG="${MARVIN_WS}/configs"
 
@@ -85,6 +86,19 @@ for src in "${cfg_files[@]}"; do
   cp -f "${src}" "${INSTALL_CFG}/"
   echo "  config[${PROFILE}]: $(basename "${src}")"
 done
+
+DRIVER_WRAPPER="${OVERLAY_LAUNCH}/factr_teleop_robot_driver.py"
+SERIAL_GUARD="${OVERLAY_LAUNCH}/dynamixel_serial_guard.py"
+if [[ ! -f "${DRIVER_WRAPPER}" || ! -f "${SERIAL_GUARD}" ]]; then
+  echo "ERROR: missing serial-guard wrapper under ${OVERLAY_LAUNCH}" >&2
+  exit 1
+fi
+mkdir -p "${INSTALL_LIB}"
+cp -f "${DRIVER_WRAPPER}" "${INSTALL_LIB}/factr_teleop_robot_driver.py"
+cp -f "${SERIAL_GUARD}" "${INSTALL_LIB}/dynamixel_serial_guard.py"
+chmod +x "${INSTALL_LIB}/factr_teleop_robot_driver.py"
+echo "  driver: factr_teleop_robot_driver.py (serial_guard wrapper)"
+
 echo "OK: profile=${PROFILE} overlay synced"
 
 echo "OK: overlay -> ${INSTALL_LAUNCH}"
