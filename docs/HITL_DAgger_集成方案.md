@@ -234,10 +234,10 @@ AUTONOMOUS ──────────────► TRANSITION_TO_HUMAN ─
 | P6.4 | 接入真实 VLA 推理进程，打通 `/skye/policy_action`，完成端到端联调 | 全链路跑通一次完整 episode，数据记录完整可回放 |
 | P6.5 | 离线训练侧加权聚合脚本 + 消融实验框架 | 能够输出按类别加权后的训练集，支持权重超参扫描 |
 
-**P6 进度（2026-08-21）：** P6.1–P6.3 代码已合入（状态机、`control_arbiter`、mcap
-`episode_recorder`、HITL launch + FACTR remap overlay）。无真机 bench 验收：
-`skye_ros2_ws/scripts/verify_hitl_p61_interfaces.sh`。真机 §12 checklist 见
-`docs/小臂大臂启动步骤.md` HITL 节。P6.4（真 VLA）/ P6.5（训练加权）待后续。
+**P6 进度（2026-09-10）：** P6.1–P6.3 代码已合入；**Thor 真机冒烟通过**（dummy 策略 +
+`/skye/intervention_cmd` 接管/交还）。启停与踩坑见
+[`docs/Hint_启动使用说明.md`](Hint_启动使用说明.md)。无真机 bench：
+`skye_ros2_ws/scripts/verify_hitl_p61_interfaces.sh`。P6.4（真 VLA）/ P6.5（训练加权）待后续。
 
 ---
 

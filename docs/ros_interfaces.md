@@ -147,18 +147,19 @@ ros2 service call /gento/set_motion_rates skye_robot_driver/srv/SetMotionRates \
 
 ## HITL DAgger（`hitl_enable:=true`）
 
-无真机验收：`skye_ros2_ws/scripts/verify_hitl_p61_interfaces.sh`（起 arbiter、假 chunk、
-`takeover`、查 `/skye/control_mode` 与 abs topic）。
+真机冒烟（2026-09-10 Thor）：dummy + `takeover`/`return` 已通。启停见
+[`docs/Hint_启动使用说明.md`](Hint_启动使用说明.md)。无真机 bench：
+`skye_ros2_ws/scripts/verify_hitl_p61_interfaces.sh`。
 
 | Topic | 类型 | 说明 |
 |-------|------|------|
 | `/skye/policy_action` | `skye_hitl_dagger/msg/PolicyActionChunk` | VLA/假策略 → arbiter；16 步绝对角 chunk |
 | `/skye/teleop_action_left` / `_right` | `sensor_msgs/JointState` | FACTR 遥操 → arbiter（仅 HUMAN 转发到 `/gento/*`） |
 | `/skye/teleop_gripper_left` / `_right` | `sensor_msgs/JointState` | FACTR 夹爪 → arbiter |
-| `/skye/intervention_cmd` | `std_msgs/String` | `takeover` / `return`（键盘 `q`/`w`） |
+| `/skye/intervention_cmd` | `std_msgs/String` | `takeover` / `return`（键盘 `q`/`w`；launch 终端常无效，见启停文档） |
 | `/skye/control_mode` | `skye_hitl_dagger/msg/ControlMode` | `mode`=`AUTONOMOUS`\|`HANDOVER_SYNC`\|`HUMAN`；含 `source`/`policy_version` |
 | `/skye/recorder/start` / `stop` | `std_srvs/Trigger` | mcap episode 录制（P6.3） |
 
-AUTONOMOUS / hold：`control_arbiter` 写 `/gento/*_joint_control_abs`；HUMAN 写
-`/gento/*_joint_control`（relative）。设计细节见
+AUTONOMOUS / hold：arbiter 经 `policy_relative` 写 `/gento/*_joint_control`；HUMAN 透传
+遥操到同路径。设计细节见
 `docs/superpowers/specs/2026-08-21-hitl-dagger-control-arbiter-design.md`。
