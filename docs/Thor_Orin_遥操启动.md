@@ -133,7 +133,7 @@ ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_k
 ./scripts/run_marvin_m6_impedance.sh orin
 
 source /marvin_ws/install/setup.bash
-export ROS_DOMAIN_ID=21
+export ROS_DOMAIN_ID=22
 export ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml
@@ -149,7 +149,7 @@ ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_k
 ### 同步对齐
 
 ```bash
-export ROS_DOMAIN_ID=21
+export ROS_DOMAIN_ID=22
 ros2 topic pub --once /mode/switch_stop  std_msgs/msg/String "{data: switch_stop}"
 sleep 1
 ros2 topic pub --once /mode/switch_sync  std_msgs/msg/String "{data: switch_sync}"

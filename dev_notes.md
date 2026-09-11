@@ -203,3 +203,74 @@ SYNCED + /mode/switch_teleop → TELEOP
 - 夹爪：`/<side>_teleop_gripper/ctrl`、`/<side>_gripper/state`。
 - `/leader_arm/current_state`：旧程序左右臂共用一个 topic，消息无左右标记；不要照搬。若未来确有需求，使用 `/leader/left/joint_states`、`/leader/right/joint_states`。
 - 多种从臂机器人适配：首版固定输出 `/gento/*`；第二种从臂实际接入时再抽取适配层。
+
+## 补充：SYNC 判定与新包实施结论（2026-09）
+
+### 对应待办 1：观察旧 `factr_teleop` 的 SYNC 判定
+
+#### 旧 FACTR 的可配置项
+
+- 日常启动所用的 FACTR 配置为 `marvin_ws/configs/<thor|orin>/grav_comp_m6_{left,right}.yaml`。
+- `scripts/run_marvin_m6_impedance.sh` 启动前会调用 `scripts/sync_marvin_overlay.sh`，将上述 profile 配置复制到 `marvin_ws/install/share/factr_teleop/configs/`；不要直接修改 `install/` 下的副本。
+- 已确认配置中只有 `controller.teleop_sync_timeout: 10.0`，其含义是同步最长等待时间/超时，不是关节误差阈值或误差持续满足时间。
+- 现有日常流程未发现可设置“每关节误差阈值”及“连续满足多久”的 FACTR 配置项；这两个规则很可能在闭源 `factr_teleop` 内部实现。真机运行时可复查是否存在隐藏 ROS 参数：
+
+```bash
+ros2 param list /factr_teleop_left | rg -i 'sync|threshold|tolerance|error|duration|hold'
+ros2 param list /factr_teleop_right | rg -i 'sync|threshold|tolerance|error|duration|hold'
+```
+
+#### 旧 FACTR 的节点与业务话题
+
+- `/factr_teleop_left` 和 `/factr_teleop_right` 是旧 FACTR 的 ROS 节点名，不是话题。运行后核查：
+
+```bash
+ros2 node list | rg 'factr_teleop_(left|right)'
+ros2 node info /factr_teleop_left
+```
+
+- FACTR launch 对业务话题作了全局 remap，故它们不带 `/factr_teleop_left` 前缀。左臂使用 `/gento/left_joint_states`（大臂反馈/同步输入）、`/gento/left_joint_control`（遥操输出）和 `/left_leader_arm/current_state`（小臂当前状态）；右臂对应替换为 `right`。
+
+### 对应待办 2：确认 `SYNCED → TELEOP` 的首帧安全行为
+
+#### 当前日常流程的安全映射设置
+
+- 当前日常链路中，`SYNCED → TELEOP` 时“首帧保持、后续相对跟随”的安全行为由主机侧 `skye_robot_driver` 实现，不在 Docker 内 FACTR YAML 中。配置位于 `skye_ros2_ws/src/skye_robot_driver/config/skye_robot.yaml`：
+
+```yaml
+teleop_mapping_mode: relative  # relative | absolute
+```
+
+- 必须保持 `relative`。它在遥操控制流恢复时重新捕获小臂与大臂参考角，首帧命令为大臂当前角；`absolute` 是旧式按小臂绝对角追赶的行为，不应用于日常遥操。
+- `scripts/start_skye_for_factr.sh` 启动 `skye_robot_driver` 时读取该配置。修改 YAML 后需重新构建并重启驱动；启动后可核查实际值：
+
+```bash
+ros2 param get /skye_robot_driver teleop_mapping_mode
+```
+
+预期为 `relative`。
+
+### 对应待办 3：创建左臂、无夹爪的 `skye_leader_teleop`
+
+#### 新 `skye_leader_teleop` 的暂定同步规则
+
+同事已有实测经验：每个关节在目标角的正负 5° 内持续约 5 秒即可完成同步。v0.1 将此作为可调默认值，而非硬编码：
+
+```yaml
+sync_joint_error_threshold_rad: 0.0872665  # 5°
+sync_hold_time_s: 5.0
+```
+
+- 只有 7 个关节均满足 `abs(q_leader - q_follower) <= threshold`，并连续保持 `sync_hold_time_s`，才从 `TELEOP_SYNCING` 进入 `SYNCED`。
+- 任意一个关节越界，连续计时重新开始。
+- 后续可用旧 FACTR 真机数据校准参数；这不阻塞创建新 ROS 2 包和实现状态机。
+
+#### 新程序应采用的安全行为
+
+- 新包应采用相对跟随，而非根据小臂绝对角让大臂追赶。
+- 进入 TELEOP 的首帧，记录小臂参考关节角 `q_leader_ref` 与大臂当前关节角 `q_follower_ref`；首帧命令为 `q_follower_ref`，故大臂保持当前位置。
+- 后续仅跟随小臂相对位移：`q_cmd = q_follower_ref + sign * (q_leader - q_leader_ref)`。因此即使同步仍有残差，也不会在切换时突然追赶。
+
+#### 推荐下一步
+
+先创建 `skye_leader_teleop` 最小 ROS 2 包，限定左臂、无夹爪，并实现 `IDLE → TELEOP_SYNCING → SYNCED → TELEOP → IDLE`。同步阈值和保持时间参数化；TELEOP 实现上述相对映射。至少覆盖以下纯逻辑测试：单轴越界、未满保持时间、连续满足后同步、中途越界重计时、TELEOP 首帧保持、任意状态 STOP 后不再发布控制指令。
