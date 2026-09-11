@@ -143,6 +143,8 @@ ros2 run skye_hitl_dagger hitl_keyboard
 
 说明：`w` 仅在 `HUMAN` 下有效；`AUTONOMOUS` 下按 `w` 无效果。
 
+**接管对齐（`HANDOVER_SYNC`）：** 不会吃旧的 latched `SYNCED`；须先看到非对齐态（如 `TELEOP_SYNCING`）再等新的 `SYNCED`，并默认稳定 **`min_sync_hold_s:=1.5`** 秒后才 `switch_teleop`。卡死重发间隔为 `sync_timeout_s:=5.0`。真机若仍偏快/偏慢可改这两个参数。
+
 ---
 
 

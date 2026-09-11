@@ -107,7 +107,7 @@ AUTONOMOUS ─────────────────► HANDOVER_SYNC 
 
 - **不**使用 `e`；急停继续用现有 `/gento/emergency_stop` 等流程。
 - **不**占用 FACTR 的 `1/2/3`（SYNC / TELEOP / STOP）。HITL 键盘节点与 FACTR `keyboard_gripper` **并存**：`1/2/3` 仍管小臂模式；`q/w` 只管 arbiter 数据源。
-- `HANDOVER_SYNC` 内由 arbiter（或配套脚本）发布 `/mode/switch_sync`，对齐后再 `/mode/switch_teleop`，再进入 `HUMAN` 透传。
+- `HANDOVER_SYNC` 内由 arbiter 发布 `/mode/switch_sync`，**忽略 latched 旧 `SYNCED`**，须先见到非对齐态（如 `TELEOP_SYNCING`）再接受新的 `SYNCED`，并默认稳定 `min_sync_hold_s`（1.5 s）后才 `/mode/switch_teleop`，再进入 `HUMAN` 透传。`sync_timeout_s`（默认 5 s）仅用于卡死时重发命令。
 
 实现：独立小节点读 stdin / `keyboard`，发 `std_msgs/String` 或 `Bool` 到 `/skye/intervention_cmd`（`data: "takeover"|"return"`）。
 

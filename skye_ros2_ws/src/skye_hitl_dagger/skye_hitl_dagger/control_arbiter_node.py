@@ -57,6 +57,8 @@ class ControlArbiterNode(Node):
         super().__init__("control_arbiter")
         self.declare_parameter("gripper_invert_on_driver", True)
         self.declare_parameter("sync_timeout_s", 5.0)
+        # 2s 对齐时间
+        self.declare_parameter("min_sync_hold_s", 2)
         self.declare_parameter("chunk_stale_warn_s", 1.5)
         self.declare_parameter("chunk_freshness_fallback_s", 2.0)
         self.declare_parameter("feedback_stale_s", 0.2)
@@ -72,6 +74,8 @@ class ControlArbiterNode(Node):
         self._invert_gripper = bool(
             self.get_parameter("gripper_invert_on_driver").value)
         self._sync_timeout = float(self.get_parameter("sync_timeout_s").value)
+        self._min_sync_hold = max(
+            0.0, float(self.get_parameter("min_sync_hold_s").value))
         self._stale_warn = float(
             self.get_parameter("chunk_stale_warn_s").value)
         self._freshness_fallback = float(
@@ -102,7 +106,7 @@ class ControlArbiterNode(Node):
             signs=right_signs, joint_order=right_order)
         self._policy_session_dirty = True
         self._player = ChunkPlayer()
-        self._handshake = TeleopHandshake()
+        self._handshake = TeleopHandshake(min_sync_hold_s=self._min_sync_hold)
         self._policy_version = ""
         self._last_target: Optional[dict] = None
         self._hold_target: Optional[dict] = None
