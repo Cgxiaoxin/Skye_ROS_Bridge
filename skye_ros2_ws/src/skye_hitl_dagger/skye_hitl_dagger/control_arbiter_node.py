@@ -18,6 +18,11 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
 from skye_hitl_dagger.chunk_player import ChunkPlayer
+from skye_hitl_dagger.chunk_continuity import (
+    chunk_is_fresh,
+    max_step0_jump_rad,
+    rebase_arm_joints_to_pose,
+)
 from skye_hitl_dagger.control_mode import ControlArbiterLogic, ControlModeState
 from skye_hitl_dagger.msg import ControlMode, PolicyActionChunk
 from skye_hitl_dagger.policy_relative import PolicyRelativeSession
@@ -34,24 +39,6 @@ def policy_gripper_value(value: float, invert: bool) -> float:
     return 1.0 - value if invert else value
 
 
-def chunk_is_fresh(
-        stamp_s: float, return_time: Optional[float],
-        receive_time: Optional[float] = None,
-        return_wall_time: Optional[float] = None,
-        now_wall_time: Optional[float] = None,
-        fallback_after_s: float = 2.0) -> bool:
-    """Accept post-return chunks by stamp, then fall back to receive time."""
-    if return_time is None:
-        return True
-    if stamp_s > 0.0 and stamp_s >= return_time:
-        return True
-    if stamp_s == 0.0 and receive_time is not None:
-        return (return_wall_time is None
-                or receive_time >= return_wall_time)
-    return (return_wall_time is not None and now_wall_time is not None
-            and now_wall_time - return_wall_time >= fallback_after_s)
-
-
 class ControlArbiterNode(Node):
     def __init__(self) -> None:
         super().__init__("control_arbiter")
@@ -59,7 +46,7 @@ class ControlArbiterNode(Node):
         self.declare_parameter("sync_timeout_s", 5.0)
         # 2s 对齐时间
         self.declare_parameter("min_sync_hold_s", 2)
-        self.declare_parameter("chunk_stale_warn_s", 1.5)
+        self.declare_parameter("chunk_start_max_jump_rad", 0.1)
         self.declare_parameter("chunk_freshness_fallback_s", 2.0)
         self.declare_parameter("feedback_stale_s", 0.2)
         self.declare_parameter("gripper_rate_hz", 100.0)
@@ -76,8 +63,8 @@ class ControlArbiterNode(Node):
         self._sync_timeout = float(self.get_parameter("sync_timeout_s").value)
         self._min_sync_hold = max(
             0.0, float(self.get_parameter("min_sync_hold_s").value))
-        self._stale_warn = float(
-            self.get_parameter("chunk_stale_warn_s").value)
+        self._chunk_start_max_jump = max(
+            0.0, float(self.get_parameter("chunk_start_max_jump_rad").value))
         self._freshness_fallback = float(
             self.get_parameter("chunk_freshness_fallback_s").value)
         self._feedback_stale = float(
@@ -114,7 +101,7 @@ class ControlArbiterNode(Node):
         self._return_time: Optional[float] = None
         self._return_wall_time: Optional[float] = None
         self._chunk_fallback_warned = False
-        self._last_stale_warning = 0.0
+        self._hold_tail_warned = False
         self._joint_feedback: Optional[dict] = None
         self._feedback_received_at: Optional[float] = None
 
@@ -208,14 +195,32 @@ class ControlArbiterNode(Node):
                 "using receive time for freshness")
             self._chunk_fallback_warned = True
         t0 = stamp if fresh_by_stamp else self._now_seconds()
+        left_joints = list(msg.left_joints)
+        right_joints = list(msg.right_joints)
+        if self._feedback_is_recent() and self._joint_feedback is not None:
+            jump = max_step0_jump_rad(
+                left_joints, right_joints,
+                self._joint_feedback["left"], self._joint_feedback["right"])
+            if jump > self._chunk_start_max_jump:
+                left_joints = rebase_arm_joints_to_pose(
+                    left_joints, self._joint_feedback["left"], msg.chunk_size)
+                right_joints = rebase_arm_joints_to_pose(
+                    right_joints, self._joint_feedback["right"], msg.chunk_size)
+                self.get_logger().warning(
+                    f"policy chunk step0 jump {jump:.3f} rad > "
+                    f"{self._chunk_start_max_jump:.3f}; rebased to current "
+                    "follower pose to avoid discontinuity")
+                self._invalidate_policy_sessions()
         if not self._player.load(
-                msg.chunk_size, msg.dt, t0, msg.left_joints, msg.right_joints,
+                msg.chunk_size, msg.dt, t0, left_joints, right_joints,
                 msg.left_gripper, msg.right_gripper):
             self.get_logger().error("rejecting invalid policy action chunk")
             return
         self._return_time = None
         self._return_wall_time = None
         self._chunk_fallback_warned = False
+        self._hold_tail_warned = False
+        self._hold_target = None
         self._policy_version = msg.policy_version
 
     def _intervention_callback(self, msg: String) -> None:
@@ -339,11 +344,12 @@ class ControlArbiterNode(Node):
             self._last_target = sampled
             self._publish_policy_relative(sampled["left"], sampled["right"])
             if sampled["holding_tail"]:
-                now = time.monotonic()
-                if now - self._last_stale_warning >= self._stale_warn:
+                if not self._hold_tail_warned:
                     self.get_logger().warning(
                         "policy chunk ended; holding final joint target")
-                    self._last_stale_warning = now
+                    self._hold_tail_warned = True
+            else:
+                self._hold_tail_warned = False
         elif self._last_target is not None:
             self._publish_policy_relative(
                 self._last_target["left"], self._last_target["right"])
