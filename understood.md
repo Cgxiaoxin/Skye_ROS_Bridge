@@ -134,7 +134,7 @@ third_party/gento_sdk            # 厂商提供的底层控制库
 
 选择规则：`ROBOT_PROFILE=thor` 使用 `configs/thor/` 的两份 YAML；`ROBOT_PROFILE=orin` 使用 `configs/orin/`。launch 会优先从这些 profile 目录加载。
 
-运行时还会使用 `marvin_ws/install/` 下由 bootstrap/sync 生成的 ROS 安装产物（如 `install/setup.bash` 与 `factr_teleop` 包内容）；当前目录浏览结果中它尚未存在，因此不是仓库内现成文件。
+运行时还会使用 `marvin_ws/install/` 下由 bootstrap/sync 生成的 ROS 安装产物（如 `install/setup.bash` 与 `factr_teleop` 包内容）；当前目录中该安装产物已存在。
 
 明确不属于“日常纯遥操”：
 
@@ -194,3 +194,35 @@ source install/setup.bash
 ```
 
 实际复制使用 `cp -f`：书包中已有同名旧文件时，用桌上的新版文件替换它。
+
+### `marvin_ws/install` 内日常启动会用到的文件
+
+`marvin_ws/install` 中，日常启动会实际用到的文件可分为两层。
+
+| 文件 | 什么时候用 | 作用 |
+|---|---|---|
+| `setup.bash` | Docker 内先执行 `source /marvin_ws/install/setup.bash` | 告诉 ROS：`factr_teleop` 程序安装在哪里。 |
+| `share/factr_teleop/launch/start_teleop_m6_dual_gento.launch.py` | 使用安装包方式启动时 | 日常双臂遥操 launch：启动左右 FACTR 驱动，并连接 `/gento/*` topic。 |
+| `share/factr_teleop/configs/grav_comp_m6_left.yaml` | 安装包 launch 启动时 | 左小臂的当前重力补偿和硬件参数。 |
+| `share/factr_teleop/configs/grav_comp_m6_right.yaml` | 安装包 launch 启动时 | 右小臂的当前重力补偿和硬件参数。 |
+| `lib/factr_teleop/factr_teleop_robot_driver.py` | launch 自动启动 | 驱动入口；再调用二进制驱动模块。 |
+| `lib/factr_teleop/factr_teleop_robot_driver_bin*.so`、`lib/factr_teleop/factr_teleop*.so`、`lib/libMarvinSDK.so`、`lib/libMarvinKine.so` | 驱动运行时自动加载 | FACTR 遥操、Marvin 小臂 SDK 和运动学的实际程序库。 |
+
+日常推荐命令实际是：
+
+```bash
+ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_keyboard:=false
+```
+
+因此它直接使用 `install/setup.bash` 提供 ROS 环境，但 launch 和 profile YAML 优先取 `install` 外的 `launch_overlay/`、`configs/<profile>/`。`sync_marvin_overlay.sh` 会将它们复制进 `install/share/factr_teleop/`，使下面这条“安装包方式”的备用命令也能工作：
+
+```bash
+ros2 launch factr_teleop start_teleop_m6_dual_gento.launch.py use_keyboard:=false
+```
+
+不属于日常纯遥操：
+
+- `lib/factr_teleop/keyboard_gripper.py`：本次命令明确 `use_keyboard:=false`，不会启动。
+- `share/factr_teleop/configs/grav_comp_m6.yaml`：不是双臂 remap launch 使用的左右独立配置。
+- `share/factr_teleop/launch/start_teleop_m6_dual.launch.py`、`start_teleop_m6_left/right.launch.py`、`start_robot.sh`：旧版或其他启动方式。
+- `share/m6_isomorphism_description/`、`share/marvin_m6_description/` 下的 URDF、STL、RViz、display launch：用于模型显示/可视化，不在日常控制链路。
