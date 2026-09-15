@@ -76,8 +76,7 @@ class SessionSupervisor:
         if not self.logic.resume_starting():
             return False, "无法恢复启动状态"
 
-        step = self._steps[self._current_index]
-        self._step_deadline = time.monotonic() + step.timeout_s
+        self._step_deadline = None
         return True, ""
 
     def stop(self) -> tuple[bool, str]:

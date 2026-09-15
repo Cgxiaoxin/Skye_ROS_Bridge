@@ -1,83 +1,64 @@
-# Task 4 Report: Host keyboard + start script
+# Task 4 Report: SessionSupervisor
 
-**Status:** Complete  
-**Date:** 2026-09-04  
-**Commit:** `66bdb28` — `feat(align): host keyboard s/x and start_follower_align.sh`
-
-## Summary
-
-Implemented the host-side keyboard bridge and one-shot start script for follower align after FACTR sync. The keyboard node mirrors the `skye_hitl_dagger` tty/cbreak pattern; the launch file conditionally starts it when `enable_keyboard:=true`.
+## Status
+**Complete** — TDD cycle finished; all operator_ui tests pass.
 
 ## Deliverables
-
-### 1. `skye_follower_align/host_keyboard.py`
-
-- Entry point: `host_keyboard_align`
-- Node name: `host_keyboard_align`
-- **Keys:**
-  - `s` → publish `std_msgs/String` on `/mode/align_follower` with `data=align_follower`
-  - `x` → publish on `/mode/align_cancel` with `data=align_cancel`
-  - `q` → stop reader and call `rclpy.shutdown()`
-- TTY: `tty.setcbreak` + `select` when stdin is a TTY; line mode fallback otherwise
-- Banner logged on TTY startup: `s=align x=cancel q=quit`
-- Pattern aligned with `skye_hitl_dagger/hitl_keyboard_node.py` (`KeyboardReader`, `map_key`, `destroy_node` cleanup)
-
-### 2. `launch/follower_align.launch.py`
-
-- Added `IfCondition(LaunchConfiguration("enable_keyboard"))` around `host_keyboard_align` node
-- Existing `OpaqueFunction` for `robot_profile` joint signs unchanged
-
-### 3. `setup.py`
-
-- Added console script: `host_keyboard_align = skye_follower_align.host_keyboard:main`
-
-### 4. `scripts/start_follower_align.sh`
-
-- Executable (`chmod +x`)
-- `ROS_DOMAIN_ID=21`, `rmw_fastrtps_cpp`, `FASTRTPS_DEFAULT_PROFILES_FILE` → `marvin_ws/fastrtps_no_shm.xml`
-- `ROBOT_PROFILE` default `thor`
-- Sources ROS Humble + workspace install
-- `exec ros2 launch skye_follower_align follower_align.launch.py robot_profile:=… enable_keyboard:=true`
-
-## Build / smoke
-
-```bash
-cd skye_ros2_ws && ./scripts/build.sh skye_follower_align
-source install/setup.bash
-ros2 pkg executables skye_follower_align
-```
-
-**Result:**
-
-```
-skye_follower_align follower_align_node
-skye_follower_align host_keyboard_align
-```
-
-Build: success (0.52s).
-
-## Files in commit
-
-| Path | Change |
+| File | Action |
 |------|--------|
-| `skye_ros2_ws/src/skye_follower_align/skye_follower_align/host_keyboard.py` | created |
-| `skye_ros2_ws/src/skye_follower_align/launch/follower_align.launch.py` | modified |
-| `skye_ros2_ws/src/skye_follower_align/setup.py` | modified |
-| `scripts/start_follower_align.sh` | created |
+| `skye_operator_ui/supervisor.py` | Created |
+| `test/test_supervisor.py` | Created |
+| `skye_operator_ui/session_state.py` | Added `resume_starting()` for FAILED→STARTING retry |
 
-## Concerns / follow-ups
+## TDD
+1. Wrote `test_supervisor_mock_playbook` — failed with `ModuleNotFoundError`.
+2. Implemented `SessionSupervisor` — test passes.
+3. Full suite: **33 passed, 1 skipped** (process signal skip in sandbox).
 
-1. **No unit tests** for `host_keyboard.py` — HITL has `test_hitl_keyboard_node.py` for `map_key` only; optional to add `test_host_keyboard.py` in a later task.
-2. **TTY required for best UX** — launch must keep the terminal foreground (same as HITL); non-TTY falls back to line mode with Enter.
-3. **`q` shuts down keyboard node only** — does not stop `follower_align_node`; launch continues until Ctrl+C or process group kill. Matches brief (“shutdown node”); full stack teardown is operator responsibility.
-4. **Runtime integration** not exercised here — needs live `/gento/*` services and leader joint topics on domain 21.
+## SessionSupervisor API
+- `start` / `stop` / `retry_step` / `tick`
+- `snapshot_fields` / `step_logs` / `run_cleanup_stale`
+- Injectable `precheck_fn`, `health_fn`, `on_before_stop`
+- Default precheck: ping Thor, FastDDS xml, `pgrep skye_robot_driver` (with `allow_existing_driver`)
+- Playbook via `playbook_for` (`playbook_override` supported); `log_ring_size` passed to `ProcessStep`
 
-## Usage
-
-```bash
-./scripts/start_follower_align.sh
-# or
-ROBOT_PROFILE=orin ./scripts/start_follower_align.sh
+## Commit
+```
+feat(operator_ui): add SessionSupervisor with mockable playbook
 ```
 
-After FACTR sync, press `s` to start align, `x` to cancel, `q` to quit keyboard node.
+## Concerns / Notes
+- `resume_starting()` added to `SessionLogic` (minimal; untested directly — covered by supervisor retry path).
+- Default precheck not unit-tested (integration uses injected `precheck_fn`).
+- ROS pytest plugins (`launch_testing`) require `--noconftest` or `lark` dep when run from a sourced ROS env.
+
+## Out of Scope (Task 5+)
+- `RosBridge`, `SnapshotBuilder`, `ApiApp`, `on_before_stop` recording hook.
+
+---
+
+## Review Fix (Important findings)
+
+**Status:** Complete
+
+### Change
+- `retry_step`: set `_step_deadline = None` (was `time.monotonic() + step.timeout_s`) so the next `tick` re-enters the start path and calls `ProcessStep.start()` again if the subprocess died. `ProcessStep.start()` already no-ops when the process is still running.
+
+### Tests added (`test_supervisor.py`)
+| Test | Behavior |
+|------|----------|
+| `test_step_timeout_marks_failed` | Health never true → step timeout → `FAILED` |
+| `test_ready_unhealthy_driver_degraded` | `READY` + `health_fn("driver")` false → `DEGRADED` |
+| `test_retry_step_recovers_after_failed` | Timeout → `FAILED` → `retry_step` → health true → `READY` |
+
+### Test run
+```
+PYTHONPATH=skye_ros2_ws/src/skye_operator_ui python3 -m pytest \
+  skye_ros2_ws/src/skye_operator_ui/test/test_supervisor.py -v --noconftest
+```
+**Result:** 4 passed in 7.06s
+
+### Commit
+```
+fix(operator_ui): reset step deadline on retry and add supervisor watchdog tests
+```
