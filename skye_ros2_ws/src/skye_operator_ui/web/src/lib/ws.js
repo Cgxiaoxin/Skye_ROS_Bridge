@@ -9,7 +9,7 @@ export function connectStateStream(onSnapshot, onStatus) {
 
     ws.onopen = () => onStatus?.('connected');
     ws.onclose = () => {
-      onStatus?.('disconnected');
+      onStatus?.(closed ? 'disconnected' : 'reconnecting');
       if (!closed) {
         reconnectTimer = window.setTimeout(connect, 1000);
       }

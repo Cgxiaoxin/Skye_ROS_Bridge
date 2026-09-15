@@ -416,6 +416,16 @@ body {
   margin-left: auto;
 }
 
+.disconnect-banner {
+  padding: 0.45rem 1rem;
+  background: var(--amber-dim);
+  color: var(--amber);
+  border-bottom: 1px solid var(--amber);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: center;
+}
+
 @media (max-width: 960px) {
   .main-grid {
     grid-template-columns: 1fr;

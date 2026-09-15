@@ -8,16 +8,19 @@
   let wsStatus = 'disconnected';
   let toastError = '';
 
-  $: session = snapshot?.session ?? {};
+  $: wsConnected = wsStatus === 'connected';
+  $: displaySnapshot = wsConnected ? snapshot : null;
+
+  $: session = displaySnapshot?.session ?? {};
   $: sessionState = session.state ?? 'IDLE';
   $: isIdle = sessionState === 'IDLE';
   $: mode = session.mode;
-  $: banner = snapshot?.banner;
-  $: nextHint = snapshot?.next_hint ?? '等待连接…';
-  $: hitlMode = snapshot?.hitl?.mode;
-  $: teleopState = snapshot?.teleop?.state;
-  $: alignStatus = snapshot?.align?.status;
-  $: recording = snapshot?.recording?.active;
+  $: banner = displaySnapshot?.banner;
+  $: nextHint = displaySnapshot?.next_hint ?? (wsConnected ? '等待连接…' : '连接断开，正在重连…');
+  $: hitlMode = displaySnapshot?.hitl?.mode;
+  $: teleopState = displaySnapshot?.teleop?.state;
+  $: alignStatus = displaySnapshot?.align?.status;
+  $: recording = displaySnapshot?.recording?.active;
 
   onMount(() => {
     const stream = connectStateStream(
@@ -26,6 +29,9 @@
       },
       (status) => {
         wsStatus = status;
+        if (status !== 'connected') {
+          snapshot = null;
+        }
       },
     );
     return () => stream.close();
@@ -46,7 +52,13 @@
 </script>
 
 <div class="app-shell">
-  <TopBar {snapshot} {wsStatus} on:error={handleTopBarError} />
+  <TopBar snapshot={displaySnapshot} {wsStatus} on:error={handleTopBarError} />
+
+  {#if !wsConnected}
+    <div class="disconnect-banner" role="status">
+      WebSocket 断开，正在重连 — 会话状态暂不可信
+    </div>
+  {/if}
 
   {#if banner}
     <div class="banner banner-{banner.level}">
@@ -58,9 +70,9 @@
     <aside class="panel panel-side">
       <h2 class="panel-title">步骤 / 健康</h2>
       <p class="panel-placeholder">Task 8：步骤列表与健康指示</p>
-      {#if snapshot?.health?.length}
+      {#if displaySnapshot?.health?.length}
         <ul class="health-list">
-          {#each snapshot.health as item}
+          {#each displaySnapshot.health as item}
             <li class:ok={item.ok} class:bad={!item.ok}>
               <span class="health-dot"></span>
               <span class="mono">{item.key}</span>
@@ -113,9 +125,11 @@
   </main>
 
   <footer class="status-bar">
-    <span class="mono">WS: {wsStatus === 'connected' ? '已连接' : '重连中'}</span>
-    {#if snapshot?.pending_op}
-      <span class="mono pending">pending: {snapshot.pending_op}</span>
+    <span class="mono">
+      WS: {wsStatus === 'connected' ? '已连接' : wsStatus === 'reconnecting' ? '重连中' : '已断开'}
+    </span>
+    {#if displaySnapshot?.pending_op}
+      <span class="mono pending">pending: {displaySnapshot.pending_op}</span>
     {/if}
     {#if toastError}
       <span class="status-error">{toastError}</span>
