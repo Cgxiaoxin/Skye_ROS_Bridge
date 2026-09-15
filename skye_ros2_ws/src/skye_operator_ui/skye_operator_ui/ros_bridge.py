@@ -160,6 +160,11 @@ class RosBridge:
     def set_session_mode(self, mode: UiMode | None) -> None:
         self._ui_mode = mode
 
+    def available(self) -> bool:
+        import rclpy
+
+        return self._node is not None and rclpy.ok()
+
     def mailbox(self) -> dict[str, Any]:
         return {
             "teleop_state": self._teleop_state,
