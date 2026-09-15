@@ -31,3 +31,10 @@ feat(operator_ui): add FastAPI WebSocket server and ROS entrypoint
 
 ## Out of Scope (Task 7+)
 - Svelte frontend, `start_operator_ui.sh`, usage docs.
+
+## Follow-up: align `command_allowed` emergency_stop with API
+
+- **Status**: Complete — `command_allowed("emergency_stop")` always returns `(True, "")`; bridge availability gate remains in `api_app.py`.
+- **Change**: Removed `_session_active` check and helper; updated `test_emergency_stop_allowed_even_in_idle`.
+- **Tests**: `test_commands.py` + `test_api_app.py` — 16 passed (`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`).
+- **Commit**: `fix(operator_ui): allow emergency_stop in IDLE via command_allowed`

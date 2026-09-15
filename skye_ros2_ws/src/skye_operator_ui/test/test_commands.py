@@ -72,18 +72,9 @@ def test_takeover_only_autonomous():
     assert ok
 
 
-def test_emergency_stop_only_when_session_active():
+def test_emergency_stop_allowed_even_in_idle():
     s = SessionLogic()
-    ok, _ = command_allowed(
-        op="emergency_stop",
-        session=s,
-        teleop_state=None,
-        hitl_mode=None,
-        align_status=None,
-    )
-    assert not ok
-    s.begin_start("thor", UiMode.teleop_record)
-    ok, _ = command_allowed(
+    ok, reason = command_allowed(
         op="emergency_stop",
         session=s,
         teleop_state=None,
@@ -91,6 +82,17 @@ def test_emergency_stop_only_when_session_active():
         align_status=None,
     )
     assert ok
+    assert reason == ""
+    s.begin_start("thor", UiMode.teleop_record)
+    ok, reason = command_allowed(
+        op="emergency_stop",
+        session=s,
+        teleop_state=None,
+        hitl_mode=None,
+        align_status=None,
+    )
+    assert ok
+    assert reason == ""
 
 
 def test_switch_teleop_requires_synced_or_align_done():

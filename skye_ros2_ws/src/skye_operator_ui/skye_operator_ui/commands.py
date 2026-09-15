@@ -53,10 +53,6 @@ def validate_op(op: str) -> bool:
     return op in ALLOWED_OPS
 
 
-def _session_active(session: SessionLogic) -> bool:
-    return session.state() != SessionState.IDLE
-
-
 def _operational(session: SessionLogic) -> bool:
     return session.state() in _OPERATIONAL_STATES
 
@@ -75,8 +71,6 @@ def command_allowed(
     state = session.state()
 
     if op == "emergency_stop":
-        if not _session_active(session):
-            return False, "当前无活跃会话，无法急停"
         return True, ""
 
     if not _operational(session):
