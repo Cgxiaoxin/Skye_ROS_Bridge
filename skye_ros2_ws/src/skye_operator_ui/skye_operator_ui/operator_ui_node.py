@@ -71,8 +71,13 @@ def main(args=None) -> None:
 
     def on_before_stop() -> None:
         # Stop the recorder while the session mode (and therefore the recorder
-        # service mapping) is still known, then drop the latched session state.
+        # service mapping) is still known, ask FACTR to leave teleop, then
+        # drop the latched session state.
         bridge.stop_recorder_if_active()
+        try:
+            bridge.dispatch("switch_stop")
+        except Exception:  # noqa: BLE001 - teardown continues
+            node.get_logger().warning("switch_stop during teardown failed")
         bridge.set_session_mode(None)
 
     def on_degraded() -> None:

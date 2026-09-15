@@ -61,9 +61,18 @@ export ROBOT_PROFILE="${ROBOT_PROFILE:-thor}"
 bash "${SCRIPT_DIR}/sync_marvin_overlay.sh"
 
 MARVIN_LAUNCH_CMD="${MARVIN_LAUNCH_CMD:-}"
+# Fixed name so Operator UI / scripts can `docker rm -f` on session stop.
+MARVIN_CONTAINER_NAME="${MARVIN_CONTAINER_NAME:-skye_marvin_m6}"
+
+# Drop a previous orphan with the same name (Operator UI stop / crashed run).
+if docker inspect "${MARVIN_CONTAINER_NAME}" >/dev/null 2>&1; then
+  echo "Removing existing container ${MARVIN_CONTAINER_NAME} …"
+  docker rm -f "${MARVIN_CONTAINER_NAME}" >/dev/null || true
+fi
 
 DOCKER_ARGS=(
   --rm
+  --name "${MARVIN_CONTAINER_NAME}"
   -i
   --net=host
   --ipc=host
@@ -110,8 +119,10 @@ echo "FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml"
 
 if [[ -n "${MARVIN_LAUNCH_CMD}" ]]; then
   echo "Launch: ${MARVIN_LAUNCH_CMD}"
+  echo "Container: ${MARVIN_CONTAINER_NAME}"
   exec docker run "${DOCKER_ARGS[@]}" "${IMAGE}" bash -lc "${MARVIN_LAUNCH_CMD}"
 fi
 
 echo "Launch: interactive shell (set MARVIN_LAUNCH_CMD for non-interactive run)"
+echo "Container: ${MARVIN_CONTAINER_NAME}"
 exec docker run "${DOCKER_ARGS[@]}" "${IMAGE}"

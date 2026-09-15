@@ -58,10 +58,12 @@ google-chrome --app=http://127.0.0.1:8765
 | 操作 | 作用 |
 |------|------|
 | **开始会话** | 预检 → 按 playbook 逐步拉起子进程（driver、Docker 小臂、recorder/arbiter 等） |
-| **结束会话** | 有序停止子进程组，回到 IDLE；**改 profile 或模式前必须先结束** |
+| **结束会话** | 有序停止子进程组，**强制 `docker rm -f skye_marvin_m6`**，并默认跑主臂 Dynamixel 去使能；回到 IDLE。**结束前请托住小臂**（去使能后会下落）。改 profile 或模式前必须先结束 |
 | **急停** (`emergency_stop`) | 调用 `/gento/emergency_stop`，**不结束会话**；会话仍在 READY/RUNNING，可继续操作或再点结束会话 |
 
-急停不受「尚未就绪」等向导门禁拦截；结束会话会清理 playbook 管理的进程，避免 SDK 残留。
+急停不受「尚未就绪」等向导门禁拦截。结束会话退场顺序：停录 → `switch_stop` → 倒序 SIGTERM 进程组 → `docker rm -f skye_marvin_m6` → 用 Marvin 镜像一次性容器跑 `scripts/disable_leader_dynamixel.py`（主机无 `dynamixel_sdk` 时也能去使能）。可用 `teardown.disable_leader: false` 关闭去使能。
+
+历史上未命名的残留容器（例如随机名）不会被自动清掉，需一次性：`docker ps` 后 `docker rm -f <id>`。
 
 ## Docker 小臂步骤（已知限制）
 

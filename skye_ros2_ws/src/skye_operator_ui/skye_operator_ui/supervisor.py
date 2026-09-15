@@ -11,6 +11,7 @@ from collections.abc import Callable
 from skye_operator_ui.playbooks import playbook_for
 from skye_operator_ui.process_step import ProcessStep
 from skye_operator_ui.session_state import SessionLogic, SessionState, UiMode
+from skye_operator_ui.teardown import run_safe_teardown
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,13 @@ class SessionSupervisor:
 
         for step in reversed(self._steps):
             step.terminate()
+
+        try:
+            notes = run_safe_teardown(self.repo_root, self.cfg)
+            for note in notes:
+                logger.warning("safe teardown: %s", note)
+        except Exception:  # noqa: BLE001 - must still reach IDLE
+            logger.exception("run_safe_teardown failed")
 
         self._step_defs = []
         self._steps = []

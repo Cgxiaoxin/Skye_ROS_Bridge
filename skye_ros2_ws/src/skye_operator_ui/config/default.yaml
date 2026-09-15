@@ -13,8 +13,19 @@ pending_timeout_s: 8.0
 # cleanup_stale_commands:
 #   - ["pkill", "-f", "skye_robot_driver"]
 #   - ["pkill", "-f", "factr_teleop"]
-#   - ["docker", "rm", "-f", "marvin_m6"]
+#   - ["docker", "rm", "-f", "skye_marvin_m6"]
 cleanup_stale_commands: []
+
+# Session stop safety net (after process-group terminate).
+# Hold leader arms before ending a session — disable_leader drops torque.
+teardown:
+  marvin_container_name: skye_marvin_m6
+  disable_leader: true
+  # Host Python usually lacks dynamixel_sdk; prefer one-shot Marvin image.
+  disable_via_docker: true
+  marvin_image: harbor.amigos-robot.com/tmp/marvin-m6-ros2:humble
+  docker_rm_timeout_s: 20.0
+  disable_timeout_s: 60.0
 
 # Playbook tuning. playbook_override (per-mode step list) may also be injected at runtime.
 playbook:
