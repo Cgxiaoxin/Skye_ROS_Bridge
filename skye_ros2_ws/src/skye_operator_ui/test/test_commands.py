@@ -151,3 +151,32 @@ def test_commands_rejected_before_ready():
     )
     assert not ok
     assert s.state() == SessionState.PRECHECK
+
+
+def test_recorder_start_rejected_in_degraded_recorder_stop_allowed():
+    s = SessionLogic()
+    s.begin_start("thor", UiMode.teleop_record)
+    s.precheck_ok()
+    s.mark_ready()
+    s.mark_degraded()
+    assert s.state() == SessionState.DEGRADED
+
+    ok, reason = command_allowed(
+        op="recorder_start",
+        session=s,
+        teleop_state="TELEOP",
+        hitl_mode=None,
+        align_status="ALIGNED",
+    )
+    assert not ok
+    assert reason == "系统降级，禁止新开录制"
+
+    ok, reason = command_allowed(
+        op="recorder_stop",
+        session=s,
+        teleop_state="TELEOP",
+        hitl_mode=None,
+        align_status="ALIGNED",
+    )
+    assert ok
+    assert reason == ""

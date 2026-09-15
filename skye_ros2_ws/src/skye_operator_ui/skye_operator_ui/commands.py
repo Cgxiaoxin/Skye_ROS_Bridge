@@ -131,6 +131,9 @@ def command_allowed(
             return False, "遥操状态不允许再次同步"
         return True, ""
 
+    if op == "recorder_start" and state == SessionState.DEGRADED:
+        return False, "系统降级，禁止新开录制"
+
     if op in _COMMON_OPS or op in _TELEOP_OPS or op in _DAGGER_OPS:
         return True, ""
 
