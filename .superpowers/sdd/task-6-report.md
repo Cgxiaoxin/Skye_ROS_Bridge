@@ -1,57 +1,33 @@
-# Task 6 Report — Follower align hardware validation (offline template)
+# Task 6 Report: FastAPI + WebSocket + ROS entrypoint
 
-**Status:** Complete (offline template only); **no hardware run in this session**
+## Status
+**Complete** — TDD cycle finished; 46 passed, 1 skipped; colcon build OK.
 
-## Commits
+## Deliverables
+| File | Action |
+|------|--------|
+| `skye_operator_ui/api_app.py` | Created — spec §5.1 HTTP + `/ws/state` |
+| `skye_operator_ui/operator_ui_node.py` | Created — rclpy spin thread + uvicorn |
+| `scripts/operator_ui` | Created |
+| `launch/operator_ui.launch.py` | Created |
+| `test/conftest.py`, `test/test_api_app.py` | Created — Fake stack + TestClient |
+| `setup.py` | Updated — entry_points + config/launch/web data_files |
+| `ros_bridge.py` | Updated — `available()` for e-stop gate |
 
-- `3f5d362` — `docs: add follower-align HW validation checklist`
+## TDD
+1. Wrote 7 API tests with `fake_stack` fixture — failed `ModuleNotFoundError`.
+2. Implemented `create_app` + node entrypoint — all pass.
+3. Full suite: 46 passed, 1 skipped.
 
-## Summary
+## APIs (§5.1)
+- `GET /api/snapshot`, `POST /api/session/{start,stop,retry_step,cleanup_stale}`, `POST /api/command`, `GET /api/logs/{step}`, `WS /ws/state` (~10 Hz).
+- Commands: `validate_op` + `command_allowed` before `bridge.dispatch`; `emergency_stop` bypasses session gate when `bridge.available()`.
+- Bind `127.0.0.1` via `config/default.yaml`; SIGINT → `supervisor.stop()`.
 
-- Created `docs/superpowers/plans/2026-09-04-follower-align-hw-checklist.md` — unchecked operator checklist covering Thor/Orin `1→s→2`, slow motion + ratio 10, `ALIGNED`/restore, Orin right wrist signs, forced `TIMEOUT_WARN` → still `2`, `x` cancel/hold, and topic-only path (`enable_keyboard:=false`).
-- Noted **pending** live `/gento/set_motion_rates` smoke from Task 2 (driver connected).
-- `docs/superpowers/plans/2026-09-04-follower-align-after-sync.md` already tracked on `main`; not re-added.
-
-## Operator next steps
-
-Run checklist on Thor then Orin; fill recorded fields; check sign-off boxes when HW passes.
-
-**Report path:** `.superpowers/sdd/task-6-report.md`
-
-## Final-review fixes
-
-**Status:** All Critical + High findings addressed; M1–M3 included.
-
-### Findings
-
-| ID | Fix |
-|----|-----|
-| C1 | `start_follower_align.sh`: `set +u`/`set -u` around ROS setup, `ROBOT_PROFILE` thor\|orin validation, FastDDS XML check |
-| C2 | `ReentrantCallbackGroup` for service clients + `MultiThreadedExecutor` (comment documents deadlock) |
-| C3 | Publish raw leader on `*_joint_control_abs`; signs only in `on_tick`; spec §5.4 note |
-| H1 | `request_stop()` + skip `join` when quit from reader thread |
-| H2 | Stale `/gento/joint_states`: skip abs publish but keep `on_tick` so timeout fires |
-| H3 | `_shutdown_cleanup()` on KeyboardInterrupt / destroy restores rates |
-| M1 | Failed align-rate set still attempts restore to 30% |
-| M2 | Launch `OpaqueFunction` raises if `robot_profile` ∉ {thor, orin} |
-| M3 | `/align/status` QoS `TRANSIENT_LOCAL` |
-
-### Verification
-
-```text
-$ cd skye_ros2_ws && PYTHONPATH=src/skye_follower_align python3 -m pytest src/skye_follower_align/test/test_align_logic.py -v
-8 passed in 0.01s
-
-$ ./scripts/build.sh skye_follower_align
-Summary: 1 package finished [0.53s]
-
-$ ROBOT_PROFILE=thor timeout 3 ./scripts/start_follower_align.sh
-== follower_align profile=thor ROS_DOMAIN_ID=21 ==
-[INFO] [follower_align_node-1]: process started
-[follower_align_node-1] align status: IDLE
-(past setup.bash — no AMENT_TRACE unbound)
+## Commit
+```
+feat(operator_ui): add FastAPI WebSocket server and ROS entrypoint
 ```
 
-### Commits
-
-- `5257334` — `fix(align): unblock service calls, signs, start script, shutdown safety`
+## Out of Scope (Task 7+)
+- Svelte frontend, `start_operator_ui.sh`, usage docs.
