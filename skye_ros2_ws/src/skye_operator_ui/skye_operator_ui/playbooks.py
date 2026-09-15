@@ -14,10 +14,12 @@ from skye_operator_ui.session_state import UiMode
 # cfg.playbook.marvin_start_cmd can replace the wrapper argv entirely.
 
 _TELEOP_MARVIN_LAUNCH = (
+    "source /marvin_ws/install/setup.bash && "
     "ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py "
     "use_keyboard:=false"
 )
 _HITL_MARVIN_LAUNCH = (
+    "source /marvin_ws/install/setup.bash && "
     "ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento_hitl.launch.py "
     "use_keyboard:=false"
 )
