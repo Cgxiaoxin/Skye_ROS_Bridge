@@ -132,6 +132,9 @@ def _dagger_playbook(
         "MARVIN_LAUNCH_CMD", _HITL_MARVIN_LAUNCH
     )
     setup = os.path.join(repo_root, "skye_ros2_ws", "install", "setup.bash")
+    arbiter_env = copy.copy(env)
+    if cfg.get("enable_hitl_recorder", False):
+        arbiter_env["ENABLE_RECORDER"] = "true"
     return [
         _make_step(
             "driver",
@@ -153,7 +156,7 @@ def _dagger_playbook(
                 os.path.join(repo_root, "scripts", "start_hitl_host.sh"),
                 "--arbiter-only",
             ],
-            env,
+            arbiter_env,
             "arbiter",
             timeout_s,
         ),
@@ -166,22 +169,6 @@ def _dagger_playbook(
             ],
             env,
             "policy",
-            timeout_s,
-            optional=True,
-        ),
-        _make_step(
-            "recorder",
-            [
-                "bash",
-                "-lc",
-                (
-                    f"source {setup} && ENABLE_RECORDER=true "
-                    f"{os.path.join(repo_root, 'scripts', 'start_hitl_host.sh')} "
-                    "--arbiter-only --enable-recorder"
-                ),
-            ],
-            env,
-            "hitl_recorder",
             timeout_s,
             optional=True,
         ),

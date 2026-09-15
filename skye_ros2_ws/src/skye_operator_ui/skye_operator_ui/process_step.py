@@ -73,28 +73,50 @@ class ProcessStep:
     def poll_health(self) -> bool:
         return self.health_check()
 
+    def _signal_process(self, proc: subprocess.Popen[str], sig: signal.Signals) -> None:
+        try:
+            os.killpg(proc.pid, sig)
+            return
+        except ProcessLookupError:
+            return
+        except PermissionError:
+            pass
+
+        try:
+            os.kill(proc.pid, sig)
+            return
+        except ProcessLookupError:
+            return
+        except PermissionError:
+            pass
+
+        try:
+            if sig == signal.SIGKILL:
+                proc.kill()
+            else:
+                proc.terminate()
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+
     def terminate(self, grace_s: float = 5.0) -> None:
         proc = self._proc
         if proc is None:
             return
         if proc.poll() is None:
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                self._join_reader()
-                return
-            deadline = time.monotonic() + grace_s
-            while time.monotonic() < deadline:
-                if proc.poll() is not None:
-                    break
-                time.sleep(0.05)
+            self._signal_process(proc, signal.SIGTERM)
             if proc.poll() is None:
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                else:
-                    proc.wait(timeout=1.0)
+                deadline = time.monotonic() + grace_s
+                while time.monotonic() < deadline:
+                    if proc.poll() is not None:
+                        break
+                    time.sleep(0.05)
+            if proc.poll() is None:
+                self._signal_process(proc, signal.SIGKILL)
+                if proc.poll() is None:
+                    try:
+                        proc.wait(timeout=1.0)
+                    except subprocess.TimeoutExpired:
+                        pass
         self._join_reader()
 
     def _join_reader(self) -> None:

@@ -19,3 +19,7 @@ playbook:
   # If the default script only enters a shell, set MARVIN_LAUNCH_CMD in the environment
   # or marvin_launch_cmd below before integration (see docs/Hint_Dagger启动使用说明.md).
   marvin_launch_cmd: null
+
+# DAgger: when true, arbiter step sets ENABLE_RECORDER=true on start_hitl_host.sh
+# (single host launch; do not start the arbiter script twice).
+enable_hitl_recorder: false
