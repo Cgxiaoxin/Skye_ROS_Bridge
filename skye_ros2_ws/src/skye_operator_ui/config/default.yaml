@@ -1,0 +1,21 @@
+# Skye operator UI defaults (v1 host console).
+bind_host: "127.0.0.1"
+port: 8765
+step_timeout_s: 120.0
+log_ring_size: 2000
+
+# Whitelist argv prefixes executed only after explicit user confirmation.
+cleanup_stale_commands: []
+
+# Playbook tuning. playbook_override (per-mode step list) may also be injected at runtime.
+playbook:
+  # v1: scripts/run_marvin_m6_impedance.sh opens an interactive docker shell (-it).
+  # For non-interactive automation, replace the wrapper argv list here:
+  # marvin_start_cmd: ["/path/to/non_interactive_marvin_wrapper.sh"]
+  marvin_start_cmd: null
+  # Container launch line override (passed through env to the marvin wrapper).
+  # Example (teleop): ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_keyboard:=false
+  # Example (HITL):   ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento_hitl.launch.py use_keyboard:=false
+  # If the default script only enters a shell, set MARVIN_LAUNCH_CMD in the environment
+  # or marvin_launch_cmd below before integration (see docs/Hint_Dagger启动使用说明.md).
+  marvin_launch_cmd: null
