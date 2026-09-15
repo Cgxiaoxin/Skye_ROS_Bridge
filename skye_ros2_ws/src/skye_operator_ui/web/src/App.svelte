@@ -81,12 +81,12 @@
   {/if}
 
   <main class="main-grid">
-    <aside class="panel panel-side">
+    <aside class="panel panel-left">
       <h2 class="panel-title">步骤 / 健康</h2>
       <StepRail snapshot={displaySnapshot} on:openLogs={handleOpenLogs} />
     </aside>
 
-    <section class="panel panel-main">
+    <section class="panel-main">
       <p class="next-hint">{nextHint}</p>
 
       {#if mode === 'teleop_record'}
@@ -108,13 +108,15 @@
       {/if}
 
       {#if sessionState === 'FAILED'}
-        <button type="button" class="btn btn-amber retry-btn" on:click={handleRetry}>
-          重试当前步骤
-        </button>
+        <div class="mode-panel">
+          <button type="button" class="btn btn-amber retry-btn" on:click={handleRetry}>
+            重试当前步骤
+          </button>
+        </div>
       {/if}
     </section>
 
-    <aside class="panel panel-side">
+    <aside class="panel panel-right">
       <h2 class="panel-title">关节 / 夹爪</h2>
       <ArmStrip snapshot={displaySnapshot} />
     </aside>

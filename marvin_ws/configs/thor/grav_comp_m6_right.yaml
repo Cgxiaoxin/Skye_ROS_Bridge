@@ -25,6 +25,7 @@ arm_teleop:
   arm_limit_barrier_enable: True
   arm_joint_limits_max: [3.0, 2.0, 3.0, 1.0472, 3.0, 0.9, 0.8]
   # j4 min aligned to follower -1.0472 (was -2.4). Barrier margin 0.1 → resist near -0.9.
+  # 这里只改了j4的限制，其他关节限制不变
   arm_joint_limits_min: [-3.0, -2.0, -3.0, -2.5307, -3.0, -0.9, -0.5]
   arm_joint_limits_safety_margin: 0.1
   initialization:
@@ -62,7 +63,8 @@ controller:
     motor_scalar: [43.9, 43.9, 66, 66, 18, 18, 18]
   gravity_comp:
     enable: True
-    gain: [0.4, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]  #J1 恢复 0.6 (2026-08-25: 0.25 补偿不足致 J1 重力下坠)
+    # 0.4 改为 0.25
+    gain: [0.15, 0.2, 0.6, 0.6, 1.0, 0.8, 1.0]  #J1 恢复 0.6 (2026-08-25: 0.25 补偿不足致 J1 重力下坠)
   null_space_regulation:
     enable: False
     null_space_joint_target: [0.0, -0.8, 0.0, -1.3, 0.0, -0.5, 0.0]

@@ -48,6 +48,26 @@
     return 'badge-amber';
   }
 
+  /** WS + session → status lamp (gray / green / amber / red). */
+  function statusLampClass(state, ws) {
+    if (ws !== 'connected') return 'status-lamp--gray';
+    if (state === 'IDLE') return 'status-lamp--gray';
+    if (state === 'READY' || state === 'RUNNING') return 'status-lamp--green';
+    if (state === 'FAILED' || state === 'DEGRADED') return 'status-lamp--red';
+    return 'status-lamp--amber';
+  }
+
+  function statusLampTitle(state, ws) {
+    if (ws !== 'connected') return 'WebSocket 未连接';
+    if (state === 'IDLE') return '空闲，未建立会话';
+    if (state === 'READY' || state === 'RUNNING') return '会话运行中，已连接';
+    if (state === 'FAILED' || state === 'DEGRADED') return '异常或降级';
+    return '启动或过渡中';
+  }
+
+  $: lampClass = statusLampClass(sessionState, wsStatus);
+  $: lampTitle = statusLampTitle(sessionState, wsStatus);
+
   function tickClock() {
     const now = new Date();
     clock = now.toLocaleTimeString('zh-CN', { hour12: false });
@@ -139,18 +159,17 @@
     {/if}
   </div>
 
-  <div class="topbar-center">
-    <span class="badge {badgeClass}">
-      {STATE_LABELS[sessionState] ?? sessionState}
-    </span>
-    {#if session.step}
-      <span class="step-id mono">{session.step}</span>
-    {/if}
-  </div>
-
   <div class="topbar-right">
-    <span class="ws-dot" class:connected={wsStatus === 'connected'} title={wsStatus === 'connected' ? '已连接' : '断线重连中'}></span>
-    <time class="clock mono">{clock}</time>
+    <div class="status-cluster" role="status" aria-label="会话与连接状态">
+      <span class="badge {badgeClass}">
+        {STATE_LABELS[sessionState] ?? sessionState}
+      </span>
+      {#if session.step}
+        <span class="step-id mono">{session.step}</span>
+      {/if}
+      <span class="status-lamp {lampClass}" title={lampTitle} aria-hidden="true"></span>
+      <time class="clock mono">{clock}</time>
+    </div>
 
     {#if !isIdle}
       {#if showStopConfirm}
