@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import time
@@ -10,6 +11,8 @@ from collections.abc import Callable
 from skye_operator_ui.playbooks import playbook_for
 from skye_operator_ui.process_step import ProcessStep
 from skye_operator_ui.session_state import SessionLogic, SessionState, UiMode
+
+logger = logging.getLogger(__name__)
 
 
 class SessionSupervisor:
@@ -23,12 +26,14 @@ class SessionSupervisor:
         *,
         precheck_fn: Callable[[], tuple[bool, str]] | None = None,
         on_before_stop: Callable[[], None] | None = None,
+        on_degraded: Callable[[], None] | None = None,
     ) -> None:
         self.repo_root = repo_root
         self.cfg = cfg
         self.health_fn = health_fn
         self.precheck_fn = precheck_fn or self._default_precheck
         self.on_before_stop = on_before_stop
+        self.on_degraded = on_degraded
         self.logic = SessionLogic()
         self._step_defs: list[dict] = []
         self._steps: list[ProcessStep] = []
@@ -86,7 +91,10 @@ class SessionSupervisor:
             return False, "无法结束会话"
 
         if self.on_before_stop is not None:
-            self.on_before_stop()
+            try:
+                self.on_before_stop()
+            except Exception:  # noqa: BLE001 - teardown continues regardless
+                logger.exception("on_before_stop failed")
 
         for step in reversed(self._steps):
             step.terminate()
@@ -105,8 +113,12 @@ class SessionSupervisor:
         if state == SessionState.STARTING:
             self._tick_starting()
         elif state in (SessionState.READY, SessionState.RUNNING):
-            if not self.health_fn("driver"):
-                self.logic.mark_degraded()
+            if not self.health_fn("driver") and self.logic.mark_degraded():
+                if self.on_degraded is not None:
+                    try:
+                        self.on_degraded()
+                    except Exception:  # noqa: BLE001 - degrade path must not raise
+                        logger.exception("on_degraded failed")
 
     def snapshot_fields(self) -> dict:
         state = self.logic.state()
@@ -130,7 +142,10 @@ class SessionSupervisor:
     def run_cleanup_stale(self) -> tuple[bool, str]:
         commands = self.cfg.get("cleanup_stale_commands") or []
         if not commands:
-            return True, "无清理命令"
+            return True, (
+                "未配置清理命令：config/default.yaml 的 cleanup_stale_commands 为空，"
+                "请按注释示例填写后重试"
+            )
 
         for argv in commands:
             if not isinstance(argv, list) or not argv:

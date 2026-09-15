@@ -86,3 +86,106 @@ BEST_EFFORT + VOLATILE，与 driver `control_qos()` 一致。
 - 交还后 2.0 s 内无新时间戳 chunk 时按接收时间兜底，stamp=0 直接按接收时间处理并只告警一次。
 - 交还时反馈超过 0.2 s 则清空 hold target，暂停绝对位置发布，直到新反馈或新 policy chunk。
 - 验证：`colcon build --packages-select skye_hitl_dagger`、38 个 pytest、P6.1 verify 均通过。
+
+## skye_operator_ui 终审修复（feat/skye-operator-ui）
+
+### Critical
+
+- **C1 抢占执行器**：`ros_bridge._call_trigger` 不再调用
+  `rclpy.spin_until_future_complete(self._node, ...)`（会从 `MultiThreadedExecutor`
+  手里抢走该节点的回调）。改为 `_await_future()` 轮询 `future.done()`
+  （`TRIGGER_POLL_S=0.01`，`TRIGGER_TIMEOUT_S=2.0`），由既有执行器经
+  `ReentrantCallbackGroup` 投递响应；超时时 `future.cancel()`。全仓已无其它
+  `spin_until_*` 调用该节点。
+- **C2 pending_op 永不清除**：新增 `PendingTracker`（`api_app.py`）。
+  - 派发成功后才置位（失败即清）；
+  - `_PENDING_CONFIRMERS` 按状态确认提前解除（如 `align_start` → `ALIGNING`，
+    `recorder_stop` → `recording_active=False`，`takeover` → `hitl_mode=HUMAN`）；
+  - 无可观测状态的 op（`emergency_stop` / `hold_current` / `stop_motion`）派发即清；
+  - 兜底超时 `pending_timeout_s`（默认 8 s，`config/default.yaml` 可配），在 10 Hz
+    `tick_loop` 与 snapshot 路径均会 resolve，按钮必定解锁。
+- **C3 MARVIN_LAUNCH_CMD**：`scripts/run_marvin_m6_impedance.sh` 在
+  `MARVIN_LAUNCH_CMD` 非空时执行 `docker run ... bash -lc "$MARVIN_LAUNCH_CMD"`；
+  `-it` 改为 `-i`，仅当 `[[ -t 0 ]]` 时追加 `-t`，从而可在 supervisor 管道下运行。
+  未设置时保持原交互式 shell 行为（脚本头部已注明）。`config/default.yaml` 的
+  `playbook.marvin_launch_cmd` 补上 teleop / HITL 的完整可用示例命令。
+
+### Important
+
+- **I1 录制器先停后拆**：`RosBridge.stop_recorder_if_active()`（best-effort，吞异常）；
+  `operator_ui_node` 的 `on_before_stop` 先停录制再 `set_session_mode(None)`；
+  supervisor 新增 `on_degraded` 回调，`tick()` 里 `mark_degraded()` 成功后触发
+  （节点侧放到后台线程，避免阻塞 asyncio 循环）。
+- **I2 会话停止清缓存**：`RosBridge.clear_session_cache()` 复位 `teleop_state`、
+  `align_status`、`hitl_mode/source`、`recording_active` 及 `align_stamp` /
+  `control_mode_stamp`；由 `set_session_mode(None)` 自动调用。
+- **I7 前端急停顺序**：`web/src/lib/commands.js` 将 `emergency_stop` 短路提到
+  `pending_op` 闸门之前，与后端 `command_allowed` 一致。
+- **I3 cleanup 配置为空**：`run_cleanup_stale()` 返回明确中文
+  「未配置清理命令：config/default.yaml 的 cleanup_stale_commands 为空…」；
+  yaml 中补注释示例（pkill / docker rm）。
+- **I4 日志抽屉层级**：`.topbar` 设 `position: relative; z-index: 200`，高于
+  `.drawer-backdrop` 的 100，抽屉不再遮挡急停。
+- **I5 tick 容错**：`tick_loop` 对 `supervisor.tick()` 与 pending resolve 分别
+  try/except 并 `logger.exception`，单次异常不再终止 10 Hz 循环。
+  `supervisor.stop()` 对 `on_before_stop` 同样容错。
+
+### 顺带修复
+
+- `lifespan` 安装 SIGINT handler 时捕获 `ValueError`（非主线程场景），并只在安装
+  成功时恢复；此前在 TestClient / 嵌入式线程下会直接抛错。
+- 测试假件从 `conftest.py` 移到可导入的 `test/fakes.py`，`test_api_app.py` 自带
+  同名 fixture —— 指定的 `--noconftest` 命令此前 7 failed + 7 errors，现已全绿。
+
+### 测试
+
+```
+cd skye_ros2_ws && PYTHONPATH=src/skye_operator_ui PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+  python3 -m pytest src/skye_operator_ui/test/ -v --noconftest
+
+test_api_app.py::test_command_rejects_unknown PASSED
+test_api_app.py::test_session_start_body PASSED
+test_api_app.py::test_snapshot_endpoint PASSED
+test_api_app.py::test_command_rejects_before_ready PASSED
+test_api_app.py::test_emergency_stop_allowed_in_idle_when_bridge_available PASSED
+test_api_app.py::test_session_stop PASSED
+test_api_app.py::test_logs_endpoint PASSED
+test_api_app.py::test_pending_op_set_then_cleared_by_state PASSED
+test_api_app.py::test_pending_op_cleared_on_timeout PASSED
+test_api_app.py::test_pending_op_not_set_for_unconfirmable_op PASSED
+test_api_app.py::test_pending_op_not_set_when_dispatch_fails PASSED
+test_api_app.py::test_session_stop_clears_pending PASSED
+test_api_app.py::test_tick_loop_survives_supervisor_exception PASSED
+test_api_app.py::test_pending_tracker_confirmers[recorder_start-mailbox0-None] PASSED
+test_api_app.py::test_pending_tracker_confirmers[recorder_start-mailbox1-recorder_start] PASSED
+test_api_app.py::test_pending_tracker_confirmers[takeover-mailbox2-None] PASSED
+test_api_app.py::test_pending_tracker_confirmers[takeover-mailbox3-takeover] PASSED
+test_ros_bridge.py::test_await_future_returns_true_when_future_completes PASSED
+test_ros_bridge.py::test_await_future_times_out PASSED
+test_ros_bridge.py::test_clear_session_cache_resets_latched_state PASSED
+test_ros_bridge.py::test_set_session_mode_none_clears_cache PASSED
+test_ros_bridge.py::test_stop_recorder_if_active_noop_when_not_recording PASSED
+test_ros_bridge.py::test_stop_recorder_if_active_dispatches_stop PASSED
+test_ros_bridge.py::test_stop_recorder_if_active_swallows_errors PASSED
+test_supervisor.py::test_degrade_invokes_callback_once PASSED
+test_supervisor.py::test_on_before_stop_failure_does_not_block_stop PASSED
+test_supervisor.py::test_cleanup_stale_reports_empty_config PASSED
+（其余 commands / hints / process_step / session_state / snapshot / supervisor 用例略）
+
+================== 66 passed, 1 skipped, 1 warning in 19.97s ===================
+```
+
+同命令去掉 `--noconftest` 亦为 66 passed, 1 skipped。
+`bash -n scripts/run_marvin_m6_impedance.sh` 通过；
+`cd src/skye_operator_ui/web && npm run build` 通过（index-CptyS2eM.js / index-DsERsGmS.css）。
+
+### 遗留
+
+- `_PENDING_CONFIRMERS` 的状态字面量（`TELEOP_SYNCING` / `SYNCED` / `TELEOP` /
+  `ALIGNING` / `ALIGNED` 等）沿用 `hints.py` 与 `commands.py` 的既有约定，未在真机
+  校验；若 FACTR 改字符串需三处同步。确认失败时仍有 8 s 超时兜底。
+- `switch_stop` 的确认条件是「teleop_state 不再是 TELEOP/TELEOP_SYNCING」，若停止后
+  话题不再更新则依赖超时清除。
+- 容器内 `MARVIN_LAUNCH_CMD` 的具体 launch 行仍未在真机跑通（脚本与 yaml 已给出
+  可用示例，需现场确认 overlay 路径）。
+- `commands.js` 无 JS 单测框架，I7 仅靠与 Python `command_allowed` 的对读保证一致。

@@ -22,7 +22,7 @@ def _mock_cfg(step_id: str = "a", health_key: str = "a", timeout_s: float = 3.0)
     }
 
 
-def _make_supervisor(tmp_path, cfg, healthy: dict):
+def _make_supervisor(tmp_path, cfg, healthy: dict, **kwargs):
     def health(key):
         return healthy.get(key, False)
 
@@ -31,6 +31,7 @@ def _make_supervisor(tmp_path, cfg, healthy: dict):
         cfg=cfg,
         health_fn=health,
         precheck_fn=lambda: (True, "ok"),
+        **kwargs,
     )
 
 
@@ -94,6 +95,58 @@ def test_ready_unhealthy_driver_degraded(tmp_path):
     healthy["driver"] = False
     sup.tick()
     assert sup.logic.state() == SessionState.DEGRADED
+
+
+def test_degrade_invokes_callback_once(tmp_path):
+    healthy = {"driver": True}
+    calls = []
+    sup = _make_supervisor(
+        tmp_path,
+        _mock_cfg(step_id="driver", health_key="driver"),
+        healthy,
+        on_degraded=lambda: calls.append("stop"),
+    )
+    sup.start("thor", UiMode.teleop_record)
+    for _ in range(20):
+        sup.tick()
+        if sup.logic.state() == SessionState.READY:
+            break
+
+    healthy["driver"] = False
+    sup.tick()
+    sup.tick()
+    assert sup.logic.state() == SessionState.DEGRADED
+    assert calls == ["stop"]
+
+
+def test_on_before_stop_failure_does_not_block_stop(tmp_path):
+    healthy = {"driver": True}
+
+    def boom():
+        raise RuntimeError("recorder stop failed")
+
+    sup = _make_supervisor(
+        tmp_path,
+        _mock_cfg(step_id="driver", health_key="driver"),
+        healthy,
+        on_before_stop=boom,
+    )
+    sup.start("thor", UiMode.teleop_record)
+    for _ in range(20):
+        sup.tick()
+        if sup.logic.state() == SessionState.READY:
+            break
+
+    ok, _ = sup.stop()
+    assert ok
+    assert sup.logic.state() == SessionState.IDLE
+
+
+def test_cleanup_stale_reports_empty_config(tmp_path):
+    sup = _make_supervisor(tmp_path, _mock_cfg(), {})
+    ok, reason = sup.run_cleanup_stale()
+    assert ok
+    assert "cleanup_stale_commands" in reason
 
 
 def test_retry_step_recovers_after_failed(tmp_path, monkeypatch):

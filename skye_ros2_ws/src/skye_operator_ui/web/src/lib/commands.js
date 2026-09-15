@@ -23,12 +23,12 @@ export function commandAllowed(op, snapshot) {
   const hitlMode = snapshot.hitl?.mode;
   const alignStatus = snapshot.align?.status;
 
-  if (snapshot.pending_op) {
-    return { allowed: false, reason: `等待命令确认：${snapshot.pending_op}` };
-  }
-
   if (op === 'emergency_stop') {
     return { allowed: true, reason: '' };
+  }
+
+  if (snapshot.pending_op) {
+    return { allowed: false, reason: `等待命令确认：${snapshot.pending_op}` };
   }
 
   if (!OPERATIONAL_STATES.includes(state)) {

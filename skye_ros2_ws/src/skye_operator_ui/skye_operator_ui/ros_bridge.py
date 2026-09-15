@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
 FRESHNESS_S = 1.0
 ALIGN_FRESHNESS_S = 2.0
+TRIGGER_TIMEOUT_S = 2.0
+TRIGGER_POLL_S = 0.01
 
 _STRING_OPS: dict[str, tuple[str, str]] = {
     "switch_sync": ("/mode/switch_sync", "switch_sync"),
@@ -159,6 +161,30 @@ class RosBridge:
 
     def set_session_mode(self, mode: UiMode | None) -> None:
         self._ui_mode = mode
+        if mode is None:
+            self.clear_session_cache()
+
+    def clear_session_cache(self) -> None:
+        """Drop latched session state so a stopped session shows no stale values."""
+        self._teleop_state = None
+        self._align_status = None
+        self._hitl_mode = None
+        self._hitl_source = None
+        self._align_stamp = None
+        self._control_mode_stamp = None
+        self._recording_active = False
+
+    def recording_active(self) -> bool:
+        return self._recording_active
+
+    def stop_recorder_if_active(self) -> tuple[bool, str]:
+        """Best-effort recorder stop; safe to call during teardown or degrade."""
+        if not self._recording_active:
+            return True, ""
+        try:
+            return self.dispatch("recorder_stop")
+        except Exception as exc:  # noqa: BLE001 - teardown must never raise
+            return False, str(exc)
 
     def available(self) -> bool:
         import rclpy
@@ -311,10 +337,11 @@ class RosBridge:
 
         from std_srvs.srv import Trigger
 
+        # The node is owned by a MultiThreadedExecutor spinning in its own thread;
+        # spinning it here would steal callbacks from that executor, so just poll.
         future = client.call_async(Trigger.Request())
-        rclpy = __import__("rclpy")
-        rclpy.spin_until_future_complete(self._node, future, timeout_sec=2.0)
-        if not future.done():
+        if not self._await_future(future, TRIGGER_TIMEOUT_S):
+            future.cancel()
             return False, f"服务调用超时：{service}"
 
         result = future.result()
@@ -327,6 +354,15 @@ class RosBridge:
         if op in ("recorder_start", "recorder_stop"):
             self._recording_active = op == "recorder_start"
         return True, result.message or ""
+
+    @staticmethod
+    def _await_future(future: Any, timeout_s: float) -> bool:
+        deadline = time.monotonic() + timeout_s
+        while not future.done():
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(TRIGGER_POLL_S)
+        return True
 
     def _service_ready(self, service: str | None) -> bool:
         if not service:

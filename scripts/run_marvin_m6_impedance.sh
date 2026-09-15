@@ -5,10 +5,19 @@
 #   ./scripts/run_marvin_m6_impedance.sh
 #   # optional: IMAGE=harbor.../humble_add_impedance ./scripts/run_marvin_m6_impedance.sh
 #
+# Default (MARVIN_LAUNCH_CMD unset): opens an interactive shell in the container.
 # Inside container (P4 / Skye bridge-less):
 #   source /marvin_ws/install/setup.bash
 #   export ROS_DOMAIN_ID=21 ROS_LOCALHOST_ONLY=0 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 #   ros2 launch factr_teleop start_teleop_m6_dual_gento.launch.py use_keyboard:=true
+#
+# Non-interactive (operator UI / automation): set MARVIN_LAUNCH_CMD and the
+# script runs it via `bash -lc` in the foreground instead of a shell, e.g.
+#   MARVIN_LAUNCH_CMD='source /marvin_ws/install/setup.bash && \
+#     ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_keyboard:=false' \
+#     ./scripts/run_marvin_m6_impedance.sh
+# A TTY is only allocated when stdin is a terminal, so it is safe under a
+# supervisor that pipes stdout/stderr.
 #
 # Host must already run skye_robot_driver on the same ROS_DOMAIN_ID.
 # Do NOT start gento_robot_driver in parallel.
@@ -51,9 +60,11 @@ fi
 export ROBOT_PROFILE="${ROBOT_PROFILE:-thor}"
 bash "${SCRIPT_DIR}/sync_marvin_overlay.sh"
 
+MARVIN_LAUNCH_CMD="${MARVIN_LAUNCH_CMD:-}"
+
 DOCKER_ARGS=(
   --rm
-  -it
+  -i
   --net=host
   --ipc=host
   --privileged
@@ -78,6 +89,14 @@ DOCKER_ARGS=(
   -w /marvin_ws
 )
 
+# Only allocate a TTY when we actually have one; a supervisor-launched run pipes
+# its stdio and `docker run -t` would fail there.
+if [[ -t 0 ]]; then
+  DOCKER_ARGS+=(-t)
+fi
+
+DOCKER_ARGS+=(-e "MARVIN_LAUNCH_CMD=${MARVIN_LAUNCH_CMD}")
+
 if [[ -n "${DISPLAY:-}" && -d /tmp/.X11-unix ]]; then
   DOCKER_ARGS+=(
     -e "DISPLAY=${DISPLAY}"
@@ -88,4 +107,11 @@ fi
 echo "Mount: ${MARVIN_WS} -> /marvin_ws"
 echo "Image: ${IMAGE}"
 echo "FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml"
+
+if [[ -n "${MARVIN_LAUNCH_CMD}" ]]; then
+  echo "Launch: ${MARVIN_LAUNCH_CMD}"
+  exec docker run "${DOCKER_ARGS[@]}" "${IMAGE}" bash -lc "${MARVIN_LAUNCH_CMD}"
+fi
+
+echo "Launch: interactive shell (set MARVIN_LAUNCH_CMD for non-interactive run)"
 exec docker run "${DOCKER_ARGS[@]}" "${IMAGE}"

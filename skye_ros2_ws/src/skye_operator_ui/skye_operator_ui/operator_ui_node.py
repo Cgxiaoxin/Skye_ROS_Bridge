@@ -69,14 +69,34 @@ def main(args=None) -> None:
     def health_fn(key: str) -> bool:
         return bridge.health(key)
 
+    def on_before_stop() -> None:
+        # Stop the recorder while the session mode (and therefore the recorder
+        # service mapping) is still known, then drop the latched session state.
+        bridge.stop_recorder_if_active()
+        bridge.set_session_mode(None)
+
+    def on_degraded() -> None:
+        # tick() runs on the asyncio loop; the service call can block for seconds.
+        threading.Thread(
+            target=bridge.stop_recorder_if_active,
+            name="recorder-stop-on-degrade",
+            daemon=True,
+        ).start()
+
     supervisor = SessionSupervisor(
         repo_root=repo_root,
         cfg=cfg,
         health_fn=health_fn,
-        on_before_stop=lambda: bridge.set_session_mode(None),
+        on_before_stop=on_before_stop,
+        on_degraded=on_degraded,
     )
     snapshot_builder = SnapshotBuilder()
-    app = create_app(supervisor, bridge, snapshot_builder)
+    app = create_app(
+        supervisor,
+        bridge,
+        snapshot_builder,
+        pending_timeout_s=float(cfg.get("pending_timeout_s", 8.0)),
+    )
 
     executor = MultiThreadedExecutor()
     executor.add_node(node)

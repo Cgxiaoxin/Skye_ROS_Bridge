@@ -8,10 +8,10 @@ from typing import Any
 
 from skye_operator_ui.session_state import UiMode
 
-# v1 marvin step: run_marvin_m6_impedance.sh drops into an interactive docker
-# shell (`docker run -it`). For operator UI automation, override the wrapper via
-# cfg.playbook.marvin_start_cmd (argv list). Pass MARVIN_LAUNCH_CMD in env for
-# the non-interactive ros2 launch line inside the container (see Hint doc).
+# The marvin step runs run_marvin_m6_impedance.sh, which executes MARVIN_LAUNCH_CMD
+# non-interactively in the container when that env var is set (and only drops into
+# a shell when it is not). The per-mode defaults below supply that launch line;
+# cfg.playbook.marvin_start_cmd can replace the wrapper argv entirely.
 
 _TELEOP_MARVIN_LAUNCH = (
     "ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py "

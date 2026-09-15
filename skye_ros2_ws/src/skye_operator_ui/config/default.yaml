@@ -3,21 +3,34 @@ bind_host: "127.0.0.1"
 port: 8765
 step_timeout_s: 120.0
 log_ring_size: 2000
+# How long a dispatched command stays "pending" before the UI unlocks the
+# buttons again (pending also clears early once the state confirms the command).
+pending_timeout_s: 8.0
 
 # Whitelist argv prefixes executed only after explicit user confirmation.
+# Empty means the cleanup button reports that nothing is configured.
+# Fill in the commands appropriate for this host, e.g.:
+# cleanup_stale_commands:
+#   - ["pkill", "-f", "skye_robot_driver"]
+#   - ["pkill", "-f", "factr_teleop"]
+#   - ["docker", "rm", "-f", "marvin_m6"]
 cleanup_stale_commands: []
 
 # Playbook tuning. playbook_override (per-mode step list) may also be injected at runtime.
 playbook:
-  # v1: scripts/run_marvin_m6_impedance.sh opens an interactive docker shell (-it).
-  # For non-interactive automation, replace the wrapper argv list here:
+  # scripts/run_marvin_m6_impedance.sh opens an interactive docker shell when
+  # MARVIN_LAUNCH_CMD is unset, and runs the command non-interactively when set.
+  # Override the wrapper argv list here only if you need a different entrypoint:
   # marvin_start_cmd: ["/path/to/non_interactive_marvin_wrapper.sh"]
   marvin_start_cmd: null
-  # Container launch line override (passed through env to the marvin wrapper).
-  # Example (teleop): ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_keyboard:=false
-  # Example (HITL):   ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento_hitl.launch.py use_keyboard:=false
-  # If the default script only enters a shell, set MARVIN_LAUNCH_CMD in the environment
-  # or marvin_launch_cmd below before integration (see docs/Hint_Dagger启动使用说明.md).
+  # Container launch line, exported as MARVIN_LAUNCH_CMD for the marvin wrapper.
+  # When unset the playbook falls back to the per-mode defaults below.
+  # Teleop: ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_keyboard:=false
+  # HITL:   ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento_hitl.launch.py use_keyboard:=false
+  # Full example including the workspace source step:
+  # marvin_launch_cmd: >-
+  #   source /marvin_ws/install/setup.bash &&
+  #   ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_keyboard:=false
   marvin_launch_cmd: null
 
 # DAgger: when true, arbiter step sets ENABLE_RECORDER=true on start_hitl_host.sh

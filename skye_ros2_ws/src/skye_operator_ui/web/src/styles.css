@@ -59,6 +59,9 @@ body {
   padding: 0.65rem 1rem;
   background: var(--bg-1);
   border-bottom: 1px solid var(--border);
+  /* Stays above the log drawer so the e-stop is never covered. */
+  position: relative;
+  z-index: 200;
 }
 
 .topbar-left,

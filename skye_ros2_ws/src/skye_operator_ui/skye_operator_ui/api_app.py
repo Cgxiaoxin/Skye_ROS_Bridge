@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import signal
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -16,6 +18,61 @@ from pydantic import BaseModel
 
 from skye_operator_ui.commands import command_allowed, validate_op
 from skye_operator_ui.session_state import UiMode
+
+
+logger = logging.getLogger(__name__)
+
+PENDING_TIMEOUT_S = 8.0
+
+_ALIGN_DONE = frozenset({"ALIGNED", "TIMEOUT_WARN"})
+
+# Ops whose effect is observable in the state mailbox: pending clears as soon as
+# the expected state lands, otherwise on PENDING_TIMEOUT_S so buttons unlock.
+_PENDING_CONFIRMERS: dict[str, Any] = {
+    "switch_sync": lambda m: m.get("teleop_state") in ("TELEOP_SYNCING", "SYNCED"),
+    "switch_teleop": lambda m: m.get("teleop_state") == "TELEOP",
+    "switch_stop": lambda m: m.get("teleop_state") not in ("TELEOP", "TELEOP_SYNCING"),
+    "align_start": lambda m: m.get("align_status") == "ALIGNING"
+    or m.get("align_status") in _ALIGN_DONE,
+    "align_cancel": lambda m: m.get("align_status") != "ALIGNING",
+    "takeover": lambda m: m.get("hitl_mode") == "HUMAN",
+    "return": lambda m: m.get("hitl_mode") == "AUTONOMOUS",
+    "recorder_start": lambda m: bool(m.get("recording_active")),
+    "recorder_stop": lambda m: not m.get("recording_active"),
+}
+
+
+class PendingTracker:
+    """Track the in-flight op, clearing it on state confirmation or timeout."""
+
+    def __init__(self, timeout_s: float = PENDING_TIMEOUT_S) -> None:
+        self.timeout_s = timeout_s
+        self._op: str | None = None
+        self._deadline = 0.0
+
+    def set(self, op: str) -> None:
+        # Ops without observable state feedback resolve on the dispatch ack alone.
+        if op not in _PENDING_CONFIRMERS:
+            self._op = None
+            return
+        self._op = op
+        self._deadline = time.monotonic() + self.timeout_s
+
+    def clear(self) -> None:
+        self._op = None
+
+    def resolve(self, mailbox: dict[str, Any] | None = None) -> str | None:
+        op = self._op
+        if op is None:
+            return None
+        confirmer = _PENDING_CONFIRMERS.get(op)
+        if mailbox is not None and confirmer is not None and confirmer(mailbox):
+            self._op = None
+            return None
+        if time.monotonic() >= self._deadline:
+            self._op = None
+            return None
+        return op
 
 
 class CommandBody(BaseModel):
@@ -58,15 +115,29 @@ def _static_web_dir() -> Path | None:
     return None
 
 
-def create_app(supervisor, bridge, snapshot_builder) -> FastAPI:
-    pending: dict[str, str | None] = {"op": None}
+def create_app(
+    supervisor,
+    bridge,
+    snapshot_builder,
+    *,
+    pending_timeout_s: float = PENDING_TIMEOUT_S,
+) -> FastAPI:
+    pending = PendingTracker(pending_timeout_s)
 
     def build_snapshot() -> dict[str, Any]:
-        return snapshot_builder.build(supervisor, bridge, pending["op"])
+        pending_op = pending.resolve(bridge.mailbox())
+        return snapshot_builder.build(supervisor, bridge, pending_op)
 
     async def tick_loop() -> None:
         while True:
-            supervisor.tick()
+            try:
+                supervisor.tick()
+            except Exception:  # noqa: BLE001 - a bad tick must not kill the loop
+                logger.exception("supervisor.tick failed")
+            try:
+                pending.resolve(bridge.mailbox())
+            except Exception:  # noqa: BLE001
+                logger.exception("pending resolve failed")
             await asyncio.sleep(0.1)
 
     @asynccontextmanager
@@ -82,7 +153,14 @@ def create_app(supervisor, bridge, snapshot_builder) -> FastAPI:
             ):
                 original_sigint(signum, frame)
 
-        signal.signal(signal.SIGINT, handle_shutdown)
+        # Only the main thread may install handlers; under a test client or an
+        # embedded server thread we simply skip the orderly-shutdown hook.
+        try:
+            signal.signal(signal.SIGINT, handle_shutdown)
+            installed = True
+        except ValueError:
+            installed = False
+
         try:
             yield
         finally:
@@ -91,7 +169,8 @@ def create_app(supervisor, bridge, snapshot_builder) -> FastAPI:
                 await task
             except asyncio.CancelledError:
                 pass
-            signal.signal(signal.SIGINT, original_sigint)
+            if installed:
+                signal.signal(signal.SIGINT, original_sigint)
 
     app = FastAPI(lifespan=lifespan)
 
@@ -127,7 +206,7 @@ def create_app(supervisor, bridge, snapshot_builder) -> FastAPI:
                 content={"ok": False, "reason": reason},
             )
         bridge.set_session_mode(None)
-        pending["op"] = None
+        pending.clear()
         return {"ok": True}
 
     @app.post("/api/session/retry_step")
@@ -180,14 +259,14 @@ def create_app(supervisor, bridge, snapshot_builder) -> FastAPI:
                     content={"ok": False, "reason": reason},
                 )
 
-        pending["op"] = op
         ok, reason = bridge.dispatch(op)
         if not ok:
-            pending["op"] = None
+            pending.clear()
             return JSONResponse(
                 status_code=400,
                 content={"ok": False, "reason": reason or "命令派发失败"},
             )
+        pending.set(op)
         return {"ok": True}
 
     @app.get("/api/logs/{step_id}")
