@@ -38,3 +38,28 @@ def test_degraded_from_ready():
     s.mark_ready()
     assert s.mark_degraded()
     assert s.state() == SessionState.DEGRADED
+
+
+def test_illegal_transitions_from_idle_leave_state_unchanged():
+    s = SessionLogic()
+    assert s.state() == SessionState.IDLE
+    assert s.profile() is None
+    assert s.mode() is None
+
+    assert not s.mark_ready()
+    assert s.state() == SessionState.IDLE
+    assert s.profile() is None
+    assert s.mode() is None
+
+    assert not s.begin_stop()
+    assert s.state() == SessionState.IDLE
+    assert s.profile() is None
+    assert s.mode() is None
+
+
+def test_begin_start_invalid_profile_leaves_idle():
+    s = SessionLogic()
+    assert not s.begin_start("invalid", UiMode.teleop_record)
+    assert s.state() == SessionState.IDLE
+    assert s.profile() is None
+    assert s.mode() is None
