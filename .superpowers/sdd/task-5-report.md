@@ -1,27 +1,38 @@
-# Task 5 Report — Docs + operator checklist
+# Task 5 Report: RosBridge + SnapshotBuilder
 
-**Status:** Complete
+## Status
+**Complete** — TDD cycle finished; 38 passed, 1 skipped.
 
-## Commits
+## Deliverables
+| File | Action |
+|------|--------|
+| `skye_operator_ui/ros_bridge.py` | Created |
+| `skye_operator_ui/snapshot.py` | Created |
+| `test/test_snapshot.py` | Created |
 
-- `4b8cef0` — `docs: document 1 → s → 2 follower align flow`
+## TDD
+1. Wrote `test_snapshot_contains_hint_and_session` — failed `ModuleNotFoundError`.
+2. Implemented `SnapshotBuilder` + `RosBridge` — tests pass.
+3. Added `test_dispatch_plan_mode_and_recorder_routing` for pure dispatch mapping.
 
-## Summary
+## APIs
+- **RosBridge**: subscribes `/gento/joint_states`, `/gento/robot_state`, grippers, `/teleop/state`, `/align/status`, `/skye/control_mode`; `mailbox()`, `health(key)`, `dispatch(op)`, `set_session_mode(mode)`; no joint_control publishers.
+- **dispatch_plan** (pure): mode String topics, recorder services by `UiMode`, intervention + e-stop Trigger.
+- **SnapshotBuilder.build**: spec §5.4 fields + `next_hint` via `hints.next_hint` + amber/red `banner`.
 
-- **`docs/Thor_Orin_遥操启动.md`**: Thor/Orin startup lines now `1 → s → 2`; added shared「对齐（FACTR sync 之后）」section with `start_follower_align.sh`, topic pub, `/align/status` echo; listed script in related files.
-- **`docs/ros_interfaces.md`**: Documented `/mode/align_follower`, `/mode/align_cancel`, `/align/status`, `/gento/set_motion_rates`, and follower-align topic graph.
-- **`docs/superpowers/specs/2026-09-04-follower-align-after-sync-design.md`**: Status → 已实现（软件）；待 Thor/Orin 实机 HW 验收.
-- **`docs/小臂大臂启动步骤.md`**: Link paragraph under 双机切换; keyboard table adds host `s` row.
+## Commit
+```
+feat(operator_ui): add RosBridge and snapshot builder
+```
 
-## Concerns
+## Notes
+- Brief `FakeSup.logic = logic` in class body → `FakeSup.logic = logic` after class (Python scoping).
+- `health`: driver/align/arbiter freshness; marvin/recorder/policy probes for playbook keys.
 
-- None for docs scope. HW validation (ALIGNED threshold, Orin right wrist, TIMEOUT_WARN → teleop) remains operator checklist on real robots.
+## Out of Scope (Task 6+)
+- `ApiApp`, `operator_ui_node`, WebSocket, FastAPI.
 
-## APIs verified against code
-
-- `skye_follower_align` nodes + `scripts/start_follower_align.sh`
-- `skye_robot_driver/srv/SetMotionRates` remapped to `/gento/set_motion_rates`
-
-## Fix
-
-- `711221e` — `docs: fix align section hand launch to skye_follower_align` —「等价手写 launch」误写 `skye_robot_driver`，改为 `skye_follower_align` + `ROBOT_PROFILE`；补充按 `s` 前须已启动对齐 helper。
+## Follow-up: cache `/gento/robot_state`
+- **Status**: Complete — `RosBridge._robot_state_callback` stores latest `Int16MultiArray.data`; `mailbox()` exposes `robot_state` (copy or `None`).
+- **Test**: `test_robot_state_cached_in_mailbox` in `test/test_snapshot.py` (`object.__new__` + mock msg, no rclpy).
+- **Commit**: `fix(operator_ui): cache robot_state in RosBridge mailbox`

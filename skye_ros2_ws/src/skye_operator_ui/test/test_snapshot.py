@@ -60,3 +60,29 @@ def test_dispatch_plan_mode_and_recorder_routing():
         "",
     )
     assert dispatch_plan("joint_control", UiMode.teleop_record) is None
+
+
+def test_robot_state_cached_in_mailbox():
+    from skye_operator_ui.ros_bridge import RosBridge
+
+    bridge = object.__new__(RosBridge)
+    bridge._teleop_state = None
+    bridge._align_status = None
+    bridge._hitl_mode = None
+    bridge._hitl_source = None
+    bridge._left_joints = []
+    bridge._right_joints = []
+    bridge._left_gripper = None
+    bridge._right_gripper = None
+    bridge._robot_state = None
+    bridge._recording_active = False
+    bridge._joint_states_stamp = None
+    bridge._align_stamp = None
+    bridge._control_mode_stamp = None
+    bridge._ui_mode = None
+
+    class FakeMsg:
+        data = [1, 2]
+
+    bridge._robot_state_callback(FakeMsg())
+    assert bridge.mailbox()["robot_state"] == [1, 2]

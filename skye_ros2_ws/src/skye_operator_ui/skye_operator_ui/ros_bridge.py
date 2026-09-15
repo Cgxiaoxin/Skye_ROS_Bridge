@@ -88,6 +88,7 @@ class RosBridge:
         self._right_joints: list[float] = []
         self._left_gripper: float | None = None
         self._right_gripper: float | None = None
+        self._robot_state: list[int] | None = None
         self._recording_active = False
 
         state_qos = QoSProfile(
@@ -169,6 +170,7 @@ class RosBridge:
             "right_joints": list(self._right_joints),
             "left_gripper": self._left_gripper,
             "right_gripper": self._right_gripper,
+            "robot_state": list(self._robot_state) if self._robot_state is not None else None,
             "health": self._health_map(),
             "recording_active": self._recording_active,
         }
@@ -247,8 +249,8 @@ class RosBridge:
         elif len(positions) >= 7:
             self._left_joints = positions[:7]
 
-    def _robot_state_callback(self, _msg: Any) -> None:
-        pass
+    def _robot_state_callback(self, msg: Any) -> None:
+        self._robot_state = list(msg.data)
 
     def _gripper_callback(self, msg: Any, side: str) -> None:
         if msg.position:
