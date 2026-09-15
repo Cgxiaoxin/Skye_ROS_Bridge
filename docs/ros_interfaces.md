@@ -163,3 +163,14 @@ ros2 service call /gento/set_motion_rates skye_robot_driver/srv/SetMotionRates \
 AUTONOMOUS / hold：arbiter 经 `policy_relative` 写 `/gento/*_joint_control`；HUMAN 透传
 遥操到同路径。设计细节见
 `docs/superpowers/specs/2026-08-21-hitl-dagger-control-arbiter-design.md`。
+
+## Operator UI（`skye_operator_ui`）
+
+本机浏览器控制台（FastAPI + Svelte），封装会话启停与白名单 ROS 命令；**不**订阅 `*_action_applied`，状态约 10 Hz。
+
+| 文档 | 说明 |
+|------|------|
+| [`docs/superpowers/specs/2026-09-15-skye-operator-ui-design.md`](superpowers/specs/2026-09-15-skye-operator-ui-design.md) | 架构、状态机、API、真机验收项 |
+| [`docs/Operator_UI使用说明.md`](Operator_UI使用说明.md) | 启动脚本、浏览器访问、会话/急停、Docker 限制、无真机 verify |
+
+启动：`./scripts/start_operator_ui.sh`（默认 `http://127.0.0.1:8765`）。无真机：`./skye_ros2_ws/scripts/verify_operator_ui_api.sh`。
