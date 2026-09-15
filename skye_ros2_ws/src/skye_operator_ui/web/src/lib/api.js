@@ -39,3 +39,10 @@ export async function retryStep() {
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();
 }
+
+export async function fetchStepLogs(stepId, n = 200) {
+  const r = await fetch(`/api/logs/${encodeURIComponent(stepId)}?n=${n}`);
+  if (!r.ok) throw new Error(await parseError(r));
+  const body = await r.json();
+  return body.lines ?? [];
+}

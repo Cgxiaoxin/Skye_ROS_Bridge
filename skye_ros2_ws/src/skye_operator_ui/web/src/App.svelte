@@ -1,12 +1,18 @@
 <script>
   import { onMount } from 'svelte';
   import TopBar from './components/TopBar.svelte';
+  import StepRail from './components/StepRail.svelte';
+  import TeleopPanel from './components/TeleopPanel.svelte';
+  import DaggerPanel from './components/DaggerPanel.svelte';
+  import ArmStrip from './components/ArmStrip.svelte';
+  import LogDrawer from './components/LogDrawer.svelte';
   import { connectStateStream } from './lib/ws.js';
   import { retryStep } from './lib/api.js';
 
   let snapshot = null;
   let wsStatus = 'disconnected';
   let toastError = '';
+  let logDrawer = null;
 
   $: wsConnected = wsStatus === 'connected';
   $: displaySnapshot = wsConnected ? snapshot : null;
@@ -17,10 +23,6 @@
   $: mode = session.mode;
   $: banner = displaySnapshot?.banner;
   $: nextHint = displaySnapshot?.next_hint ?? (wsConnected ? '等待连接…' : '连接断开，正在重连…');
-  $: hitlMode = displaySnapshot?.hitl?.mode;
-  $: teleopState = displaySnapshot?.teleop?.state;
-  $: alignStatus = displaySnapshot?.align?.status;
-  $: recording = displaySnapshot?.recording?.active;
 
   onMount(() => {
     const stream = connectStateStream(
@@ -39,6 +41,18 @@
 
   function handleTopBarError(event) {
     toastError = event.detail;
+  }
+
+  function handlePanelError(event) {
+    toastError = event.detail;
+  }
+
+  function handleOpenLogs(event) {
+    logDrawer = event.detail;
+  }
+
+  function handleCloseLogs() {
+    logDrawer = null;
   }
 
   async function handleRetry() {
@@ -69,17 +83,7 @@
   <main class="main-grid">
     <aside class="panel panel-side">
       <h2 class="panel-title">步骤 / 健康</h2>
-      <p class="panel-placeholder">Task 8：步骤列表与健康指示</p>
-      {#if displaySnapshot?.health?.length}
-        <ul class="health-list">
-          {#each displaySnapshot.health as item}
-            <li class:ok={item.ok} class:bad={!item.ok}>
-              <span class="health-dot"></span>
-              <span class="mono">{item.key}</span>
-            </li>
-          {/each}
-        </ul>
-      {/if}
+      <StepRail snapshot={displaySnapshot} on:openLogs={handleOpenLogs} />
     </aside>
 
     <section class="panel panel-main">
@@ -87,19 +91,11 @@
 
       {#if mode === 'teleop_record'}
         <div class="mode-panel">
-          <h2 class="panel-title">遥操数采</h2>
-          <dl class="status-grid">
-            <div><dt>遥操状态</dt><dd class="mono">{teleopState ?? '—'}</dd></div>
-            <div><dt>对齐状态</dt><dd class="mono">{alignStatus ?? '—'}</dd></div>
-            <div><dt>录制</dt><dd class="mono">{recording ? '进行中' : '未录制'}</dd></div>
-          </dl>
-          <p class="panel-placeholder">Task 8：同步 / 对齐 / 遥操 / 录制按钮</p>
+          <TeleopPanel snapshot={displaySnapshot} on:error={handlePanelError} />
         </div>
       {:else if mode === 'dagger'}
         <div class="mode-panel">
-          <h2 class="panel-title">DAgger 人机协同</h2>
-          <p class="hitl-display mono">{hitlMode ?? '—'}</p>
-          <p class="panel-placeholder">Task 8：接管 / 交还 / 录制控制</p>
+          <DaggerPanel snapshot={displaySnapshot} on:error={handlePanelError} />
         </div>
       {:else if isIdle}
         <div class="mode-panel idle-panel">
@@ -120,7 +116,7 @@
 
     <aside class="panel panel-side">
       <h2 class="panel-title">关节 / 夹爪</h2>
-      <p class="panel-placeholder">Task 8：左右臂与夹爪反馈</p>
+      <ArmStrip snapshot={displaySnapshot} />
     </aside>
   </main>
 
@@ -136,3 +132,11 @@
     {/if}
   </footer>
 </div>
+
+{#if logDrawer}
+  <LogDrawer
+    stepId={logDrawer.stepId}
+    stepLabel={logDrawer.stepLabel}
+    on:close={handleCloseLogs}
+  />
+{/if}
