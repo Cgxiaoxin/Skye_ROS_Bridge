@@ -83,6 +83,12 @@ class SessionLogic:
         self._state = SessionState.FAILED
         return True
 
+    def resume_starting(self) -> bool:
+        if self._state != SessionState.FAILED:
+            return False
+        self._state = SessionState.STARTING
+        return True
+
     def mark_running(self) -> bool:
         if self._state != SessionState.READY:
             return False
