@@ -212,3 +212,109 @@ BEST_EFFORT 订阅也可兼容已有 RELIABLE FACTR 发布者。`/joint_state` �
 - `skye_ros2_ws/src/skye_follower_align/skye_follower_align/follower_align_node.py`：
   左右 leader 状态订阅及其 `state_qos`；
 - `marvin_ws/install/lib/factr_teleop/keyboard_gripper.py`：兼容模式话题类型和消息值。
+
+## 7. 主机依赖基线（任务 0.3）
+
+核验日期：2026-09-16。目标运行环境是 Ubuntu 22.04 amd64 主机，不是 FACTR
+Docker。构建、测试和运行统一使用：
+
+```text
+/usr/bin/python3 -> /usr/bin/python3.10
+Python 3.10.12
+ROS_DISTRO=humble
+```
+
+`skye_ros2_ws/scripts/build.sh` 已显式使用 `/usr/bin/python3` 和
+`-DPython3_EXECUTABLE=/usr/bin/python3`。新包的验证和启动也必须使用该解释器；不得
+以其他 Python、Docker 内环境或旧 FACTR 安装作为通过依据。
+
+### 7.1 已安装依赖
+
+| 导入名 | 版本 | 安装来源 | `/usr/bin/python3` 实际导入路径 | 状态 |
+|---|---:|---|---|---|
+| `numpy` | 1.21.5 | Ubuntu APT：`python3-numpy` | `/usr/lib/python3/dist-packages/numpy/__init__.py` | 通过 |
+| `yaml` | 5.4.1 | Ubuntu APT：`python3-yaml` | `/usr/lib/python3/dist-packages/yaml/__init__.py` | 通过 |
+| `rclpy` | 3.3.22 | ROS 2 APT：`ros-humble-rclpy` | `/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py` | 通过 |
+| `dynamixel_sdk` | 4.0.3 | ROS 2 APT：`ros-humble-dynamixel-sdk` | `/opt/ros/humble/local/lib/python3.10/dist-packages/dynamixel_sdk/__init__.py` | 通过 |
+| `pinocchio` | 4.0.0 | ROS 2 APT：`ros-humble-pinocchio` | `/opt/ros/humble/lib/python3.10/site-packages/pinocchio/__init__.py` | 通过 |
+| `ruckig` | 0.19.4 | 官方 PyPI wheel，`/usr/bin/python3 -m pip install --user ruckig==0.19.4` | `/home/lyy/.local/lib/python3.10/site-packages/ruckig.cpython-310-x86_64-linux-gnu.so` | 通过 |
+
+Pinocchio 的目标版本冻结为 ROS Humble 仓库当前提供的 4.0.0。Ruckig Python API 的
+目标版本冻结为 0.19.4，来源冻结为官方 PyPI；安装的是 CPython 3.10、Linux x86_64
+manylinux wheel。该用户级安装供主机用户 `lyy` 运行新包，不代表其他系统用户也可
+导入。
+
+ROS APT 的 `ros-humble-ruckig` 0.9.2 已卸载。该包只提供 C++ 头文件和
+`libruckig.so`，不提供 Python 模块；卸载不影响上表中独立安装的 PyPI `ruckig`
+0.19.4。
+
+### 7.2 rosdep 映射
+
+| rosdep key | 解析结果 | 结论 |
+|---|---|---|
+| `pinocchio` | `ros-humble-pinocchio` | 可覆盖 Pinocchio Python API。 |
+| `dynamixel_sdk` | `ros-humble-dynamixel-sdk` | 可覆盖 Dynamixel Python API。 |
+| `rclpy` | `ros-humble-rclpy` | 可用。 |
+| `python3-numpy` | `python3-numpy` | 可用。 |
+| `python3-yaml` | `python3-yaml` | 可用。 |
+| `ruckig` | `ros-humble-ruckig` | key 存在但当前未满足；该包只满足 C++ 库，不能满足 `import ruckig`。 |
+| `python3-ruckig` | 无规则 | Python API 没有可用 rosdep key。 |
+
+因此后续 `package.xml` 不能把 rosdep key `ruckig` 当作 Python API 已安装的证明；主机
+部署说明必须单独列出官方 PyPI `ruckig==0.19.4` 前置条件。
+
+### 7.3 运行依赖门禁
+
+以下规定命令已在主机成功执行：
+
+```bash
+source /opt/ros/humble/setup.bash
+source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+/usr/bin/python3 -c \
+  "import rclpy, numpy, yaml, dynamixel_sdk, pinocchio, ruckig"
+```
+
+另已用 `/usr/bin/python3` 成功构造 `Ruckig(8, 0.002)`、`InputParameter(8)` 和
+`OutputParameter(8)`。Python 运行依赖门禁通过。
+
+不得在控制源码中追加 `/opt/openrobots/...`、`/marvin_ws` 或其他路径到
+`sys.path`。ROS 和工作区路径由 source 对应 `setup.bash` 提供；Ruckig 位于 Python
+3.10 的标准用户 site-packages。
+
+### 7.4 串口设备和权限状态
+
+2026-09-16 在主机用户 `lyy` 的新登录会话中核验：
+
+- `id` 和 `id -nG` 均确认当前会话已经加载 `dialout`；
+- `/etc/group` 的 `dialout` 成员包含 `lyy`；
+- 左 leader：
+  `/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0`
+  指向 `/dev/ttyUSB0`；
+- 右 leader：
+  `/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0`
+  指向 `/dev/ttyUSB1`；
+- 两个 leader 设备节点均为字符设备，所有者/组为 `root:dialout`，权限为
+  `crw-rw----`；
+- 用户 `lyy` 通过稳定的 `/dev/serial/by-id/*` 链接对两个 leader 设备均可读、可写；
+- 另检测到 Milsky dongle
+  `/dev/serial/by-id/usb-Milsky_LL_Dongle_A730FDE8F132-if00 -> /dev/ttyACM0`，
+  同样可读、可写，但它不是 leader Dynamixel 串口，不计入左右 leader 映射。
+
+核验命令：
+
+```bash
+id
+id -nG
+getent group dialout
+find /dev/serial/by-id -maxdepth 1 -type l -printf '%p -> %l\n' | sort
+find /dev -maxdepth 1 -type c -name 'ttyUSB*' \
+  -exec stat -Lc '%n mode=%A owner=%U group=%G' {} \;
+test -r /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0
+test -w /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0
+test -r /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0
+test -w /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0
+```
+
+一次性检查输出 `SERIAL PERMISSION GATE: PASS`。左右 leader 串口设备和主机用户权限
+门禁通过；此结论只验证设备识别与文件访问权限，不会打开串口、发送 Dynamixel 指令
+或驱动机械臂。
