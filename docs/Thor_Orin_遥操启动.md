@@ -142,7 +142,23 @@ ls "$FASTRTPS_DEFAULT_PROFILES_FILE"   # 必须存在；须在 launch 之前 exp
 echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
 echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB1/latency_timer
 # 推荐：直接 launch overlay（无需 cp，始终最新）
-ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_keyboard:=false
+ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_keyboard:=false enable_gripper:=true
+
+# 去使能
+python3 - <<'PY'
+from dynamixel_sdk import *
+import os
+for side, key in [("left", "ROBOT_LEADER_DYNAMIXEL_PORT_LEFT"),
+                  ("right", "ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT")]:
+    name = os.environ[key]
+    PORT = name if name.startswith("/") else f"/dev/serial/by-id/{name}"
+    pk = PortHandler(PORT); pk.openPort(); pk.setBaudRate(4000000)
+    ph = PacketHandler(2.0)
+    for i in range(1, 9):
+        ph.write1ByteTxRx(pk, i, 64, 0)
+        print(f"{side} disabled {i}")
+    pk.closePort()
+PY
 ```
 
 同样：`1` sync → 等稳 → **对齐（见下）** → `2` teleop。
@@ -253,29 +269,38 @@ Thor 可省略或 `export ROBOT_PROFILE=thor`。
 
 ---
 
+
+
 ## 数采节点使用说明
 
 **1. 启动环境（进入 ROS2 工作空间）：**
+
 ```bash
 source skye_ros2_ws/install/setup.bash
 ```
 
 **2. 启动数采节点：**
+
 ```bash
 ros2 launch skye_data_recorder data_recorder.launch.py
 ```
+
 > 上述命令将启动 `skye_data_recorder` 节点并自动载入配置。数据采集可设为自动开始，或由服务手动控制。
 
 **3.（可选）手动控制数采流程（适用于需精确控制采集起止时）：**
+
 ```bash
 ros2 service call /skye/data_recorder/start std_srvs/srv/Trigger {}
 ros2 service call /skye/data_recorder/stop  std_srvs/srv/Trigger {}
 ```
 
 **使用建议：**
+
 - 启动节点后，可通过上述 service 命令手动开始或结束数据录制。
 - 若设置为自动录制，无需调用 start/stop 服务，具体行为受节点参数配置影响。
 - 录制完成后，数据通常保存在配置指定的目录下，具体路径可查看实际 launch 文件参数配置。
+
+
 
 ## 启动后自检
 

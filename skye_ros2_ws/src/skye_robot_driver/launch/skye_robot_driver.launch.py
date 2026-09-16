@@ -33,6 +33,7 @@ def _launch_setup(context, *args, **kwargs):
     pkg_share = get_package_share_directory("skye_robot_driver")
     params_file = LaunchConfiguration("params_file").perform(context)
     connect_on_startup = LaunchConfiguration("connect_on_startup").perform(context)
+    enable_gripper = LaunchConfiguration("enable_gripper").perform(context)
     robot_profile = LaunchConfiguration("robot_profile").perform(context).strip().lower()
     robotiq_dual = LaunchConfiguration("robotiq_dual_gripper").perform(context)
     robotiq_right = LaunchConfiguration("robotiq_right_gripper").perform(context)
@@ -60,7 +61,10 @@ def _launch_setup(context, *args, **kwargs):
         {
             "connect_on_startup": ParameterValue(
                 connect_on_startup.lower() in ("1", "true", "yes"), value_type=bool
-            )
+            ),
+            "enable_gripper": ParameterValue(
+                enable_gripper.lower() in ("1", "true", "yes"), value_type=bool
+            ),
         }
     )
 
@@ -93,6 +97,11 @@ def generate_launch_description():
                 "connect_on_startup",
                 default_value="true",
                 description="Link SDK and enter control mode on startup",
+            ),
+            DeclareLaunchArgument(
+                "enable_gripper",
+                default_value="true",
+                description="Start in-process gripper bridge (Robotiq/DM4310). Set false for A/B tests.",
             ),
             DeclareLaunchArgument(
                 "robot_profile",

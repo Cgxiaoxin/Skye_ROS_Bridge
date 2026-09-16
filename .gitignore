@@ -34,6 +34,9 @@ skye_ros2_ws/log/
 *.user
 .DS_Store
 
+# Local UI screenshots (勿提交)
+.screenshots/
+
 # Python
 *.pyc
 __pycache__/

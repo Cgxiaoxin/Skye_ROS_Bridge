@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <mutex>
 
 namespace skye_robot_driver {
 
@@ -316,8 +317,8 @@ bool DriverCore::send_position_unlocked(Arm arm, const JointArray &target_rad) {
 }
 
 bool DriverCore::link_controller(const std::array<unsigned char, 4> &ip) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (linked_) {
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
+  if (linked_.load(std::memory_order_acquire)) {
     return true;
   }
   const int link_result =
@@ -325,7 +326,7 @@ bool DriverCore::link_controller(const std::array<unsigned char, 4> &ip) {
   if (link_result < 0) {
     return false;
   }
-  linked_ = true;
+  linked_.store(true, std::memory_order_release);
   return true;
 }
 
@@ -333,8 +334,8 @@ bool DriverCore::apply_comm_config(int cmd_cycle_time_ms) {
   if (cmd_cycle_time_ms <= 0) {
     return false;
   }
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_) {
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
+  if (!linked_.load(std::memory_order_acquire)) {
     return false;
   }
   if (FX_L1_Config_SetPDCmdCycleTime(cmd_cycle_time_ms) != 0) {
@@ -355,20 +356,21 @@ bool DriverCore::configure_and_enable(const ConnectConfig &config) {
     return false;
   }
 
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_) {
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
+  if (!linked_.load(std::memory_order_acquire)) {
     last_error_ = "SDK not linked";
     return false;
   }
   config_ = config;
 
   const auto fail_and_disconnect = [this]() {
+    std::lock_guard<std::mutex> term_lock(terminal_mutex_);
     control_ready_ = false;
     FX_L1_Runtime_StopTraj(kThreadId, FX_OBJ_ALL_FLAG);
     FX_L1_State_SwitchToIdle(FX_OBJ_ARM0, kModeTimeoutMs);
     FX_L1_State_SwitchToIdle(FX_OBJ_ARM1, kModeTimeoutMs);
     FX_L1_System_Unlink();
-    linked_ = false;
+    linked_.store(false, std::memory_order_release);
     return false;
   };
 
@@ -399,8 +401,8 @@ bool DriverCore::connect_and_enable(
 }
 
 bool DriverCore::switch_control_mode(ControlMode mode) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_) {
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
+  if (!linked_.load(std::memory_order_acquire)) {
     return false;
   }
   reset_errors_unlocked();
@@ -419,8 +421,8 @@ bool DriverCore::set_speed_rates(int left_vel, int left_acc, int right_vel,
     last_error_ = "motion rates must be in [1,100]";
     return false;
   }
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_ || !control_ready_) {
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
+  if (!linked_.load(std::memory_order_acquire) || !control_ready_) {
     last_error_ = "SDK not ready for SetSpeedRatio";
     return false;
   }
@@ -443,18 +445,19 @@ bool DriverCore::set_speed_rates(int left_vel, int left_acc, int right_vel,
 }
 
 bool DriverCore::command_allowed() const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  return linked_ && control_ready_ && mode_ != ControlMode::kIdle;
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
+  return linked_.load(std::memory_order_acquire) && control_ready_ &&
+         mode_ != ControlMode::kIdle;
 }
 
 DriverCore::ControlMode DriverCore::control_mode() const {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
   return mode_;
 }
 
 FXStateType DriverCore::current_state(Arm arm) const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_) {
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
+  if (!linked_.load(std::memory_order_acquire)) {
     return FX_STATE_UNKNOWN;
   }
   return FX_L1_Fbk_CurrentState(sdk_object_for_arm(arm));
@@ -475,8 +478,9 @@ bool DriverCore::hold_current_arm_unlocked(Arm arm) {
 }
 
 bool DriverCore::hold_current(Arm arm) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_ || mode_ == ControlMode::kIdle) {
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
+  if (!linked_.load(std::memory_order_acquire) ||
+      mode_ == ControlMode::kIdle) {
     return false;
   }
   if (!control_ready_ && !enter_mode_unlocked(mode_)) {
@@ -490,8 +494,9 @@ bool DriverCore::hold_current(Arm arm) {
 }
 
 bool DriverCore::hold_current() {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_ || mode_ == ControlMode::kIdle) {
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
+  if (!linked_.load(std::memory_order_acquire) ||
+      mode_ == ControlMode::kIdle) {
     return false;
   }
   if (!control_ready_ && !enter_mode_unlocked(mode_)) {
@@ -507,8 +512,8 @@ bool DriverCore::hold_current() {
 }
 
 bool DriverCore::stop_motion() {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_) {
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
+  if (!linked_.load(std::memory_order_acquire)) {
     return false;
   }
   FX_L1_Runtime_StopTraj(kThreadId, FX_OBJ_ALL_FLAG);
@@ -520,8 +525,8 @@ bool DriverCore::stop_motion() {
 }
 
 bool DriverCore::emergency_stop() {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_) {
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
+  if (!linked_.load(std::memory_order_acquire)) {
     return false;
   }
   const bool ok =
@@ -532,16 +537,17 @@ bool DriverCore::emergency_stop() {
 }
 
 bool DriverCore::send_position(Arm arm, const JointArray &target_rad) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_ || !control_ready_ || mode_ == ControlMode::kIdle) {
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
+  if (!linked_.load(std::memory_order_acquire) || !control_ready_ ||
+      mode_ == ControlMode::kIdle) {
     return false;
   }
   return send_position_unlocked(arm, target_rad);
 }
 
 std::optional<DriverCore::DualArmState> DriverCore::read_state() const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_) {
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
+  if (!linked_.load(std::memory_order_acquire)) {
     return std::nullopt;
   }
 
@@ -574,8 +580,8 @@ std::optional<DriverCore::DualArmState> DriverCore::read_state() const {
 }
 
 std::optional<int> DriverCore::get_cmd_cycle_time_ms() const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_) {
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
+  if (!linked_.load(std::memory_order_acquire)) {
     return std::nullopt;
   }
   int cycle = 0;
@@ -586,18 +592,20 @@ std::optional<int> DriverCore::get_cmd_cycle_time_ms() const {
 }
 
 bool DriverCore::linked() const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  return linked_;
+  return linked_.load(std::memory_order_acquire);
 }
 
 const std::string &DriverCore::last_error() const {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::lock_guard<std::mutex> lock(runtime_mutex_);
   return last_error_;
 }
 
 bool DriverCore::terminal_clear(FXTerminalType terminal) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_) {
+  if (!linked_.load(std::memory_order_acquire)) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(terminal_mutex_);
+  if (!linked_.load(std::memory_order_acquire)) {
     return false;
   }
   return FX_L1_Terminal_ClearData(terminal) == 0;
@@ -609,8 +617,11 @@ bool DriverCore::terminal_set(
   if (data == nullptr || len == 0 || len > 64) {
     return false;
   }
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_) {
+  if (!linked_.load(std::memory_order_acquire)) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(terminal_mutex_);
+  if (!linked_.load(std::memory_order_acquire)) {
     return false;
   }
   unsigned char buffer[64]{};
@@ -623,8 +634,11 @@ bool DriverCore::terminal_set(
 
 std::optional<DriverCore::TerminalPacket> DriverCore::terminal_get(
     FXTerminalType terminal, unsigned int timeout_ms) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!linked_) {
+  if (!linked_.load(std::memory_order_acquire)) {
+    return std::nullopt;
+  }
+  std::lock_guard<std::mutex> lock(terminal_mutex_);
+  if (!linked_.load(std::memory_order_acquire)) {
     return std::nullopt;
   }
   FXChnType chn = FX_CHN_CANFD;
@@ -643,10 +657,10 @@ std::optional<DriverCore::TerminalPacket> DriverCore::terminal_get(
 }
 
 void DriverCore::shutdown() {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::scoped_lock lock(runtime_mutex_, terminal_mutex_);
   control_ready_ = false;
   mode_ = ControlMode::kIdle;
-  if (!linked_) {
+  if (!linked_.load(std::memory_order_acquire)) {
     return;
   }
 
@@ -654,7 +668,7 @@ void DriverCore::shutdown() {
   FX_L1_State_SwitchToIdle(FX_OBJ_ARM0, kModeTimeoutMs);
   FX_L1_State_SwitchToIdle(FX_OBJ_ARM1, kModeTimeoutMs);
   FX_L1_System_Unlink();
-  linked_ = false;
+  linked_.store(false, std::memory_order_release);
 }
 
 }  // namespace skye_robot_driver

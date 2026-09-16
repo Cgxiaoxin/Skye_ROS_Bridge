@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -149,8 +150,13 @@ class DriverCore {
   bool send_position_unlocked(Arm arm, const JointArray &target_rad);
   bool hold_current_arm_unlocked(Arm arm);
 
-  mutable std::mutex mutex_;
-  bool linked_{false};
+  // Runtime path: joint feedback/commands, link, mode, shutdown (GetRT / SetJointPos).
+  mutable std::mutex runtime_mutex_;
+  // Terminal path: CANFD / RS485 passthrough (gripper). Split so long Modbus/CAN
+  // ACK waits do not starve joint_states at 250 Hz. SDK assumed thread-safe
+  // across these two API families (Orin Robotiq + Thor DM4310).
+  mutable std::mutex terminal_mutex_;
+  std::atomic<bool> linked_{false};
   bool control_ready_{false};
   ControlMode mode_{ControlMode::kImpJoint};
   ConnectConfig config_{};
