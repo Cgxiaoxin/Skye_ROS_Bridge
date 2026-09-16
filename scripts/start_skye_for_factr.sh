@@ -3,23 +3,27 @@
 # FACTR small arms still run in Docker via scripts/run_marvin_m6_impedance.sh.
 #
 # Usage:
-#   Terminal A (host):  ./scripts/start_skye_for_factr.sh
-#   Terminal B:         ./scripts/run_marvin_m6_impedance.sh
-#     inside docker:    see docs/小臂大臂启动步骤.md
+#   ./scripts/start_skye_for_factr.sh thor
+#   ./scripts/start_skye_for_factr.sh orin
+#   ./scripts/start_skye_for_factr.sh          # fallback: env / machine file / thor
+#
+# Priority: CLI name > ROBOT_PROFILE env > marvin_ws/.skye/robot_profile
+#           > marvin_ws/robot_profile > thor
+# Extra ros2 launch args may follow the profile name.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-ROBOT_PROFILE="${ROBOT_PROFILE:-thor}"
-ROBOT_PROFILE="${ROBOT_PROFILE,,}"
-case "${ROBOT_PROFILE}" in
-  thor|orin) ;;
-  *)
-    echo "ERROR: ROBOT_PROFILE must be thor|orin (got: ${ROBOT_PROFILE})" >&2
-    exit 1
-    ;;
-esac
+# shellcheck source=lib/robot_profile.sh
+source "${SCRIPT_DIR}/lib/robot_profile.sh"
+
+MARVIN_WS="${MARVIN_WS:-${REPO_ROOT}/marvin_ws}"
+apply_robot_profile_arg "$@"
+set -- "${_ROBOT_PROFILE_REMAINING[@]}"
+ROBOT_PROFILE="$(resolve_robot_profile "${MARVIN_WS}")"
+validate_robot_profile "${ROBOT_PROFILE}" || exit 1
+export ROBOT_PROFILE
 WS="${REPO_ROOT}/skye_ros2_ws"
 
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-21}"
@@ -62,6 +66,9 @@ echo "== skye_robot_driver profile=${ROBOT_PROFILE} ROS_DOMAIN_ID=${ROS_DOMAIN_I
 echo "   FASTRTPS_DEFAULT_PROFILES_FILE=${FASTRTPS_DEFAULT_PROFILES_FILE}"
 echo "Expect FACTR remap: /gento/joint_states + /gento/{left,right}_joint_control"
 echo "Mode default: imp_joint (2). Keyboard in docker: 1=sync 2=teleop 3=stop"
+# enable_gripper defaults true in launch; override with ENABLE_GRIPPER=false if needed.
 exec ros2 launch skye_robot_driver skye_robot_driver.launch.py \
   connect_on_startup:="${CONNECT_ON_STARTUP:-true}" \
-  robot_profile:="${ROBOT_PROFILE}"
+  enable_gripper:="${ENABLE_GRIPPER:-true}" \
+  robot_profile:="${ROBOT_PROFILE}" \
+  "$@"

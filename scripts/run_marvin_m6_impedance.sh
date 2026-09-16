@@ -2,9 +2,12 @@
 # Enter Marvin M6 FACTR docker with marvin_ws mounted at /marvin_ws.
 #
 # Usage:
-#   ./scripts/run_marvin_m6_impedance.sh
-#   # optional: IMAGE=harbor.../humble_add_impedance ./scripts/run_marvin_m6_impedance.sh
+#   ./scripts/run_marvin_m6_impedance.sh thor
+#   ./scripts/run_marvin_m6_impedance.sh orin
+#   ./scripts/run_marvin_m6_impedance.sh              # fallback: env / machine file / thor
+#   IMAGE=harbor.../img ./scripts/run_marvin_m6_impedance.sh orin
 #
+# First arg thor|orin selects machine profile; docker image stays via IMAGE=.
 # Default (MARVIN_LAUNCH_CMD unset): opens an interactive shell in the container.
 # Inside container (P4 / Skye bridge-less):
 #   source /marvin_ws/install/setup.bash
@@ -27,8 +30,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 MARVIN_WS="${MARVIN_WS:-${REPO_ROOT}/marvin_ws}"
+# shellcheck source=lib/robot_profile.sh
+source "${SCRIPT_DIR}/lib/robot_profile.sh"
+apply_robot_profile_arg "$@"
+set -- "${_ROBOT_PROFILE_REMAINING[@]}"
+ROBOT_PROFILE="$(resolve_robot_profile "${MARVIN_WS}")"
+validate_robot_profile "${ROBOT_PROFILE}" || exit 1
+export ROBOT_PROFILE
 
-IMAGE="${1:-${IMAGE:-harbor.amigos-robot.com/tmp/marvin-m6-ros2:humble}}"
+IMAGE="${IMAGE:-harbor.amigos-robot.com/tmp/marvin-m6-ros2:humble}"
+# Legacy: first leftover arg may still be a docker image tag/path.
+if [[ -n "${1:-}" && "${1}" != -* ]]; then
+  IMAGE="${1}"
+  shift
+fi
 
 ROBOT_IP="${ROBOT_IP:-6.6.7.190}"
 ROBOT_GRIPPER_PORT_LEFT="${ROBOT_GRIPPER_PORT_LEFT:-/dev/ttyUSB0}"
@@ -57,7 +72,6 @@ if [[ ! -f "${MARVIN_WS}/install/setup.bash" ]]; then
 fi
 
 # Keep package launch/config in sync with tracked overlay (install/ is often gitignored).
-export ROBOT_PROFILE="${ROBOT_PROFILE:-thor}"
 bash "${SCRIPT_DIR}/sync_marvin_overlay.sh"
 
 MARVIN_LAUNCH_CMD="${MARVIN_LAUNCH_CMD:-}"
@@ -114,6 +128,7 @@ if [[ -n "${DISPLAY:-}" && -d /tmp/.X11-unix ]]; then
 fi
 
 echo "Mount: ${MARVIN_WS} -> /marvin_ws"
+echo "Profile: ${ROBOT_PROFILE}"
 echo "Image: ${IMAGE}"
 echo "FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml"
 

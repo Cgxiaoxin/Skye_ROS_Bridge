@@ -81,12 +81,13 @@ controller:
     kd: 0.06315069084
 
   gripper_feedback:
-    enable: True
+    # Orin Robotiq 无有效 effort（常为 0）；开启会干扰扳机开合。
+    enable: False
     gain: 20.0
     ema_beta: 0.85
-    effort_threshold: -0.25    # 从臂夹爪力矩低于此值才视为有效夹紧力
-    damping: 0.04            # 夹紧方向速度阻尼系数
-    ema_fast_alpha: 0.6     # 夹紧方向（力增大）EMA 系数，越小越快
+    effort_threshold: -0.25
+    damping: 0.04
+    ema_fast_alpha: 0.6
 
   # --- 走位 / 保持模式控制参数 ---
   # hold_kp/kd/ki/i_max/i_thresh/ruckig_kp/kd: n+1 维 (前 n=7 为臂关节, 最后 1 为夹爪)

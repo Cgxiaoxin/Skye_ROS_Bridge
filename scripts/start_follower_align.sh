@@ -2,15 +2,14 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-ROBOT_PROFILE="${ROBOT_PROFILE:-thor}"
-ROBOT_PROFILE="${ROBOT_PROFILE,,}"
-case "${ROBOT_PROFILE}" in
-  thor|orin) ;;
-  *)
-    echo "ERROR: ROBOT_PROFILE must be thor|orin (got: ${ROBOT_PROFILE})" >&2
-    exit 1
-    ;;
-esac
+# shellcheck source=lib/robot_profile.sh
+source "${SCRIPT_DIR}/lib/robot_profile.sh"
+MARVIN_WS="${MARVIN_WS:-${REPO_ROOT}/marvin_ws}"
+apply_robot_profile_arg "$@"
+set -- "${_ROBOT_PROFILE_REMAINING[@]}"
+ROBOT_PROFILE="$(resolve_robot_profile "${MARVIN_WS}")"
+validate_robot_profile "${ROBOT_PROFILE}" || exit 1
+export ROBOT_PROFILE
 WS="${REPO_ROOT}/skye_ros2_ws"
 
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-21}"

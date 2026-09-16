@@ -49,6 +49,9 @@ __pycache__/
 # 本机主臂 FTDI 绑定（bind_leader_arms.py）
 marvin_ws/.skye/
 
+# 本机 robot profile（set_robot_profile.sh；.skye 不可写时的回退）
+marvin_ws/robot_profile
+
 # 关节对照 debug log
 scripts/debug/*.log
 

@@ -29,6 +29,60 @@ _REMAPS = [
 ]
 
 
+def _default_robot_profile() -> str:
+    """Prefer env; then marvin_ws/.skye/robot_profile; else thor."""
+    env = os.environ.get("ROBOT_PROFILE", os.environ.get("MARVIN_PROFILE", "")).strip().lower()
+    if env in ("thor", "orin"):
+        return env
+    candidates = []
+    marvin = os.environ.get("MARVIN_WS", "").strip()
+    if marvin:
+        candidates.append(os.path.join(marvin, ".skye", "robot_profile"))
+    candidates.extend(
+        [
+            "/marvin_ws/.skye/robot_profile",
+            "/marvin_ws/robot_profile",
+            os.path.join(os.getcwd(), "marvin_ws", ".skye", "robot_profile"),
+            os.path.join(os.getcwd(), "marvin_ws", "robot_profile"),
+            os.path.join(os.getcwd(), "..", "marvin_ws", ".skye", "robot_profile"),
+            os.path.join(os.getcwd(), "..", "marvin_ws", "robot_profile"),
+            os.path.abspath(
+                os.path.join(
+                    get_package_share_directory("skye_robot_driver"),
+                    "..",
+                    "..",
+                    "..",
+                    "..",
+                    "marvin_ws",
+                    ".skye",
+                    "robot_profile",
+                )
+            ),
+            os.path.abspath(
+                os.path.join(
+                    get_package_share_directory("skye_robot_driver"),
+                    "..",
+                    "..",
+                    "..",
+                    "..",
+                    "marvin_ws",
+                    "robot_profile",
+                )
+            ),
+        ]
+    )
+    for path in candidates:
+        try:
+            if os.path.isfile(path):
+                with open(path, encoding="utf-8") as f:
+                    value = f.read().strip().lower()
+                if value in ("thor", "orin"):
+                    return value
+        except OSError:
+            continue
+    return "thor"
+
+
 def _launch_setup(context, *args, **kwargs):
     pkg_share = get_package_share_directory("skye_robot_driver")
     params_file = LaunchConfiguration("params_file").perform(context)
@@ -105,8 +159,9 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "robot_profile",
-                default_value="thor",
-                description="Machine profile: thor (DM4310) | orin (Robotiq)",
+                default_value=_default_robot_profile(),
+                description="Machine profile: thor (DM4310) | orin (Robotiq). "
+                "Default: ROBOT_PROFILE env or marvin_ws/.skye/robot_profile, else thor.",
             ),
             DeclareLaunchArgument(
                 "robotiq_dual_gripper",

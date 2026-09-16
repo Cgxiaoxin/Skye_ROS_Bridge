@@ -16,7 +16,19 @@ import os
 def _grav_comp_config(name: str) -> str:
     """Prefer marvin_ws/configs/<ROBOT_PROFILE>/, then configs/, then install."""
     marvin = os.environ.get("MARVIN_WS", "/marvin_ws")
-    profile = os.environ.get("ROBOT_PROFILE", os.environ.get("MARVIN_PROFILE", "thor")).strip().lower()
+    profile = os.environ.get("ROBOT_PROFILE", os.environ.get("MARVIN_PROFILE", "")).strip().lower()
+    if profile not in ("thor", "orin"):
+        for profile_file in (
+            os.path.join(marvin, ".skye", "robot_profile"),
+            os.path.join(marvin, "robot_profile"),
+        ):
+            try:
+                with open(profile_file, encoding="utf-8") as f:
+                    profile = f.read().strip().lower()
+                if profile in ("thor", "orin"):
+                    break
+            except OSError:
+                continue
     if profile not in ("thor", "orin"):
         profile = "thor"
     candidates = [

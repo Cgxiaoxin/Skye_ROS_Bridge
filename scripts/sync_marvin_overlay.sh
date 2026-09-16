@@ -60,7 +60,19 @@ for src in "${launch_files[@]}"; do
   echo "  launch: $(basename "${src}")"
 done
 
-PROFILE="${ROBOT_PROFILE:-${MARVIN_PROFILE:-thor}}"
+PROFILE="$(
+  if [[ -n "${ROBOT_PROFILE:-}" ]]; then
+    echo "${ROBOT_PROFILE,,}"
+  elif [[ -n "${MARVIN_PROFILE:-}" ]]; then
+    echo "${MARVIN_PROFILE,,}"
+  elif [[ -f "${MARVIN_WS}/.skye/robot_profile" ]]; then
+    tr -d '[:space:]' < "${MARVIN_WS}/.skye/robot_profile" | tr '[:upper:]' '[:lower:]'
+  elif [[ -f "${MARVIN_WS}/robot_profile" ]]; then
+    tr -d '[:space:]' < "${MARVIN_WS}/robot_profile" | tr '[:upper:]' '[:lower:]'
+  else
+    echo "thor"
+  fi
+)"
 case "${PROFILE}" in
   thor|orin) ;;
   *)
@@ -68,6 +80,7 @@ case "${PROFILE}" in
     exit 1
     ;;
 esac
+export ROBOT_PROFILE="${PROFILE}"
 
 PROFILE_CFG="${MARVIN_WS}/configs/${PROFILE}"
 if [[ ! -d "${PROFILE_CFG}" ]]; then
