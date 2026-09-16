@@ -138,3 +138,77 @@ git -C /home/lyy/projects/FACTR_Teleop show \
   `Apache 2.0` 等非 SPDX 形式。
 
 完成以上文件之前，不发布或分发新包产物。
+
+## 6. ROS 2 接口契约（任务 0.2）
+
+本节以新 `skye_factr_teleop` 单侧节点为视角描述方向。左右节点使用相同的节点内接口，
+由双臂 launch 显式 remap 到不同的系统话题。
+
+QoS 缩写：
+
+- `state_qos`：`KEEP_LAST(1)`、`RELIABLE`、`VOLATILE`；
+- `command_qos`：`KEEP_LAST(1)`、`BEST_EFFORT`、`VOLATILE`；
+- `event_qos`：`KEEP_LAST(10)`、`RELIABLE`、`VOLATILE`；
+- `latched_state_qos`：`KEEP_LAST(1)`、`RELIABLE`、`TRANSIENT_LOCAL`。
+
+### 6.1 左右实例数据接口
+
+| 方向 | 节点内接口 | 左实例系统话题 | 右实例系统话题 | 类型 | QoS | 长度和单位 |
+|---|---|---|---|---|---|---|
+| 订阅 | `/joint_state` | `/gento/left_joint_states` | `/gento/right_joint_states` | `sensor_msgs/msg/JointState` | `state_qos` | `name`、`position`、`velocity` 均为 7；位置 rad，速度 rad/s；`effort` 可为空。左右名称分别为 `l_j1..l_j7`、`r_j1..r_j7`。 |
+| 发布 | `/joint_control` | `/gento/left_joint_control` | `/gento/right_joint_control` | `sensor_msgs/msg/JointState` | `command_qos` | `position` 必须恰为 7 个有限值，单位 rad；驱动只以 `position` 作为 leader 遥操输入。 |
+| 发布 | `/gripper/ctrl` | `/left_teleop_gripper/ctrl` | `/right_teleop_gripper/ctrl` | `sensor_msgs/msg/JointState` | `command_qos` | `position` 长度 1、无量纲归一化 `[0,1]`；FACTR 扳机语义为 `1=开`、`0=闭`。 |
+| 订阅 | `/gripper/state` | `/left_gripper/state` | `/right_gripper/state` | `sensor_msgs/msg/JointState` | `state_qos` | `name=[gripper_joint]`；`position`、`velocity`、`effort` 长度各 1，均为驱动给出的归一化反馈；`position` 使用 FACTR 语义 `1=开`、`0=闭`。无硬件反馈时 `position` 是目标回显，`frame_id=no_feedback`。 |
+| 发布 | `/leader_arm/current_state` | `/left_leader_arm/current_state` | `/right_leader_arm/current_state` | `sensor_msgs/msg/JointState` | `state_qos` | leader 小臂 7 轴；`position` 为 7 个 rad，`velocity` 为 7 个 rad/s，夹爪不包含在内。 |
+| 订阅 | `/leader_arm/target_joint_state` | `/left_leader_arm/target_joint_state` | `/right_leader_arm/target_joint_state` | `sensor_msgs/msg/JointState` | `state_qos` | leader 小臂目标；`position` 恰为 7 个有限 rad 值，夹爪不包含在内。 |
+| 订阅 | `/joint_move` | `/left_joint_move` | `/right_joint_move` | `sensor_msgs/msg/JointState` | `state_qos` | 外部 leader 走位目标；`position` 恰为 7 个有限 rad 值。 |
+
+`/joint_control` 和 `/gripper/ctrl` 采用驱动控制 QoS，避免旧指令排队；驱动的
+BEST_EFFORT 订阅也可兼容已有 RELIABLE FACTR 发布者。`/joint_state` 和
+`/gripper/state` 必须使用 RELIABLE 订阅，与 `skye_robot_driver` 的 RELIABLE 状态
+发布者匹配。leader 状态同样固定为 `state_qos`，以匹配现有
+`skye_follower_align` 订阅者。
+
+### 6.2 共享模式和状态接口
+
+模式请求是有意共享的全局广播：一次键盘请求同时作用于左右实例，不做左右 remap。
+
+| 方向 | 系统话题 | 类型 | QoS | 内容/单位 |
+|---|---|---|---|---|
+| 订阅 | `/mode/switch_sync` | `std_msgs/msg/String` | `event_qos` | `data="switch_sync"`；无单位，请求 `IDLE -> TELEOP_SYNCING`。 |
+| 订阅 | `/mode/switch_teleop` | `std_msgs/msg/String` | `event_qos` | `data="switch_teleop"`；无单位，请求进入 `TELEOP`。 |
+| 订阅 | `/mode/switch_stop` | `std_msgs/msg/String` | `event_qos` | `data="switch_stop"`；无单位，请求返回 `IDLE`。 |
+| 订阅 | `/mode/switch_telepose` | `std_msgs/msg/String` | `event_qos` | `data="switch_telepose"`；无单位，请求进入 `TELEPOSE`。 |
+| 订阅 | `/enable_position_sync` | `std_msgs/msg/Bool` | `event_qos` | 单个布尔值；仅保留旧自动同步开关兼容，正式遥操默认 `false`。 |
+| 发布 | `/teleop/state` | `std_msgs/msg/String` | `latched_state_qos` | 单个状态字符串：`IDLE`、`TELEOP_SYNCING`、`SYNCED`、`TELEOP` 或 `TELEPOSE`。 |
+
+模式话题保留现有 `std_msgs/msg/String` 类型和消息值，不改为 service、枚举消息或新的
+命名空间。`/teleop/state` 使用 transient-local，保证晚加入的监控或 HITL 节点能读到
+最近状态。
+
+### 6.3 单臂状态隔离规则
+
+- 左实例只能订阅 `/gento/left_joint_states`，右实例只能订阅
+  `/gento/right_joint_states`；两者输入都必须恰为 7 轴。
+- 实时同步和控制路径不得订阅 `/gento/joint_states` 后再按
+  `follower_joint_offset` 切片。这样右实例不可能把 14 轴消息的前 7 轴误当作右臂。
+- `follower_joint_offset` 只用于 14 自由度 follower 动力学模型中的左右关节索引：左为
+  `0`、右为 `7`；它不参与 ROS 实时状态消息选边。
+- launch 必须显式列出全部左右 remap，不依赖节点名、namespace 或相对话题的隐式
+  解析来区分两侧。
+- 旧的 `marvin_ws/start_gento_dual_arm_sync.sh` 仍把两个 `/joint_state` 都 remap 到
+  14 轴 `/gento/joint_states`，不符合本契约，不能作为新包的启动入口或接口依据；新包
+  launch 必须采用本节的分侧 7 轴 remap。
+
+### 6.4 对照依据
+
+- `docs/ros_interfaces.md`：驱动状态/控制话题的类型、7 轴长度、rad/rad/s 单位及 QoS；
+- `skye_ros2_ws/src/skye_robot_driver/src/driver_node.cpp`：
+  `state_qos()`、`control_qos()`、单臂状态发布和 7 轴命令长度校验；
+- `skye_ros2_ws/src/skye_robot_driver/launch/skye_robot_driver.launch.py`：驱动内部
+  `/left|right_joint_states` 与 `/left|right_joint_control` 到 `/gento/*` 的 remap；
+- `marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py`：现行 FACTR 双实例的
+  分侧 7 轴状态、控制、leader 状态、走位和夹爪 remap；
+- `skye_ros2_ws/src/skye_follower_align/skye_follower_align/follower_align_node.py`：
+  左右 leader 状态订阅及其 `state_qos`；
+- `marvin_ws/install/lib/factr_teleop/keyboard_gripper.py`：兼容模式话题类型和消息值。
