@@ -32,7 +32,10 @@
 
 ---
 
+
+
 ## 两台差异
+
 
 |                      | Thor                      | Orin                               |
 | -------------------- | ------------------------- | ---------------------------------- |
@@ -44,12 +47,15 @@
 | 小臂标定目录               | `marvin_ws/configs/thor/` | `marvin_ws/configs/orin/`          |
 | 右小臂 J8 `joint_signs` | `+1`（与左同）                 | `+1`（旧 `-1` 会在 sync 时把张开打成闭合）      |
 
+
 Profile 参数文件：
 
 - `skye_ros2_ws/.../config/profiles/thor.yaml`
 - `skye_ros2_ws/.../config/profiles/orin.yaml`
 
 ---
+
+
 
 ## 上电前（两台相同）
 
@@ -67,6 +73,8 @@ pkill -f gento_robot_driver || true
 `start_skye_for_factr.sh` / `run_marvin_m6_impedance.sh` 会自己设 `ROS_DOMAIN_ID` / FastDDS；另开调试终端时自行 export。
 
 ---
+
+
 
 ## Thor 启动
 
@@ -98,6 +106,8 @@ ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_k
 
 ---
 
+
+
 ## Orin 启动
 
 ### 终端 A — 大臂驱动
@@ -107,20 +117,6 @@ ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_k
 ```
 
 日志应出现 `profile=orin`，夹爪类型 `robotiq`。
-
-### 终端 B — 对齐辅助（需新开）
-
-```bash
-./scripts/start_follower_align.sh orin
-# 焦点在该终端，按 s 开始对齐
-```
-
-或：
-
-```bash
-ros2 topic pub --once /mode/align_follower std_msgs/msg/String "{data: align_follower}"
-ros2 topic echo /align/status
-```
 
 ### 终端 B — 小臂 Docker
 
@@ -164,6 +160,8 @@ ros2 topic pub --once /mode/switch_teleop std_msgs/msg/String "{data: switch_tel
 ```
 
 ---
+
+
 
 ## 对齐（FACTR sync 之后）
 
@@ -209,6 +207,8 @@ ros2 topic echo /align/status --qos-durability transient_local --qos-reliability
 # IDLE → ALIGNING → ALIGNED（或 TIMEOUT_WARN，仍可开遥操）
 ```
 
+
+
 ### 等价手写 launch
 
 ```bash
@@ -222,6 +222,8 @@ ros2 launch skye_follower_align follower_align.launch.py \
 ```
 
 ---
+
+
 
 ## 换主臂串口 / sync（须与机台同 profile）
 
@@ -241,6 +243,8 @@ Thor：`ROBOT_PROFILE=thor ./scripts/sync_marvin_overlay.sh`。
 详见 `docs/新主臂串口绑定.md`。
 
 ---
+
+
 
 ## 数采节点使用说明
 
@@ -273,6 +277,8 @@ ros2 service call /skye/data_recorder/stop  std_srvs/srv/Trigger {}
 
 ---
 
+
+
 ## 启动后自检
 
 ```bash
@@ -285,15 +291,20 @@ ros2 topic echo /gento/left_joint_states --once  # 7 轴
 ros2 topic echo /gento/right_joint_states --once # 7 轴，应对右大臂
 ```
 
+
 | 检查项  | Thor      | Orin                         |
 | ---- | --------- | ---------------------------- |
 | 夹爪类型 | `dm4310`  | `robotiq`                    |
 | 右腕遥操 | 同向        | J6/J7 映射后同向（profile 已设 `-1`） |
 | 夹爪扳机 | 松开=开、按下=闭 | 同左；闭合限位左约 2 mm、右约 13 mm      |
 
+
 ---
 
+
+
 ## 不要做
+
 
 | 错误                             | 后果                 |
 | ------------------------------ | ------------------ |
@@ -303,17 +314,23 @@ ros2 topic echo /gento/right_joint_states --once # 7 轴，应对右大臂
 | 主机与 Docker `ROS_DOMAIN_ID` 不一致 | 互相看不见              |
 | 漏设 FastDDS 关 SHM xml           | Docker 侧可能看不到驱动节点  |
 
+
 ---
+
+
 
 ## 相关文件
 
-| 路径                                   | 作用                            |
-| ------------------------------------ | ----------------------------- |
-| `scripts/start_skye_for_factr.sh`    | 主机起 `skye_robot_driver`；首参机器名 |
-| `scripts/start_follower_align.sh`    | 主机对齐节点 + 键盘 `s`/`x`；首参机器名    |
+
+| 路径                                   | 作用                             |
+| ------------------------------------ | ------------------------------ |
+| `scripts/start_skye_for_factr.sh`    | 主机起 `skye_robot_driver`；首参机器名  |
+| `scripts/start_follower_align.sh`    | 主机对齐节点 + 键盘 `s`/`x`；首参机器名      |
 | `scripts/run_marvin_m6_impedance.sh` | 小臂 Docker + sync overlay；首参机器名 |
-| `scripts/sync_marvin_overlay.sh`     | 按 profile 同步 launch/config    |
+| `scripts/sync_marvin_overlay.sh`     | 按 profile 同步 launch/config     |
 | `scripts/lib/robot_profile.sh`       | 机器名解析 / 校验                     |
-| `scripts/bind_leader_arms.py`        | 绑定左右主臂 FTDI                   |
-| `config/profiles/{thor,orin}.yaml`   | 大臂 / 夹爪机台参数                   |
-| `marvin_ws/configs/{thor,orin}/`     | 小臂 FACTR `grav_comp`          |
+| `scripts/bind_leader_arms.py`        | 绑定左右主臂 FTDI                    |
+| `config/profiles/{thor,orin}.yaml`   | 大臂 / 夹爪机台参数                    |
+| `marvin_ws/configs/{thor,orin}/`     | 小臂 FACTR `grav_comp`           |
+
+
