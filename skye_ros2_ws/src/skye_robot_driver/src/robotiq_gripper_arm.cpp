@@ -15,6 +15,10 @@ namespace {
 constexpr int kFeedbackEveryTicks = 20;
 // ~0.8 mm; coalesce tiny FACTR streams into larger Hand-E steps at full speed.
 constexpr int kMinPosDeltaCounts = 4;
+// Re-assert GoTo while held target lags feedback (object stall → freed gap).
+// ~3 mm of the 50 mm Hand-E span; check every 20 control ticks (~200 ms @ 100 Hz).
+constexpr double kResendGapNorm = 0.06;
+constexpr int kResendEveryTicks = 20;
 
 }  // namespace
 
@@ -171,10 +175,13 @@ double RobotiqGripperArm::read_opening_mm() {
 
 bool RobotiqGripperArm::write_pending() {
   double norm = 0.0;
+  bool force_reassert = false;
   {
     std::lock_guard<std::mutex> lock(target_mutex_);
     norm = target_;
     dirty_ = false;
+    force_reassert = force_reassert_;
+    force_reassert_ = false;
   }
   const double opening_mm = norm_to_mm(norm);
   const int reg_pos = std::max(
@@ -182,18 +189,21 @@ bool RobotiqGripperArm::write_pending() {
              255, static_cast<int>(std::lround(
                       (kFullPosMm - opening_mm) / kPosRatio))));
   // Coalesce: skip no-op / tiny steps so each sent command can run at full speed.
+  // Never skip when force_reassert: Robotiq needs a fresh rGTO after object detect.
   const bool at_stop =
       reg_pos == 0 || reg_pos == 255 ||
       (config_.close_limit < 1.0 &&
        std::abs(norm - config_.close_limit) < 1e-6);
-  if (last_sent_reg_pos_ >= 0 && !at_stop &&
-      std::abs(reg_pos - last_sent_reg_pos_) < kMinPosDeltaCounts) {
-    return true;
-  }
-  if (!modbus_write(kRegPos, static_cast<std::uint16_t>(reg_pos))) {
-    std::lock_guard<std::mutex> lock(target_mutex_);
-    dirty_ = true;
-    return false;
+  const bool skip_pos =
+      !force_reassert && last_sent_reg_pos_ >= 0 && !at_stop &&
+      std::abs(reg_pos - last_sent_reg_pos_) < kMinPosDeltaCounts;
+  if (!skip_pos) {
+    if (!modbus_write(kRegPos, static_cast<std::uint16_t>(reg_pos))) {
+      std::lock_guard<std::mutex> lock(target_mutex_);
+      dirty_ = true;
+      force_reassert_ = force_reassert;
+      return false;
+    }
   }
   if (!speed_force_sent_) {
     const std::uint16_t speed_force = static_cast<std::uint16_t>(
@@ -201,13 +211,17 @@ bool RobotiqGripperArm::write_pending() {
     if (!modbus_write(kRegSpeed, speed_force)) {
       std::lock_guard<std::mutex> lock(target_mutex_);
       dirty_ = true;
+      force_reassert_ = force_reassert;
       return false;
     }
     speed_force_sent_ = true;
   }
+  // Always pulse GoTo when we have a pending/reassert write. Same position with
+  // a new rGTO is what resumes closing after an object is removed mid-grasp.
   if (!modbus_write(kRegAction, action_reg(1, 1))) {
     std::lock_guard<std::mutex> lock(target_mutex_);
     dirty_ = true;
+    force_reassert_ = force_reassert;
     return false;
   }
   last_sent_reg_pos_ = reg_pos;
@@ -293,6 +307,8 @@ void RobotiqGripperArm::stop() {
   started_ = false;
   speed_force_sent_ = false;
   last_sent_reg_pos_ = -1;
+  force_reassert_ = false;
+  hold_lag_ticks_ = 0;
   wrote_control_this_tick_ = false;
 }
 
@@ -321,6 +337,36 @@ void RobotiqGripperArm::tick_control() {
   {
     std::lock_guard<std::mutex> lock(target_mutex_);
     should_write = dirty_;
+  }
+  if (!should_write) {
+    // FACTR holds a constant close trigger → set_target is a no-op after the
+    // first frame (dirty stays false). Robotiq also stops on object detect and
+    // will not continue closing when the object is removed unless rGTO is
+    // reasserted. If feedback still lags the held target, periodically re-pulse.
+    double target = 0.0;
+    GripperFeedback fb;
+    {
+      std::lock_guard<std::mutex> lock(target_mutex_);
+      target = target_;
+    }
+    {
+      std::lock_guard<std::mutex> lock(fb_mutex_);
+      fb = fb_;
+    }
+    if (fb.valid && std::abs(fb.position - target) > kResendGapNorm) {
+      ++hold_lag_ticks_;
+      if (hold_lag_ticks_ >= kResendEveryTicks) {
+        hold_lag_ticks_ = 0;
+        std::lock_guard<std::mutex> lock(target_mutex_);
+        dirty_ = true;
+        force_reassert_ = true;
+        should_write = true;
+      }
+    } else {
+      hold_lag_ticks_ = 0;
+    }
+  } else {
+    hold_lag_ticks_ = 0;
   }
   if (should_write) {
     wrote_control_this_tick_ = write_pending();

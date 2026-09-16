@@ -75,6 +75,9 @@ class RobotiqGripperArm : public GripperArmBackend {
   int last_sent_reg_pos_{-1};
   bool speed_force_sent_{false};
   bool wrote_control_this_tick_{false};
+  // When true, write_pending must re-pulse rGTO even if reg_pos unchanged
+  // (Robotiq stops on object detect and will not resume until GoTo is reasserted).
+  bool force_reassert_{false};
+  int hold_lag_ticks_{0};
 };
-
 }  // namespace skye_robot_driver
