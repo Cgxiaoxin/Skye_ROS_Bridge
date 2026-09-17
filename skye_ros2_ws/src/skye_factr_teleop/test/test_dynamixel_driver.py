@@ -1,0 +1,308 @@
+# Copyright (c) 2026 lyy
+# SPDX-License-Identifier: Apache-2.0
+
+"""SDK-interaction contract tests for the production Dynamixel adapter.
+
+These tests intentionally replace only the four ``dynamixel_sdk`` objects.  No
+serial port or Dynamixel hardware is accessed.
+"""
+
+from collections import deque
+
+import pytest
+
+from skye_factr_teleop import dynamixel_driver as driver_module
+
+
+COMM_SUCCESS = 0
+IDS = (1, 2)
+SERVO_TYPES = ("XM430-W350", "XC330-T288")
+
+
+class FakePortHandler:
+    def __init__(self, sdk, port):
+        self.sdk = sdk
+        self.port = port
+        sdk.events.append(("PortHandler", port))
+
+    def openPort(self):
+        self.sdk.events.append(("openPort",))
+        return self.sdk.open_ok
+
+    def setBaudRate(self, baudrate):
+        self.sdk.events.append(("setBaudRate", baudrate))
+        return self.sdk.baudrate_ok
+
+    def closePort(self):
+        self.sdk.events.append(("closePort",))
+
+
+class FakePacketHandler:
+    def __init__(self, sdk, protocol_version):
+        self.sdk = sdk
+        sdk.events.append(("PacketHandler", protocol_version))
+
+    def ping(self, port, dxl_id):
+        self.sdk.events.append(("ping", dxl_id))
+        return self.sdk.ping_results.get(dxl_id, (1234, COMM_SUCCESS, 0))
+
+    def write1ByteTxRx(self, port, dxl_id, address, value):
+        self.sdk.events.append(("write1", dxl_id, address, value))
+        return self.sdk.write_results.get(
+            (dxl_id, address, value), (COMM_SUCCESS, 0)
+        )
+
+    def read1ByteTxRx(self, port, dxl_id, address):
+        self.sdk.events.append(("read1", dxl_id, address))
+        return self.sdk.read_results.get(
+            (dxl_id, address), (self.sdk.operating_mode, COMM_SUCCESS, 0)
+        )
+
+    def getTxRxResult(self, result):
+        return f"communication error {result}"
+
+    def getRxPacketError(self, error):
+        return f"device error {error}"
+
+
+class FakeGroupSyncRead:
+    def __init__(self, sdk, port_handler, packet_handler, address, length):
+        self.sdk = sdk
+        sdk.events.append(("GroupSyncRead", address, length))
+
+    def addParam(self, dxl_id):
+        self.sdk.events.append(("read.addParam", dxl_id))
+        return self.sdk.read_add_results.get(dxl_id, True)
+
+    def txRxPacket(self):
+        self.sdk.events.append(("read.txRxPacket",))
+        if self.sdk.read_tx_results:
+            return self.sdk.read_tx_results.popleft()
+        return COMM_SUCCESS
+
+    def isAvailable(self, dxl_id, address, length):
+        self.sdk.events.append(("read.isAvailable", dxl_id, address, length))
+        return self.sdk.available_results.get((dxl_id, address, length), True)
+
+    def getData(self, dxl_id, address, length):
+        self.sdk.events.append(("read.getData", dxl_id, address, length))
+        return self.sdk.read_data.get((dxl_id, address, length), 0)
+
+
+class FakeGroupSyncWrite:
+    def __init__(self, sdk, port_handler, packet_handler, address, length):
+        self.sdk = sdk
+        sdk.events.append(("GroupSyncWrite", address, length))
+
+    def addParam(self, dxl_id, data):
+        self.sdk.events.append(("write.addParam", dxl_id, list(data)))
+        return self.sdk.write_add_results.get(dxl_id, True)
+
+    def txPacket(self):
+        self.sdk.events.append(("write.txPacket",))
+        return self.sdk.write_tx_result
+
+    def clearParam(self):
+        self.sdk.events.append(("write.clearParam",))
+
+
+class FakeSdk:
+    """Configurable fake factory for the four SDK object types."""
+
+    def __init__(self):
+        self.events = []
+        self.open_ok = True
+        self.baudrate_ok = True
+        self.operating_mode = 0
+        self.ping_results = {}
+        self.write_results = {}
+        self.read_results = {}
+        self.read_add_results = {}
+        self.read_tx_results = deque()
+        self.available_results = {}
+        self.read_data = {}
+        self.write_add_results = {}
+        self.write_tx_result = COMM_SUCCESS
+
+    def port_handler(self, port):
+        return FakePortHandler(self, port)
+
+    def packet_handler(self, protocol_version):
+        return FakePacketHandler(self, protocol_version)
+
+    def group_sync_read(self, port_handler, packet_handler, address, length):
+        return FakeGroupSyncRead(
+            self, port_handler, packet_handler, address, length
+        )
+
+    def group_sync_write(self, port_handler, packet_handler, address, length):
+        return FakeGroupSyncWrite(
+            self, port_handler, packet_handler, address, length
+        )
+
+
+@pytest.fixture
+def fake_sdk(monkeypatch):
+    sdk = FakeSdk()
+    monkeypatch.setattr(driver_module, "COMM_SUCCESS", COMM_SUCCESS, raising=False)
+    monkeypatch.setattr(driver_module, "PortHandler", sdk.port_handler, raising=False)
+    monkeypatch.setattr(
+        driver_module, "PacketHandler", sdk.packet_handler, raising=False
+    )
+    monkeypatch.setattr(
+        driver_module, "GroupSyncRead", sdk.group_sync_read, raising=False
+    )
+    monkeypatch.setattr(
+        driver_module, "GroupSyncWrite", sdk.group_sync_write, raising=False
+    )
+    return sdk
+
+
+@pytest.fixture
+def driver_factory(fake_sdk, tmp_path):
+    # A regular temporary file satisfies the production port-existence check
+    # while remaining completely disconnected from real serial hardware.
+    port = tmp_path / "ttyUSB-test"
+    port.touch()
+
+    def make_driver():
+        return driver_module.DynamixelDriver(
+            ids=IDS,
+            servo_types=SERVO_TYPES,
+            port=str(port),
+            baudrate=4_000_000,
+        )
+
+    return make_driver
+
+
+def test_constructs_protocol_2_sync_read_and_sync_write(driver_factory, fake_sdk):
+    driver_factory()
+
+    assert fake_sdk.events == [
+        ("PortHandler", fake_sdk.events[0][1]),
+        ("PacketHandler", 2.0),
+        ("GroupSyncRead", 128, 8),
+        ("GroupSyncWrite", 102, 2),
+    ]
+
+
+def test_open_performs_safe_initialization_in_order(driver_factory, fake_sdk):
+    driver = driver_factory()
+    fake_sdk.events.clear()
+
+    driver.open()
+
+    assert fake_sdk.events == [
+        ("openPort",),
+        ("setBaudRate", 4_000_000),
+        ("ping", 1),
+        ("ping", 2),
+        ("read.addParam", 1),
+        ("read.addParam", 2),
+        ("write1", 1, 64, 0),
+        ("write1", 2, 64, 0),
+        ("write1", 1, 11, 0),
+        ("write1", 2, 11, 0),
+        ("read1", 1, 11),
+        ("read1", 2, 11),
+        ("write1", 1, 64, 1),
+        ("write1", 2, 64, 1),
+    ]
+    assert driver.torque_enabled is True
+
+
+def test_read_state_uses_one_sync_transaction_and_reads_both_registers(
+    driver_factory, fake_sdk
+):
+    driver = driver_factory()
+    driver.open()
+    fake_sdk.events.clear()
+
+    positions, velocities = driver.read_state()
+
+    assert len(positions) == len(IDS)
+    assert len(velocities) == len(IDS)
+    assert fake_sdk.events == [
+        ("read.txRxPacket",),
+        ("read.isAvailable", 1, 128, 4),
+        ("read.getData", 1, 128, 4),
+        ("read.isAvailable", 1, 132, 4),
+        ("read.getData", 1, 132, 4),
+        ("read.isAvailable", 2, 128, 4),
+        ("read.getData", 2, 128, 4),
+        ("read.isAvailable", 2, 132, 4),
+        ("read.getData", 2, 132, 4),
+    ]
+
+
+def test_read_state_retries_a_failed_sync_transaction(driver_factory, fake_sdk):
+    driver = driver_factory()
+    driver.open()
+    fake_sdk.events.clear()
+    fake_sdk.read_tx_results.extend((-1001, COMM_SUCCESS))
+
+    driver.read_state()
+
+    assert fake_sdk.events[:2] == [
+        ("read.txRxPacket",),
+        ("read.txRxPacket",),
+    ]
+
+
+def test_write_currents_sync_writes_every_id_and_always_clears_params(
+    driver_factory, fake_sdk
+):
+    driver = driver_factory()
+    driver.open()
+    fake_sdk.events.clear()
+
+    driver.write_currents([0.0, 0.0])
+
+    assert fake_sdk.events == [
+        ("write.addParam", 1, [0, 0]),
+        ("write.addParam", 2, [0, 0]),
+        ("write.txPacket",),
+        ("write.clearParam",),
+    ]
+
+    fake_sdk.events.clear()
+    fake_sdk.write_tx_result = -1001
+    with pytest.raises(Exception, match="write_currents|sync write"):
+        driver.write_currents([0.0, 0.0])
+    assert fake_sdk.events[-1] == ("write.clearParam",)
+
+
+def test_close_zeroes_current_disables_torque_then_closes_port(
+    driver_factory, fake_sdk
+):
+    driver = driver_factory()
+    driver.open()
+    fake_sdk.events.clear()
+
+    driver.close()
+
+    assert fake_sdk.events == [
+        ("write.addParam", 1, [0, 0]),
+        ("write.addParam", 2, [0, 0]),
+        ("write.txPacket",),
+        ("write.clearParam",),
+        ("write1", 1, 64, 0),
+        ("write1", 2, 64, 0),
+        ("closePort",),
+    ]
+    assert driver.torque_enabled is False
+
+
+def test_sdk_error_reports_operation_and_device_id(driver_factory, fake_sdk):
+    fake_sdk.ping_results[2] = (0, -1001, 0)
+    driver = driver_factory()
+
+    with pytest.raises(Exception) as caught:
+        driver.open()
+
+    message = str(caught.value).lower()
+    assert "ping" in message
+    assert "2" in message
+    assert "communication error -1001" in message
+    assert fake_sdk.events[-1] == ("closePort",)
