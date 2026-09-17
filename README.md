@@ -47,6 +47,6 @@ ros2 launch skye_robot_driver skye_robot_driver.launch.py
 
 ## 安全
 
-- IP 默认 `6.6.7.190`；UDP `50000–50010`
+- 控制器 IP：Thor `6.6.7.191` / Orin `6.6.7.190`；UDP `50000–50010`
 - 只用 `libGentoSDK.so`（不要 PY so）
 - 同一控制器同时只允许一个驱动连接

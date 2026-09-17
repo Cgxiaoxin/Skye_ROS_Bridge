@@ -45,7 +45,7 @@ if [[ -n "${1:-}" && "${1}" != -* ]]; then
   shift
 fi
 
-ROBOT_IP="${ROBOT_IP:-6.6.7.190}"
+ROBOT_IP="${ROBOT_IP:-$(robot_controller_ip "${ROBOT_PROFILE}")}"
 ROBOT_GRIPPER_PORT_LEFT="${ROBOT_GRIPPER_PORT_LEFT:-/dev/ttyUSB0}"
 ROBOT_GRIPPER_PORT_RIGHT="${ROBOT_GRIPPER_PORT_RIGHT:-/dev/ttyUSB1}"
 USE_LEFT_GRIPPER="${USE_LEFT_GRIPPER:-false}"
@@ -129,6 +129,7 @@ fi
 
 echo "Mount: ${MARVIN_WS} -> /marvin_ws"
 echo "Profile: ${ROBOT_PROFILE}"
+echo "Controller IP: ${ROBOT_IP}"
 echo "Image: ${IMAGE}"
 echo "FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml"
 

@@ -10,10 +10,22 @@
 #
 # Known profiles today: thor | orin
 # Adding a machine: drop config/profiles/<name>.yaml + configs/<name>/,
-# then extend validate_robot_profile / known_robot_profiles.
+# then extend validate_robot_profile / known_robot_profiles / robot_controller_ip.
 
 known_robot_profiles() {
   echo "thor orin"
+}
+
+# Gento/Skye arm controller IP for a profile (override with ROBOT_IP env in scripts).
+robot_controller_ip() {
+  case "${1,,}" in
+    thor) echo "6.6.7.191" ;;
+    orin) echo "6.6.7.190" ;;
+    *)
+      echo "ERROR: unknown profile for controller IP: ${1}" >&2
+      return 1
+      ;;
+  esac
 }
 
 _robot_profile_read_file() {

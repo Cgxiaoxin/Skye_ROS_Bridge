@@ -58,7 +58,7 @@ google-chrome --app=http://127.0.0.1:8765
 
 | 操作                        | 作用                                                                                                                   |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| **开始会话**                  | 预检 → 若发现残留 `skye_robot_driver`（且未开启复用）则自动执行 `cleanup_stale_commands` 并复检 → 按 playbook 逐步拉起子进程（driver、Docker 小臂、recorder/arbiter 等） |
+| **开始会话**                  | 预检（按机台 ping：Thor `6.6.7.191` / Orin `6.6.7.190`）→ 若发现残留 `skye_robot_driver`（且未开启复用）则自动清理并复检 → 按 playbook 逐步拉起子进程 |
 | **结束会话**                  | 有序停止子进程组，**强制** `docker rm -f skye_marvin_m6`，并默认跑主臂 Dynamixel 去使能；回到 IDLE。**结束前请托住小臂**（去使能后会下落）。改 profile 或模式前必须先结束 |
 | **急停** (`emergency_stop`) | 调用 `/gento/emergency_stop`，**不结束会话**；会话仍在 READY/RUNNING，可继续操作或再点结束会话                                                 |
 

@@ -32,7 +32,7 @@ P6.4 真 VLA / P6.5 训练加权仍待做。
 
 ### ① 上电
 
-控制器上电，`ping 6.6.7.190`；确认无第二个 SDK 客户端（`pkill -f skye_robot_driver` 等）。
+控制器上电，按机台 ping（Thor `6.6.7.191` / Orin `6.6.7.190`）；确认无第二个 SDK 客户端（`pkill -f skye_robot_driver` 等）。
 
 ### ② 终端 A — 大臂 driver
 

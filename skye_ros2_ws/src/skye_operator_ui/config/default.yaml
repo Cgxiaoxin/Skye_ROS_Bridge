@@ -7,6 +7,11 @@ log_ring_size: 2000
 # buttons again (pending also clears early once the state confirms the command).
 pending_timeout_s: 8.0
 
+# Per-profile Gento/Skye controller IP used by session-start precheck ping.
+controller_ips:
+  thor: "6.6.7.191"
+  orin: "6.6.7.190"
+
 # Whitelist argv for residual cleanup (manual API + auto on session start).
 # Session start precheck runs these when a leftover skye_robot_driver is found
 # (unless allow_existing_driver and playbook step 1 is driver). Empty falls back

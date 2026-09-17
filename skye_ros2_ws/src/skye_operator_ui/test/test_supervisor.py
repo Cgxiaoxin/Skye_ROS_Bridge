@@ -257,6 +257,32 @@ def test_precheck_fails_if_residual_remains_after_cleanup(tmp_path, monkeypatch)
     assert "残留" in reason
 
 
+def test_controller_ip_by_profile():
+    cfg = {
+        "controller_ips": {"thor": "6.6.7.191", "orin": "6.6.7.190"},
+        "precheck": {"skip_ping": True},
+        "cleanup_stale_commands": [],
+        "playbook_override": {"teleop_record": []},
+    }
+    # repo_root unused for this helper
+    from pathlib import Path
+
+    sup = SessionSupervisor(
+        repo_root=str(Path("/tmp")),
+        cfg=cfg,
+        health_fn=lambda _k: False,
+        precheck_fn=lambda: (True, "ok"),
+    )
+    assert sup._controller_ip_for_profile("thor") == "6.6.7.191"
+    assert sup._controller_ip_for_profile("orin") == "6.6.7.190"
+    assert SessionSupervisor(
+        repo_root=str(Path("/tmp")),
+        cfg={},
+        health_fn=lambda _k: False,
+        precheck_fn=lambda: (True, "ok"),
+    )._controller_ip_for_profile("thor") == "6.6.7.191"
+
+
 def test_retry_step_recovers_after_failed(tmp_path, monkeypatch):
     healthy = {"a": False}
     sup = _make_supervisor(tmp_path, _mock_cfg(timeout_s=3.0), healthy)

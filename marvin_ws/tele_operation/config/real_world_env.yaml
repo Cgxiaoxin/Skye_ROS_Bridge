@@ -2,7 +2,7 @@ robot_name: 'marvin'
 robot_server:
   host_ip: &host_ip "192.168.1.165"
   port: &port 8092
-  robot_ip: "6.6.7.190"
+  robot_ip: "6.6.7.190"  # Orin default; Thor uses 6.6.7.191 via ROBOT_IP / profile
   use_arm: &use_arm ['A','B'] # ['A','B']
 publisher:
   # realsense cameras

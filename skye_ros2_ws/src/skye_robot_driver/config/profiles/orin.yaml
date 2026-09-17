@@ -1,6 +1,7 @@
 # Orin machine overlay (Robotiq Hand-E + right wrist signs)
 skye_robot_driver:
   ros__parameters:
+    robot_ip: "6.6.7.190"
     left_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     right_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0]
     gripper_left_type: "robotiq"

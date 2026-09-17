@@ -63,6 +63,7 @@ source install/setup.bash
 set -u
 
 echo "== skye_robot_driver profile=${ROBOT_PROFILE} ROS_DOMAIN_ID=${ROS_DOMAIN_ID} =="
+echo "   controller_ip=$(robot_controller_ip "${ROBOT_PROFILE}")"
 echo "   FASTRTPS_DEFAULT_PROFILES_FILE=${FASTRTPS_DEFAULT_PROFILES_FILE}"
 echo "Expect FACTR remap: /gento/joint_states + /gento/{left,right}_joint_control"
 echo "Mode default: imp_joint (2). Keyboard in docker: 1=sync 2=teleop 3=stop"

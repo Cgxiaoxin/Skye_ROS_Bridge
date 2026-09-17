@@ -20,7 +20,7 @@ set -Eeuo pipefail
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly ROS_DOMAIN_ID=20
-readonly ROBOT_IP="6.6.7.190"
+readonly ROBOT_IP="${ROBOT_IP:-6.6.7.190}"
 readonly LEADER_CONTAINER="gento_leader_teleop"
 readonly GENTO_WS="${SCRIPT_DIR}/gento_ros2_ws"
 readonly GENTO_PARAMS="${GENTO_WS}/install/gento_robot_driver/share/gento_robot_driver/config/gento_robot.yaml"

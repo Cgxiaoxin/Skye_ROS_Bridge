@@ -18,6 +18,12 @@ logger = logging.getLogger(__name__)
 # Used when cleanup_stale_commands is empty but a residual driver must be cleared.
 _DEFAULT_DRIVER_CLEANUP: list[list[str]] = [["pkill", "-f", "skye_robot_driver"]]
 
+# Fallback when config/default.yaml has no controller_ips map.
+_DEFAULT_CONTROLLER_IPS: dict[str, str] = {
+    "thor": "6.6.7.191",
+    "orin": "6.6.7.190",
+}
+
 
 class SessionSupervisor:
     """Drive SessionLogic through precheck, playbook steps, and teardown."""
@@ -240,13 +246,24 @@ class SessionSupervisor:
                 self.logic.mark_failed()
                 self._last_fail_msg = f"步骤 {spec['id']} 健康检查超时"
 
+    def _controller_ip_for_profile(self, profile: str | None) -> str:
+        ips = self.cfg.get("controller_ips") or {}
+        if not isinstance(ips, dict):
+            ips = {}
+        key = (profile or "thor").strip().lower()
+        if key in ips and ips[key]:
+            return str(ips[key])
+        return _DEFAULT_CONTROLLER_IPS.get(key, _DEFAULT_CONTROLLER_IPS["orin"])
+
     def _default_precheck(self) -> tuple[bool, str]:
         precheck_cfg = self.cfg.get("precheck", {})
+        profile = self.logic.profile()
+        controller_ip = self._controller_ip_for_profile(profile)
 
         if not precheck_cfg.get("skip_ping", False):
             try:
                 result = subprocess.run(
-                    ["ping", "-c", "1", "-W", "1", "6.6.7.190"],
+                    ["ping", "-c", "1", "-W", "1", controller_ip],
                     capture_output=True,
                     text=True,
                     timeout=5.0,
@@ -254,7 +271,8 @@ class SessionSupervisor:
             except (OSError, subprocess.TimeoutExpired) as exc:
                 return False, f"网络预检失败: {exc}"
             if result.returncode != 0:
-                return False, "无法 ping 通 Thor (6.6.7.190)"
+                label = (profile or "thor").upper()
+                return False, f"无法 ping 通 {label} ({controller_ip})"
 
         xml_path = os.path.join(
             self.repo_root, "marvin_ws", "fastrtps_no_shm.xml"
@@ -264,7 +282,6 @@ class SessionSupervisor:
 
         count = self._count_skye_robot_driver()
         if count > 0:
-            profile = self.logic.profile()
             mode = self.logic.mode()
             allow = bool(self.cfg.get("allow_existing_driver", False))
             first_is_driver = False
