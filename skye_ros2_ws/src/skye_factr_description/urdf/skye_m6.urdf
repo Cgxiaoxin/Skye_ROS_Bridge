@@ -1,0 +1,1526 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.5.1-0-g916b5db  Build Version: 1.5.7152.31018
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="skye_m6_follower">
+  <link name="dummy_link"/>
+  <link
+    name="torso_link">
+    <visual>
+      <origin
+        xyz="0 0 0.21"
+        rpy="0 0 3.141592654" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/torso_link_haiXin.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 0 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0.21"
+        rpy="0 0 3.141592654" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/torso_link_haiXin.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="base_to_dummy" type="fixed">
+    <parent link="dummy_link"/>
+    <child link="torso_link"/>
+  <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+<link
+    name="lbase">
+    <inertial>
+      <origin
+        xyz="0.00032267 4.798E-05 0.04066353"
+        rpy="0 0 0" />
+      <mass
+        value="1.1962" />
+      <inertia
+        ixx="0.00107329"
+        ixy="-1.68E-06"
+        ixz="-1.05E-05"
+        iyy="0.00107003"
+        iyz="-3.43E-06"
+        izz="0.00127315" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/Base_L.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 0 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/Base_L.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_jbase"
+    type="fixed">
+    <origin
+      xyz="0.0 0.05 0.0"
+      rpy="-1.5708 0 0" />
+    <parent
+      link="torso_link" />
+    <child
+      link="lbase" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="rbase">
+    <inertial>
+      <origin
+        xyz="0.00032267 4.798E-05 0.04066353"
+        rpy="0 0 0" />
+      <mass
+        value="1.1962" />
+      <inertia
+        ixx="0.00107329"
+        ixy="-1.68E-06"
+        ixz="-1.05E-05"
+        iyy="0.00107003"
+        iyz="-3.43E-06"
+        izz="0.00127315" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/Base_R.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 0 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/Base_R.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_jbase"
+    type="fixed">
+    <origin
+      xyz="0 -0.05 0.00"
+      rpy="1.5708 0 0" />
+    <parent
+      link="torso_link" />
+    <child
+      link="rbase" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.141592653589793"
+      upper="3.141592653589793"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="l1">
+    <inertial>
+      <origin
+        xyz="0.00002347 0.00557150 -0.03075998"
+        rpy="0 0 0" />
+      <mass
+        value="1.9705" />
+      <inertia
+        ixx="0.00492293"
+        ixy="0.00000550"
+        ixz="0.00000193"
+        iyy="0.00526513"
+        iyz="0.00033232"
+        izz="0.00188107" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/l1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0 1 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/l1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_j1"
+    type="revolute">
+    <origin
+      xyz="0 0 0.1745"
+      rpy="0 0 0" />
+    <parent
+      link="lbase" />
+    <child
+      link="l1" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1067"
+      upper="3.1067"
+      effort="108"
+      velocity="3.1416" />
+  </joint>
+  <link
+    name="l2">
+    <inertial>
+      <origin
+        xyz="0.00013483 0.06170460 0.00950639"
+        rpy="0 0 0" />
+      <mass
+        value="2.24398" />
+      <inertia
+        ixx="0.01194933"
+        ixy="0.00000336"
+        ixz="0.00000091"
+        iyy="0.00361581"
+        iyz="-0.00132804"
+        izz="0.01098356" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/l2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0 0 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/l2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_j2"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5708 0 0" />
+    <parent
+      link="l1" />
+    <child
+      link="l2" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-2.0944"
+      upper="2.0944"
+      effort="108"
+      velocity="3.1416" />
+  </joint>
+  <link
+    name="l3">
+    <inertial>
+      <origin
+        xyz="0.00968562 0.00246599 -0.04627302"
+        rpy="0 0 0" />
+      <mass
+        value="1.9242" />
+      <inertia
+        ixx="0.00718224"
+        ixy="0.00004413"
+        ixz="0.00089552"
+        iyy="0.00762563"
+        iyz="0.00022096"
+        izz="0.00178597" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/l3.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 0 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/l3.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_j3"
+    type="revolute">
+    <origin
+      xyz="0 0.287 0"
+      rpy="-1.5708 0 0" />
+    <parent
+      link="l2" />
+    <child
+      link="l3" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1067"
+      upper="3.1067"
+      effort="66"
+      velocity="3.1416" />
+  </joint>
+  <link
+    name="l4">
+    <inertial>
+      <origin
+        xyz="0.00850411 -0.04718223 0.00941509"
+        rpy="0 0 0" />
+      <mass
+        value="1.6085" />
+      <inertia
+        ixx="0.00580480"
+        ixy="-0.00066669"
+        ixz="-0.00012722"
+        iyy="0.00223807"
+        iyz="0.00070523"
+        izz="0.00533060" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/l4.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0 1 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/l4.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_j4"
+    type="revolute">
+    <origin
+      xyz="0.018 0 0"
+      rpy="-1.5708 0 3.1416" />
+    <parent
+      link="l3" />
+    <child
+      link="l4" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-2.5307"
+      upper="1.0472"
+      effort="66"
+      velocity="3.1416" />
+  </joint>
+  <link
+    name="l5">
+    <inertial>
+      <origin
+        xyz="0.00051127 0.00101064 -0.11271739"
+        rpy="0 0 0" />
+      <mass
+        value="2.0883" />
+      <inertia
+        ixx="0.00626603"
+        ixy="0.00004009"
+        ixz="0.00005338"
+        iyy="0.00564387"
+        iyz="-0.00006193"
+        izz="0.00243632" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/l5.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0 0 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/l5.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_j5"
+    type="revolute">
+    <origin
+      xyz="0.018 -0.314 0"
+      rpy="-1.5708 0 3.1416" />
+    <parent
+      link="l4" />
+    <child
+      link="l5" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1067"
+      upper="3.1067"
+      effort="18"
+      velocity="3.1416" />
+  </joint>
+  <link
+    name="l6">
+    <inertial>
+      <origin
+        xyz="0.00032659 0.00531336 -0.00030182"
+        rpy="0 0 0" />
+      <mass
+        value="0.72496" />
+      <inertia
+        ixx="0.00046040"
+        ixy="0.00000189"
+        ixz="0.00000083"
+        iyy="0.00051716"
+        iyz="-0.00000346"
+        izz="0.00042521" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/l6.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 0 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/l6.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_j6"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5708 -1.5708 0" />
+    <parent
+      link="l5" />
+    <child
+      link="l6" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1.0472"
+      upper="1.0472"
+      effort="18"
+      velocity="3.1416" />
+  </joint>
+  <link
+    name="l7">
+    <inertial>
+      <origin
+        xyz="-0.00009108 -0.03153255 0.00889371"
+        rpy="0 0 0" />
+      <mass
+        value="0.68606" />
+      <inertia
+        ixx="0.00173687"
+        ixy="-0.00000345"
+        ixz="-0.00000116"
+        iyy="0.00089035"
+        iyz="0.00030680"
+        izz="0.00139406" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/l7.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0 1 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/l7.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_j7"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5708 -1.5708 0" />
+    <parent
+      link="l6" />
+    <child
+      link="l7" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1.5708"
+      upper="1.5708"
+      effort="18"
+      velocity="3.1416" />
+  </joint>
+  <link
+    name="lt">
+    <inertial>
+      <origin
+        xyz="0.00339303654278191 -2.1205433560656E-05 -0.0099185365078758"
+        rpy="0 0 0" />
+      <mass
+        value="0.105853592307918" />
+      <inertia
+        ixx="3.93795927851199E-05"
+        ixy="-8.7395226509728E-08"
+        ixz="5.91928672040786E-07"
+        iyy="0.000106376720416166"
+        iyz="-1.82858764303774E-10"
+        izz="0.000125852616063213" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_base_link_haiXin.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.894117647058823 0.913725490196078 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_base_link_haiXin.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="l-t" type="fixed">
+        <origin xyz="0 -0.095 0.0" rpy="0 0 -1.5708" />
+        <parent link="l7" />
+        <child link="lt" />
+  </joint>
+   <!--
+  <link
+    name="left_index_finger_link1">
+    <inertial>
+      <origin
+        xyz="0.0164149658242926 9.75754915755189E-09 0.00898193900447147"
+        rpy="0 0 0" />
+      <mass
+        value="0.00647716099397792" />
+      <inertia
+        ixx="2.95068972140683E-07"
+        ixy="8.63208170411155E-13"
+        ixz="-1.92008628754607E-09"
+        iyy="1.69979619476872E-06"
+        iyz="-1.99232397395103E-13"
+        izz="1.45016449434989E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.894117647058823 0.913725490196078 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="fl_joint7"
+    type="fixed">
+    <origin
+      xyz="0.036 -0.04 -0.019"
+      rpy="-3.0158E-16 -7.1586E-16 -0.30719" />
+    <parent
+      link="lt" />
+    <child
+      link="left_index_finger_link1" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="1"
+      effort="1"
+      velocity="1" />
+  </joint>
+ 
+  <link
+    name="Lgripper_Link11">
+    <inertial>
+      <origin
+        xyz="0.011366555972498 0.0118642725662323 0.0060000073930068"
+        rpy="0 0 0" />
+      <mass
+        value="0.0127543420299361" />
+      <inertia
+        ixx="5.68538478020233E-07"
+        ixy="-2.68012262729007E-07"
+        ixz="9.34125984931838E-13"
+        iyy="1.45145776457487E-06"
+        iyz="9.34355360561326E-13"
+        izz="1.50564598220449E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link11.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.894117647058823 0.913725490196078 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link11.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="Lgripper_Link11"
+    type="fixed">
+    <origin
+      xyz="0.042 0 0.003"
+      rpy="5.0393E-16 5.6225E-16 0.30719" />
+    <parent
+      link="left_index_finger_link1" />
+    <child
+      link="Lgripper_Link11" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1"
+      upper="0"
+      effort="1"
+      velocity="1" />
+  </joint>
+  
+  <link
+    name="left_index_finger_link2">
+    <inertial>
+      <origin
+        xyz="0.0164149658242926 9.75754915755189E-09 0.00898193900447147"
+        rpy="0 0 0" />
+      <mass
+        value="0.00647716099397793" />
+      <inertia
+        ixx="2.95068972140683E-07"
+        ixy="8.63208169650113E-13"
+        ixz="-1.92008628755341E-09"
+        iyy="1.69979619476872E-06"
+        iyz="-1.99232397320157E-13"
+        izz="1.45016449434989E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.894117647058823 0.913725490196078 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="fl_joint8"
+    type="fixed">
+    <origin
+      xyz="0.036 0.04 -0.019"
+      rpy="-2.6397E-16 3.7199E-16 0.30719" />
+    <parent
+      link="lt" />
+    <child
+      link="left_index_finger_link2" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1"
+      upper="0"
+      effort="1"
+      velocity="1" />
+  </joint>
+  
+  <link
+    name="Lgripper_Link22">
+    <inertial>
+      <origin
+        xyz="-0.011366555972498 0.0118642725662323 -0.0060000073930068"
+        rpy="0 0 0" />
+      <mass
+        value="0.0127543420299362" />
+      <inertia
+        ixx="5.68538478020238E-07"
+        ixy="2.6801226272901E-07"
+        ixz="9.34125986250171E-13"
+        iyy="1.45145776457489E-06"
+        iyz="-9.34355361631596E-13"
+        izz="1.5056459822045E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link22.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.894117647058823 0.913725490196078 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link22.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="Lgripper_Link22"
+    type="fixed">
+    <origin
+      xyz="0.042 0 0.015"
+      rpy="-3.641E-16 2.4584E-16 2.8344" />
+    <parent
+      link="left_index_finger_link2" />
+    <child
+      link="Lgripper_Link22" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="1"
+      effort="1"
+      velocity="1" />
+  </joint>
+  -->
+  <link
+    name="r1">
+    <inertial>
+      <origin
+        xyz="0.00002347 0.00557150 -0.03075998"
+        rpy="0 0 0" />
+      <mass
+        value="1.9705" />
+      <inertia
+        ixx="0.00492293"
+        ixy="0.00000550"
+        ixz="0.00000193"
+        iyy="0.00526513"
+        iyz="0.00033232"
+        izz="0.00188107" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/r1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0 1 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/r1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_j1"
+    type="revolute">
+    <origin
+      xyz="0 0 0.1745"
+      rpy="0 0 0" />
+    <parent
+      link="rbase" />
+    <child
+      link="r1" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1067"
+      upper="3.1067"
+      effort="108"
+      velocity="3.1416" />
+  </joint>
+  <link
+    name="r2">
+    <inertial>
+      <origin
+        xyz="0.00013483 0.06170460 0.00950639"
+        rpy="0 0 0" />
+      <mass
+        value="2.24398" />
+      <inertia
+        ixx="0.01194933"
+        ixy="0.00000336"
+        ixz="0.00000091"
+        iyy="0.00361581"
+        iyz="-0.00132804"
+        izz="0.01098356" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/r2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0 0 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/r2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_j2"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5708 0 0" />
+    <parent
+      link="r1" />
+    <child
+      link="r2" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-2.0944"
+      upper="2.0944"
+      effort="108"
+      velocity="3.1416" />
+  </joint>
+  <link
+    name="r3">
+    <inertial>
+      <origin
+        xyz="0.00968562 0.00246599 -0.04627302"
+        rpy="0 0 0" />
+      <mass
+        value="1.9242" />
+      <inertia
+        ixx="0.00718224"
+        ixy="0.00004413"
+        ixz="0.00089552"
+        iyy="0.00762563"
+        iyz="0.00022096"
+        izz="0.00178597" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/r3.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 0 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/r3.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_j3"
+    type="revolute">
+    <origin
+      xyz="0 0.287 0"
+      rpy="-1.5708 0 0" />
+    <parent
+      link="r2" />
+    <child
+      link="r3" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1067"
+      upper="3.1067"
+      effort="66"
+      velocity="3.1416" />
+  </joint>
+  <link
+    name="r4">
+    <inertial>
+      <origin
+        xyz="0.00850411 -0.04718223 0.00941509"
+        rpy="0 0 0" />
+      <mass
+        value="1.6085" />
+      <inertia
+        ixx="0.00580480"
+        ixy="-0.00066669"
+        ixz="-0.00012722"
+        iyy="0.00223807"
+        iyz="0.00070523"
+        izz="0.00533060" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/r4.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0 1 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/r4.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_j4"
+    type="revolute">
+    <origin
+      xyz="0.018 0 0"
+      rpy="-1.5708 0 3.1416" />
+    <parent
+      link="r3" />
+    <child
+      link="r4" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-2.5307"
+      upper="1.0472"
+      effort="66"
+      velocity="3.1416" />
+  </joint>
+  <link
+    name="r5">
+    <inertial>
+      <origin
+        xyz="-0.00051127 -0.00101064 -0.11271739"
+        rpy="0 0 0" />
+      <mass
+        value="2.0883" />
+      <inertia
+        ixx="0.00626603"
+        ixy="0.00004009"
+        ixz="-0.00005338"
+        iyy="0.00564387"
+        iyz="0.00006193"
+        izz="0.00243632" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/r5.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0 0 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/r5.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_j5"
+    type="revolute">
+    <origin
+      xyz="0.018 -0.314 0"
+      rpy="-1.5708 0 3.1416" />
+    <parent
+      link="r4" />
+    <child
+      link="r5" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1067"
+      upper="3.1067"
+      effort="18"
+      velocity="3.1416" />
+  </joint>
+  <link
+    name="r6">
+    <inertial>
+      <origin
+        xyz="0.00032659 -0.00531336 0.00030182"
+        rpy="0 0 0" />
+      <mass
+        value="0.72496" />
+      <inertia
+        ixx="0.00046040"
+        ixy="-0.00000189"
+        ixz="-0.00000083"
+        iyy="0.00051716"
+        iyz="-0.00000346"
+        izz="0.00042521" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/r6.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 0 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/r6.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_j6"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5708 -1.5708 0" />
+    <parent
+      link="r5" />
+    <child
+      link="r6" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1.0472"
+      upper="1.0472"
+      effort="18"
+      velocity="3.1416" />
+  </joint>
+  <link
+    name="r7">
+    <inertial>
+      <origin
+        xyz="-0.00009108 -0.03153255 0.00889371"
+        rpy="0 0 0" />
+      <mass
+        value="0.68606" />
+      <inertia
+        ixx="0.00173687"
+        ixy="-0.00000345"
+        ixz="-0.00000116"
+        iyy="0.00089035"
+        iyz="0.00030680"
+        izz="0.00139406" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/r7.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0 1 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/r7.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_j7"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5708 -1.5708 0" />
+    <parent
+      link="r6" />
+    <child
+      link="r7" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1.5708"
+      upper="1.5708"
+      effort="18"
+      velocity="3.1416" />
+  </joint>
+  <link
+    name="rt">
+    <inertial>
+      <origin
+        xyz="0.00339303654278191 -2.1205433560656E-05 -0.0099185365078758"
+        rpy="0 0 0" />
+      <mass
+        value="0.105853592307918" />
+      <inertia
+        ixx="3.93795927851199E-05"
+        ixy="-8.7395226509728E-08"
+        ixz="5.91928672040786E-07"
+        iyy="0.000106376720416166"
+        iyz="-1.82858764303774E-10"
+        izz="0.000125852616063213" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_base_link_haiXin.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.894117647058823 0.913725490196078 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_base_link_haiXin.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="r-t" type="fixed">
+        <origin xyz="0.0 -0.095 0" rpy="0 0 -1.5708" />
+        <parent link="r7" />
+        <child link="rt" />
+  </joint>
+    <!--
+  <link
+    name="right_index_finger_link1">
+    <inertial>
+      <origin
+        xyz="0.0164149658242926 9.75754915755189E-09 0.00898193900447147"
+        rpy="0 0 0" />
+      <mass
+        value="0.00647716099397792" />
+      <inertia
+        ixx="2.95068972140683E-07"
+        ixy="8.63208170411155E-13"
+        ixz="-1.92008628754607E-09"
+        iyy="1.69979619476872E-06"
+        iyz="-1.99232397395103E-13"
+        izz="1.45016449434989E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.894117647058823 0.913725490196078 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="fr_joint7"
+    type="fixed">
+    <origin
+      xyz="0.036 -0.04 -0.019"
+      rpy="-3.0158E-16 -7.1586E-16 -0.30719" />
+    <parent
+      link="rt" />
+    <child
+      link="right_index_finger_link1" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="1"
+      effort="1"
+      velocity="1" />
+  </joint>
+
+  <link
+    name="Rgripper_Link11">
+    <inertial>
+      <origin
+        xyz="0.011366555972498 0.0118642725662323 0.0060000073930068"
+        rpy="0 0 0" />
+      <mass
+        value="0.0127543420299361" />
+      <inertia
+        ixx="5.68538478020233E-07"
+        ixy="-2.68012262729007E-07"
+        ixz="9.34125984931838E-13"
+        iyy="1.45145776457487E-06"
+        iyz="9.34355360561326E-13"
+        izz="1.50564598220449E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link11.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.894117647058823 0.913725490196078 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link11.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="Rgripper_Link11"
+    type="fixed">
+    <origin
+      xyz="0.042 0 0.003"
+      rpy="5.0393E-16 5.6225E-16 0.30719" />
+    <parent
+      link="right_index_finger_link1" />
+    <child
+      link="Rgripper_Link11" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1"
+      upper="0"
+      effort="1"
+      velocity="1" />
+  </joint>
+  
+  <link
+    name="right_index_finger_link2">
+    <inertial>
+      <origin
+        xyz="0.0164149658242926 9.75754915755189E-09 0.00898193900447147"
+        rpy="0 0 0" />
+      <mass
+        value="0.00647716099397793" />
+      <inertia
+        ixx="2.95068972140683E-07"
+        ixy="8.63208169650113E-13"
+        ixz="-1.92008628755341E-09"
+        iyy="1.69979619476872E-06"
+        iyz="-1.99232397320157E-13"
+        izz="1.45016449434989E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.894117647058823 0.913725490196078 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="fr_joint8"
+    type="fixed">
+    <origin
+      xyz="0.036 0.04 -0.019"
+      rpy="-2.6397E-16 3.7199E-16 0.30719" />
+    <parent
+      link="rt" />
+    <child
+      link="right_index_finger_link2" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1"
+      upper="0"
+      effort="1"
+      velocity="1" />
+  </joint>
+ 
+  <link
+    name="Rgripper_Link22">
+    <inertial>
+      <origin
+        xyz="-0.011366555972498 0.0118642725662323 -0.0060000073930068"
+        rpy="0 0 0" />
+      <mass
+        value="0.0127543420299362" />
+      <inertia
+        ixx="5.68538478020238E-07"
+        ixy="2.6801226272901E-07"
+        ixz="9.34125986250171E-13"
+        iyy="1.45145776457489E-06"
+        iyz="-9.34355361631596E-13"
+        izz="1.5056459822045E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link22.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.894117647058823 0.913725490196078 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://skye_factr_description/meshes/follower/gripper_Link22.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="Rgripper_Link22"
+    type="fixed">
+    <origin
+      xyz="0.042 0 0.015"
+      rpy="-3.641E-16 2.4584E-16 2.8344" />
+    <parent
+      link="right_index_finger_link2" />
+    <child
+      link="Rgripper_Link22" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="1"
+      effort="1"
+      velocity="1" />
+  </joint>
+  -->
+</robot>

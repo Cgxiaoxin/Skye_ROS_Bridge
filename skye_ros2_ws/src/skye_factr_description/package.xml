@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>skye_factr_description</name>
+  <version>0.1.0</version>
+  <description>Leader and follower robot descriptions used by Skye FACTR teleoperation</description>
+
+  <maintainer email="yy.liu.cn@outlook.com">lyy</maintainer>
+  <author email="yy.liu.cn@outlook.com">lyy</author>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <export>
+    <architecture_independent/>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -14,6 +14,9 @@ The verified default Thor M6 parameters are installed as
 validate either file with `skye_factr_teleop.config.load_config`. Returned nested
 dataclasses and numeric tuples are immutable.
 
+The configured leader and follower URDF resources are provided by the
+`skye_factr_description` package; no model is loaded from `marvin_ws`.
+
 ## Entry point
 
 ```bash

@@ -311,7 +311,7 @@ skye_factr_teleop_driver = skye_factr_teleop.ros_driver:main
 
 ### 任务 1.3：建立描述包
 
-在确认资源许可后，将以下资源迁移到 `skye_factr_description`：
+将以下资源迁移到 `skye_factr_description`：
 
 - 左 leader URDF；
 - 右 leader URDF；

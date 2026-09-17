@@ -10,6 +10,7 @@
 
   <depend>rclpy</depend>
   <depend>python3-yaml</depend>
+  <exec_depend>skye_factr_description</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 
