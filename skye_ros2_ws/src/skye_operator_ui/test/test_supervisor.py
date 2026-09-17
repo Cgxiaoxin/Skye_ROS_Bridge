@@ -149,6 +149,114 @@ def test_cleanup_stale_reports_empty_config(tmp_path):
     assert "cleanup_stale_commands" in reason
 
 
+def test_cleanup_stale_pkill_exit_1_is_ok(tmp_path, monkeypatch):
+    def fake_run(argv, **kwargs):
+        class R:
+            returncode = 1
+            stdout = ""
+            stderr = ""
+
+        return R()
+
+    monkeypatch.setattr("skye_operator_ui.supervisor.subprocess.run", fake_run)
+    sup = _make_supervisor(
+        tmp_path,
+        {
+            **_mock_cfg(),
+            "cleanup_stale_commands": [["pkill", "-f", "skye_robot_driver"]],
+        },
+        {},
+    )
+    ok, reason = sup.run_cleanup_stale()
+    assert ok, reason
+
+
+def _precheck_cfg(tmp_path):
+    xml = tmp_path / "marvin_ws" / "fastrtps_no_shm.xml"
+    xml.parent.mkdir(parents=True)
+    xml.write_text("<xml/>")
+    return {
+        "step_timeout_s": 5.0,
+        "log_ring_size": 100,
+        "cleanup_stale_commands": [["pkill", "-f", "skye_robot_driver"]],
+        "precheck": {"skip_ping": True},
+        "playbook_override": {
+            "teleop_record": [
+                {
+                    "id": "driver",
+                    "argv": ["/bin/true"],
+                    "health_key": "driver",
+                    "timeout_s": 3.0,
+                    "optional": False,
+                }
+            ]
+        },
+    }
+
+
+def test_precheck_auto_cleans_residual_driver(tmp_path, monkeypatch):
+    calls = {"pgrep": 0, "cleanup": 0}
+
+    def fake_run(argv, **kwargs):
+        class R:
+            returncode = 0
+            stdout = "1"
+            stderr = ""
+
+        if argv[:2] == ["pgrep", "-fc"]:
+            calls["pgrep"] += 1
+            r = R()
+            # First count finds residual; after cleanup, gone.
+            r.stdout = "1" if calls["pgrep"] == 1 else "0"
+            r.returncode = 0 if calls["pgrep"] == 1 else 1
+            return r
+        if argv[:2] == ["pkill", "-f"]:
+            calls["cleanup"] += 1
+            return R()
+        raise AssertionError(f"unexpected argv: {argv}")
+
+    monkeypatch.setattr("skye_operator_ui.supervisor.subprocess.run", fake_run)
+    monkeypatch.setattr("skye_operator_ui.supervisor.time.sleep", lambda _s: None)
+
+    cfg = _precheck_cfg(tmp_path)
+    sup = SessionSupervisor(
+        repo_root=str(tmp_path),
+        cfg=cfg,
+        health_fn=lambda _k: False,
+    )
+    ok, reason = sup.start("thor", UiMode.teleop_record)
+    assert ok, reason
+    assert calls["cleanup"] == 1
+    assert calls["pgrep"] >= 2
+
+
+def test_precheck_fails_if_residual_remains_after_cleanup(tmp_path, monkeypatch):
+    def fake_run(argv, **kwargs):
+        class R:
+            returncode = 0
+            stdout = "1"
+            stderr = ""
+
+        if argv[:2] == ["pgrep", "-fc"]:
+            return R()  # always residual
+        if argv[:2] == ["pkill", "-f"]:
+            return R()
+        raise AssertionError(f"unexpected argv: {argv}")
+
+    monkeypatch.setattr("skye_operator_ui.supervisor.subprocess.run", fake_run)
+    monkeypatch.setattr("skye_operator_ui.supervisor.time.sleep", lambda _s: None)
+
+    cfg = _precheck_cfg(tmp_path)
+    sup = SessionSupervisor(
+        repo_root=str(tmp_path),
+        cfg=cfg,
+        health_fn=lambda _k: False,
+    )
+    ok, reason = sup.start("thor", UiMode.teleop_record)
+    assert not ok
+    assert "残留" in reason
+
+
 def test_retry_step_recovers_after_failed(tmp_path, monkeypatch):
     healthy = {"a": False}
     sup = _make_supervisor(tmp_path, _mock_cfg(timeout_s=3.0), healthy)

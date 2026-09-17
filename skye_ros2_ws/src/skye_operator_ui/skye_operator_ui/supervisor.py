@@ -15,6 +15,9 @@ from skye_operator_ui.teardown import run_safe_teardown
 
 logger = logging.getLogger(__name__)
 
+# Used when cleanup_stale_commands is empty but a residual driver must be cleared.
+_DEFAULT_DRIVER_CLEANUP: list[list[str]] = [["pkill", "-f", "skye_robot_driver"]]
+
 
 class SessionSupervisor:
     """Drive SessionLogic through precheck, playbook steps, and teardown."""
@@ -154,7 +157,24 @@ class SessionSupervisor:
                 "未配置清理命令：config/default.yaml 的 cleanup_stale_commands 为空，"
                 "请按注释示例填写后重试"
             )
+        return self._run_cleanup_commands(commands)
 
+    @staticmethod
+    def _cleanup_argv_ok(argv: list, returncode: int) -> bool:
+        # pkill/killall: 1 means no matching process (already clean).
+        if argv and argv[0] in ("pkill", "killall") and returncode in (0, 1):
+            return True
+        # docker rm -f: 1 often means container already absent.
+        if (
+            len(argv) >= 2
+            and argv[0] == "docker"
+            and argv[1] == "rm"
+            and returncode in (0, 1)
+        ):
+            return True
+        return returncode == 0
+
+    def _run_cleanup_commands(self, commands: list) -> tuple[bool, str]:
         for argv in commands:
             if not isinstance(argv, list) or not argv:
                 return False, "清理命令格式无效"
@@ -167,11 +187,24 @@ class SessionSupervisor:
                 )
             except (OSError, subprocess.TimeoutExpired) as exc:
                 return False, f"清理失败: {exc}"
-            if result.returncode != 0:
+            if not self._cleanup_argv_ok(argv, result.returncode):
                 cmd = " ".join(str(part) for part in argv)
                 return False, f"清理命令失败 ({cmd})"
-
         return True, "清理完成"
+
+    def _count_skye_robot_driver(self) -> int:
+        try:
+            result = subprocess.run(
+                ["pgrep", "-fc", "skye_robot_driver"],
+                capture_output=True,
+                text=True,
+                timeout=5.0,
+            )
+            if result.returncode == 0:
+                return int(result.stdout.strip())
+        except (ValueError, OSError, subprocess.TimeoutExpired):
+            return 0
+        return 0
 
     def _tick_starting(self) -> None:
         if not self._steps:
@@ -229,19 +262,7 @@ class SessionSupervisor:
         if not os.path.isfile(xml_path):
             return False, f"缺少 FastDDS 配置: {xml_path}"
 
-        count = 0
-        try:
-            result = subprocess.run(
-                ["pgrep", "-fc", "skye_robot_driver"],
-                capture_output=True,
-                text=True,
-                timeout=5.0,
-            )
-            if result.returncode == 0:
-                count = int(result.stdout.strip())
-        except (ValueError, OSError, subprocess.TimeoutExpired):
-            count = 0
-
+        count = self._count_skye_robot_driver()
         if count > 0:
             profile = self.logic.profile()
             mode = self.logic.mode()
@@ -251,6 +272,15 @@ class SessionSupervisor:
                 steps = playbook_for(mode, self.repo_root, profile, self.cfg)
                 first_is_driver = bool(steps) and steps[0].get("id") == "driver"
             if not (allow and first_is_driver):
-                return False, "检测到残留 skye_robot_driver，请先执行 cleanup"
+                commands = self.cfg.get("cleanup_stale_commands") or list(
+                    _DEFAULT_DRIVER_CLEANUP
+                )
+                ok, reason = self._run_cleanup_commands(commands)
+                if not ok:
+                    return False, f"残留 skye_robot_driver 自动清理失败: {reason}"
+                time.sleep(0.3)
+                if self._count_skye_robot_driver() > 0:
+                    return False, "检测到残留 skye_robot_driver，自动清理后仍存在"
+                logger.warning("已自动清理残留 driver")
 
         return True, "ok"

@@ -58,7 +58,7 @@ google-chrome --app=http://127.0.0.1:8765
 
 | 操作                        | 作用                                                                                                                   |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| **开始会话**                  | 预检 → 按 playbook 逐步拉起子进程（driver、Docker 小臂、recorder/arbiter 等）                                                         |
+| **开始会话**                  | 预检 → 若发现残留 `skye_robot_driver`（且未开启复用）则自动执行 `cleanup_stale_commands` 并复检 → 按 playbook 逐步拉起子进程（driver、Docker 小臂、recorder/arbiter 等） |
 | **结束会话**                  | 有序停止子进程组，**强制** `docker rm -f skye_marvin_m6`，并默认跑主臂 Dynamixel 去使能；回到 IDLE。**结束前请托住小臂**（去使能后会下落）。改 profile 或模式前必须先结束 |
 | **急停** (`emergency_stop`) | 调用 `/gento/emergency_stop`，**不结束会话**；会话仍在 READY/RUNNING，可继续操作或再点结束会话                                                 |
 
@@ -69,9 +69,15 @@ google-chrome --app=http://127.0.0.1:8765
 
 ## 退出机制
 
-```
+正常退出 Operator UI，可使用以下命令：
+
+```bash
 pkill -f 'skye_operator_ui|operator_ui' || true
-# 仍不行再：
+```
+
+如上命令无效，则可强制杀死相关进程（以 2400740 为进程号示例）：
+
+```bash
 kill -9 2400740
 ```
 
