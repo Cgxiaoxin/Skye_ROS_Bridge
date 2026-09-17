@@ -8,6 +8,7 @@ serial port or Dynamixel hardware is accessed.
 """
 
 from collections import deque
+import math
 
 import pytest
 
@@ -17,6 +18,117 @@ from skye_factr_teleop import dynamixel_driver as driver_module
 COMM_SUCCESS = 0
 IDS = (1, 2)
 SERVO_TYPES = ("XM430-W350", "XC330-T288")
+
+
+def test_control_table_constants_match_protocol_2_layout():
+    assert driver_module.PROTOCOL_VERSION == 2.0
+    assert driver_module.ADDR_OPERATING_MODE == 11
+    assert driver_module.ADDR_TORQUE_ENABLE == 64
+    assert driver_module.ADDR_GOAL_CURRENT == 102
+    assert driver_module.LEN_GOAL_CURRENT == 2
+    assert driver_module.ADDR_PRESENT_VELOCITY == 128
+    assert driver_module.LEN_PRESENT_VELOCITY == 4
+    assert driver_module.ADDR_PRESENT_POSITION == 132
+    assert driver_module.LEN_PRESENT_POSITION == 4
+    assert driver_module.LEN_SYNC_STATE == 8
+    assert driver_module.CURRENT_CONTROL_MODE == 0
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        (0x00000000, 0),
+        (0x7FFFFFFF, 2_147_483_647),
+        (0x80000000, -2_147_483_648),
+        (0xFFFFFFFF, -1),
+    ],
+)
+def test_uint32_to_int32(raw, expected):
+    assert driver_module.uint32_to_int32(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (0, [0x00, 0x00]),
+        (1, [0x01, 0x00]),
+        (32767, [0xFF, 0x7F]),
+        (-1, [0xFF, 0xFF]),
+        (-32768, [0x00, 0x80]),
+    ],
+)
+def test_encode_goal_current_is_signed_16_bit_little_endian(value, expected):
+    assert driver_module.encode_goal_current(value) == expected
+
+
+@pytest.mark.parametrize("bad", [-32769, 32768])
+def test_encode_goal_current_rejects_values_outside_int16(bad):
+    with pytest.raises(ValueError, match="16-bit"):
+        driver_module.encode_goal_current(bad)
+
+
+def test_position_and_velocity_units_convert_to_si():
+    assert driver_module.position_ticks_to_radians(0) == 0.0
+    assert driver_module.position_ticks_to_radians(2048) == pytest.approx(math.pi)
+    assert driver_module.position_ticks_to_radians(-2048) == pytest.approx(-math.pi)
+
+    one_velocity_unit = 0.229 * 2.0 * math.pi / 60.0
+    assert driver_module.velocity_units_to_rad_s(1) == pytest.approx(
+        one_velocity_unit
+    )
+    assert driver_module.velocity_units_to_rad_s(-10) == pytest.approx(
+        -10.0 * one_velocity_unit
+    )
+
+
+@pytest.mark.parametrize(
+    "alias, canonical",
+    [
+        ("XM430-W350", "XM430-W350"),
+        ("XM430-W350-T", "XM430-W350"),
+        ("XM430_W350", "XM430-W350"),
+        ("XM430_W350_T", "XM430-W350"),
+        ("XC330-T288", "XC330-T288"),
+        ("XC330-T288-T", "XC330-T288"),
+        ("XC330_T288", "XC330-T288"),
+        ("XC330_T288_T", "XC330-T288"),
+    ],
+)
+def test_servo_type_aliases_normalize(alias, canonical):
+    assert driver_module.normalize_servo_type(alias) == canonical
+
+
+def test_model_current_units_limits_and_torque_conversion():
+    xm = driver_module.get_servo_spec("XM430_W350_T")
+    xc = driver_module.get_servo_spec("XC330-T288")
+
+    assert xm.current_unit_ma == pytest.approx(2.69)
+    assert xm.current_limit_raw == 1193
+    assert xm.current_limit_ma == pytest.approx(1193 * 2.69)
+    assert xm.torque_nm_per_amp == pytest.approx(1.783)
+
+    assert xc.current_unit_ma == pytest.approx(1.0)
+    assert xc.current_limit_raw == 910
+    assert xc.current_limit_ma == pytest.approx(910.0)
+    assert xc.torque_nm_per_amp == pytest.approx(1.136)
+
+    assert driver_module.torque_nm_to_current_ma(1.783, "XM430-W350") == pytest.approx(
+        1000.0
+    )
+    assert driver_module.torque_nm_to_current_ma(-1.136, "XC330_T288") == pytest.approx(
+        -1000.0
+    )
+    assert driver_module.current_ma_to_raw(269.0, "XM430-W350") == 100
+    assert driver_module.current_ma_to_raw(-100.0, "XC330-T288") == -100
+
+
+def test_conversion_input_validation_and_model_current_limit():
+    with pytest.raises(ValueError, match="unsupported servo type"):
+        driver_module.normalize_servo_type("unknown")
+    with pytest.raises(ValueError, match="finite"):
+        driver_module.torque_nm_to_current_ma(float("nan"), "XM430-W350")
+    with pytest.raises(ValueError, match="current limit"):
+        driver_module.current_ma_to_raw(1000.0, "XC330-T288")
 
 
 class FakePortHandler:
