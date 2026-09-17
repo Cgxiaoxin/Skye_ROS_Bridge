@@ -324,6 +324,81 @@ def test_open_performs_safe_initialization_in_order(driver_factory, fake_sdk):
     assert driver.torque_enabled is True
 
 
+def test_open_is_idempotent(driver_factory, fake_sdk):
+    driver = driver_factory()
+    driver.open()
+    fake_sdk.events.clear()
+
+    driver.open()
+
+    assert fake_sdk.events == []
+
+
+def test_by_id_resolution_and_ftdi_latency_read(monkeypatch, tmp_path):
+    by_id = tmp_path / "by-id"
+    by_id.mkdir()
+    device = tmp_path / "ttyUSB7"
+    device.touch()
+    link = by_id / "usb-FTDI-test"
+    link.symlink_to(device)
+    sys_tty = tmp_path / "sys-class-tty"
+    latency = sys_tty / "ttyUSB7" / "device" / "latency_timer"
+    latency.parent.mkdir(parents=True)
+    latency.write_text("1\n", encoding="ascii")
+    monkeypatch.setattr(driver_module, "SERIAL_BY_ID_DIRECTORY", by_id)
+    monkeypatch.setattr(driver_module, "SYS_TTY_DIRECTORY", sys_tty)
+
+    resolved = driver_module.resolve_serial_port("usb-FTDI-test")
+
+    assert resolved == link
+    assert driver_module.read_ftdi_latency_timer(resolved) == 1
+
+
+def test_open_rejects_nonoptimal_ftdi_latency_before_bus_access(
+    driver_factory, fake_sdk, monkeypatch
+):
+    driver = driver_factory()
+    monkeypatch.setattr(driver_module, "read_ftdi_latency_timer", lambda port: 16)
+    fake_sdk.events.clear()
+
+    with pytest.raises(driver_module.DynamixelPortError, match="expected 1"):
+        driver.open()
+
+    assert fake_sdk.events == []
+
+
+def test_operating_mode_change_requires_torque_disabled(driver_factory, fake_sdk):
+    driver = driver_factory()
+    driver.open()
+    fake_sdk.events.clear()
+
+    with pytest.raises(driver_module.DynamixelError, match="torque.*disabled"):
+        driver.set_operating_mode(0)
+    assert fake_sdk.events == []
+
+    driver.set_torque_enabled(False)
+    fake_sdk.events.clear()
+    driver.set_operating_mode(0)
+    assert fake_sdk.events == [
+        ("write1", 1, 11, 0),
+        ("write1", 2, 11, 0),
+    ]
+
+
+def test_enabling_torque_first_verifies_current_mode(driver_factory, fake_sdk):
+    driver = driver_factory()
+    driver.open()
+    driver.set_torque_enabled(False)
+    fake_sdk.operating_mode = 3
+    fake_sdk.events.clear()
+
+    with pytest.raises(driver_module.DynamixelSdkError, match="device ID 1"):
+        driver.set_torque_enabled(True)
+
+    assert fake_sdk.events == [("read1", 1, 11)]
+    assert driver.torque_enabled is False
+
+
 def test_read_state_uses_one_sync_transaction_and_reads_both_registers(
     driver_factory, fake_sdk
 ):
@@ -362,6 +437,39 @@ def test_read_state_retries_a_failed_sync_transaction(driver_factory, fake_sdk):
     ]
 
 
+def test_read_state_stops_after_bounded_retries(driver_factory, fake_sdk):
+    driver = driver_factory()
+    driver.open()
+    fake_sdk.events.clear()
+    fake_sdk.read_tx_results.extend((-1001, -1001, -1001, COMM_SUCCESS))
+
+    with pytest.raises(driver_module.DynamixelSdkError, match="communication error"):
+        driver.read_state()
+
+    assert fake_sdk.events == [("read.txRxPacket",)] * 3
+
+
+def test_read_state_decodes_signed_registers_and_converts_units(
+    driver_factory, fake_sdk
+):
+    driver = driver_factory()
+    driver.open()
+    fake_sdk.read_data.update(
+        {
+            (1, 128, 4): 0xFFFFFFFF,
+            (1, 132, 4): 2048,
+            (2, 128, 4): 10,
+            (2, 132, 4): 0xFFFFF800,
+        }
+    )
+
+    positions, velocities = driver.read_state()
+
+    assert positions.tolist() == pytest.approx([math.pi, -math.pi])
+    velocity_scale = 0.229 * 2.0 * math.pi / 60.0
+    assert velocities.tolist() == pytest.approx([-velocity_scale, 10 * velocity_scale])
+
+
 def test_write_currents_sync_writes_every_id_and_always_clears_params(
     driver_factory, fake_sdk
 ):
@@ -385,6 +493,42 @@ def test_write_currents_sync_writes_every_id_and_always_clears_params(
     assert fake_sdk.events[-1] == ("write.clearParam",)
 
 
+@pytest.mark.parametrize(
+    "currents, error",
+    [
+        ([0.0], "2 values"),
+        ([float("nan"), 0.0], "finite"),
+        ([4000.0, 0.0], "current limit"),
+        ([0.0, 1000.0], "current limit"),
+    ],
+)
+def test_write_currents_validates_before_bus_access(
+    driver_factory, fake_sdk, currents, error
+):
+    driver = driver_factory()
+    driver.open()
+    fake_sdk.events.clear()
+
+    with pytest.raises(ValueError, match=error):
+        driver.write_currents(currents)
+
+    assert fake_sdk.events == []
+
+
+def test_write_currents_clears_params_when_add_param_fails(
+    driver_factory, fake_sdk
+):
+    driver = driver_factory()
+    driver.open()
+    fake_sdk.write_add_results[2] = False
+    fake_sdk.events.clear()
+
+    with pytest.raises(driver_module.DynamixelSdkError, match="device ID 2"):
+        driver.write_currents([0.0, 0.0])
+
+    assert fake_sdk.events[-1] == ("write.clearParam",)
+
+
 def test_close_zeroes_current_disables_torque_then_closes_port(
     driver_factory, fake_sdk
 ):
@@ -404,6 +548,23 @@ def test_close_zeroes_current_disables_torque_then_closes_port(
         ("closePort",),
     ]
     assert driver.torque_enabled is False
+
+
+def test_close_still_disables_torque_and_closes_after_zero_write_failure(
+    driver_factory, fake_sdk
+):
+    driver = driver_factory()
+    driver.open()
+    fake_sdk.write_tx_result = -1001
+    fake_sdk.events.clear()
+
+    with pytest.raises(driver_module.DynamixelSdkError, match="sync write"):
+        driver.close()
+
+    assert ("write1", 1, 64, 0) in fake_sdk.events
+    assert ("write1", 2, 64, 0) in fake_sdk.events
+    assert fake_sdk.events[-1] == ("closePort",)
+    assert driver.is_open is False
 
 
 def test_sdk_error_reports_operation_and_device_id(driver_factory, fake_sdk):
