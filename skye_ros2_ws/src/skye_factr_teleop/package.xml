@@ -9,6 +9,7 @@
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
+  <depend>python3-yaml</depend>
 
   <test_depend>python3-pytest</test_depend>
 

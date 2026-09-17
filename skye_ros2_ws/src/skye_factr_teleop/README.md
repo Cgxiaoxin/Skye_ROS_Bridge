@@ -3,9 +3,16 @@
 ROS 2 Humble `ament_python` package for Skye/M6 FACTR-style leader-arm
 teleoperation.
 
-This commit contains only the package skeleton from development-plan task 1.1.
-Control, hardware, configuration, and launch behavior are implemented in later
-tasks.
+The package skeleton and immutable YAML configuration model from development-plan
+tasks 1.1 and 1.2 are implemented. Control, hardware, and launch behavior are
+implemented in later tasks.
+
+## Configuration
+
+The verified default Thor M6 parameters are installed as
+`config/grav_comp_m6_left.yaml` and `config/grav_comp_m6_right.yaml`. Load and
+validate either file with `skye_factr_teleop.config.load_config`. Returned nested
+dataclasses and numeric tuples are immutable.
 
 ## Entry point
 
