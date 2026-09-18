@@ -144,7 +144,7 @@ skye_ros2_ws/src/skye_factr_description/
 仓库级基线记录：
 
 ```text
-dev_docs/skye_factr_teleop_phase0_baseline.md
+skye_ros2_ws/src/skye_factr_teleop/dev_docs/skye_factr_teleop_phase0_baseline.md
 ```
 
 该记录包含：
@@ -244,7 +244,8 @@ source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
 
 该命令在主机成功后，才认为运行依赖门禁通过。
 
-阶段完成条件：`dev_docs/skye_factr_teleop_phase0_baseline.md` 已完成并覆盖许可、ROS
+阶段完成条件：`skye_ros2_ws/src/skye_factr_teleop/dev_docs/skye_factr_teleop_phase0_baseline.md`
+已完成并覆盖许可、ROS
 契约和依赖方案；此时仍不要求 `skye_factr_teleop` 功能包存在。
 
 ## 5. 阶段 1：包骨架、配置和描述资源
