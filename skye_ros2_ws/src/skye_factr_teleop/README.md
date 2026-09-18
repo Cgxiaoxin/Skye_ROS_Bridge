@@ -54,6 +54,43 @@ operator checks. Follow the
 [phase 2.5.1 read-only checklist](dev_docs/skye_factr_teleop_phase2_5_readonly_checklist.md)
 before using the result as phase 2.5.1 acceptance evidence.
 
+For first-time ID and direction acceptance, use guided mode. It keeps the bus
+read-only, prompts for one positive movement per device, captures the stationary,
+movement, stop-grace, and stable-endpoint windows itself, and writes one combined
+JSON record per side:
+
+```bash
+ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
+  --guided --side left \
+  --config src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
+  --baseline-frames 50 --movement-frames 200 \
+  --settle-frames 50 --endpoint-frames 100 \
+  --interval 0.02 --max-abs-velocity 20.0 --max-position-step 0.2 \
+  --max-hold-velocity 0.05 --max-hold-position-span 0.01 \
+  --output validation_records/phase2_5_1/left_guided.json
+```
+
+Repeat with the right-side YAML. The command succeeds only when the bus check and
+all eight guided ID/direction checks pass.
+
+For encoder-boundary acceptance, run one guided continuous check per side. Test
+safe joints and record an explicit skip reason for unsafe joints:
+
+```bash
+ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
+  --guided-continuous --ids 1,2,3,4,5,6,7 --side left \
+  --config src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
+  --baseline-frames 50 --continuous-max-frames 750 \
+  --settle-frames 50 --endpoint-frames 100 --interval 0.02 \
+  --max-position-step 0.2 --motion-reversal-tolerance 0.02 \
+  --max-hold-velocity 0.05 --max-hold-position-span 0.01 \
+  --output validation_records/phase2_5_1/left_continuous.json
+```
+
+The tool reports the nearest boundary and physical URDF direction, stops the
+sampling phase as soon as it detects a crossing or discontinuity, and distinguishes
+`PASS`, `FAIL`, `INCONCLUSIVE`, and `SKIPPED_UNSAFE` results.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) and
