@@ -22,6 +22,7 @@ SERVO_TYPES = ("XM430-W350", "XC330-T288")
 
 def test_control_table_constants_match_protocol_2_layout():
     assert driver_module.PROTOCOL_VERSION == 2.0
+    assert driver_module.ADDR_RETURN_DELAY_TIME == 9
     assert driver_module.ADDR_OPERATING_MODE == 11
     assert driver_module.ADDR_TORQUE_ENABLE == 64
     assert driver_module.ADDR_GOAL_CURRENT == 102
@@ -32,6 +33,8 @@ def test_control_table_constants_match_protocol_2_layout():
     assert driver_module.LEN_PRESENT_POSITION == 4
     assert driver_module.LEN_SYNC_STATE == 8
     assert driver_module.CURRENT_CONTROL_MODE == 0
+    assert driver_module.MODEL_NUMBERS["XM430-W350"] == 1020
+    assert driver_module.MODEL_NUMBERS["XC330-T288"] == 1220
 
 
 @pytest.mark.parametrize(
@@ -166,8 +169,14 @@ class FakePacketHandler:
 
     def read1ByteTxRx(self, port, dxl_id, address):
         self.sdk.events.append(("read1", dxl_id, address))
+        if address == driver_module.ADDR_RETURN_DELAY_TIME:
+            default = self.sdk.return_delay_time
+        elif address == driver_module.ADDR_TORQUE_ENABLE:
+            default = self.sdk.torque_enable
+        else:
+            default = self.sdk.operating_mode
         return self.sdk.read_results.get(
-            (dxl_id, address), (self.sdk.operating_mode, COMM_SUCCESS, 0)
+            (dxl_id, address), (default, COMM_SUCCESS, 0)
         )
 
     def getTxRxResult(self, result):
@@ -226,6 +235,8 @@ class FakeSdk:
         self.open_ok = True
         self.baudrate_ok = True
         self.operating_mode = 0
+        self.return_delay_time = 0
+        self.torque_enable = 0
         self.ping_results = {}
         self.write_results = {}
         self.read_results = {}
@@ -330,6 +341,82 @@ def test_open_is_idempotent(driver_factory, fake_sdk):
     fake_sdk.events.clear()
 
     driver.open()
+
+    assert fake_sdk.events == []
+
+
+def test_open_read_only_checks_devices_without_any_write(
+    driver_factory, fake_sdk
+):
+    fake_sdk.ping_results.update(
+        {
+            1: (1020, COMM_SUCCESS, 0),
+            2: (1220, COMM_SUCCESS, 0),
+        }
+    )
+    driver = driver_factory()
+    fake_sdk.events.clear()
+
+    driver.open_read_only()
+
+    assert fake_sdk.events == [
+        ("openPort",),
+        ("setBaudRate", 4_000_000),
+        ("ping", 1),
+        ("ping", 2),
+        ("read1", 1, 9),
+        ("read1", 1, 64),
+        ("read1", 2, 9),
+        ("read1", 2, 64),
+        ("read.addParam", 1),
+        ("read.addParam", 2),
+    ]
+    assert driver.is_open is True
+    assert driver.read_only is True
+    assert driver.torque_enabled is False
+    assert driver.device_info == (
+        driver_module.DynamixelDeviceInfo(1, 1020, 0, False),
+        driver_module.DynamixelDeviceInfo(2, 1220, 0, False),
+    )
+
+    fake_sdk.events.clear()
+    driver.close()
+    assert fake_sdk.events == [("closePort",)]
+
+
+@pytest.mark.parametrize(
+    "address, value, match",
+    [
+        (driver_module.ADDR_RETURN_DELAY_TIME, 1, "Return Delay Time.*ID 2"),
+        (driver_module.ADDR_TORQUE_ENABLE, 1, "torque is enabled.*ID 2"),
+    ],
+)
+def test_open_read_only_rejects_unsafe_device_state_without_writing(
+    driver_factory, fake_sdk, address, value, match
+):
+    fake_sdk.read_results[(2, address)] = (value, COMM_SUCCESS, 0)
+    driver = driver_factory()
+    fake_sdk.events.clear()
+
+    with pytest.raises(driver_module.DynamixelSdkError, match=match):
+        driver.open_read_only()
+
+    assert not any(event[0].startswith("write") for event in fake_sdk.events)
+    assert fake_sdk.events[-1] == ("closePort",)
+    assert driver.is_open is False
+
+
+def test_read_only_driver_rejects_write_operations(driver_factory, fake_sdk):
+    driver = driver_factory()
+    driver.open_read_only()
+    fake_sdk.events.clear()
+
+    with pytest.raises(driver_module.DynamixelError, match="read-only"):
+        driver.set_torque_enabled(False)
+    with pytest.raises(driver_module.DynamixelError, match="read-only"):
+        driver.set_operating_mode(0)
+    with pytest.raises(driver_module.DynamixelError, match="read-only"):
+        driver.write_currents([0.0, 0.0])
 
     assert fake_sdk.events == []
 
@@ -447,6 +534,26 @@ def test_read_state_stops_after_bounded_retries(driver_factory, fake_sdk):
         driver.read_state()
 
     assert fake_sdk.events == [("read.txRxPacket",)] * 3
+
+
+def test_read_state_failure_diagnoses_missing_device_id(
+    driver_factory, fake_sdk
+):
+    driver = driver_factory()
+    driver.open_read_only()
+    fake_sdk.events.clear()
+    fake_sdk.read_tx_results.extend((-1001, -1001, -1001))
+    fake_sdk.ping_results[2] = (0, -1001, 0)
+
+    with pytest.raises(driver_module.DynamixelSdkError) as caught:
+        driver.read_state()
+
+    message = str(caught.value)
+    assert "read_state" in message
+    assert "ping" in message
+    assert "device ID 2" in message
+    assert fake_sdk.events[-2:] == [("ping", 1), ("ping", 2)]
+    assert not any(event[0].startswith("write") for event in fake_sdk.events)
 
 
 def test_read_state_decodes_signed_registers_and_converts_units(

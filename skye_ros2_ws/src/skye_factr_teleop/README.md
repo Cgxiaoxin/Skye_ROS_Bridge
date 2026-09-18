@@ -26,6 +26,34 @@ ros2 run skye_factr_teleop skye_factr_teleop_driver
 The keyboard entry point is intentionally deferred until basic hardware
 acceptance is complete.
 
+## Phase 2.5.1 read-only bus check
+
+`skye_factr_dynamixel_readonly_check` calls the production
+`DynamixelDriver` without starting ROS control nodes. Its read-only lifecycle
+only opens the serial port, sets the host baud rate, pings IDs 1--8, reads
+Return Delay Time and Torque Enable, and reads present position/velocity. It
+never writes an actuator register. It refuses to continue unless Return Delay
+Time is 0, torque is already disabled, the baud rate is 4 Mbps, and the FTDI
+latency timer is 1.
+
+From the `skye_ros2_ws` directory after building and sourcing the workspace:
+
+```bash
+ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
+  --side left \
+  --config src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
+  --frames 500 --interval 0.02 \
+  --output /tmp/skye_phase2_5_left.json
+```
+
+Use the corresponding right-side YAML and output path for the right bus. An
+automated `PASS` covers serial configuration, device identity, torque-off state,
+and sampled numeric ranges. USB side mapping, physical ID order, joint direction,
+continuous-angle motion, and the deliberate single-device disconnect remain
+operator checks. Follow the
+[phase 2.5.1 read-only checklist](dev_docs/skye_factr_teleop_phase2_5_readonly_checklist.md)
+before using the result as phase 2.5.1 acceptance evidence.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) and

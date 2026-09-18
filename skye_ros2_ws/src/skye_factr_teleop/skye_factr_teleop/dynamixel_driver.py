@@ -24,6 +24,7 @@ from dynamixel_sdk import (
 
 PROTOCOL_VERSION = 2.0
 
+ADDR_RETURN_DELAY_TIME = 9
 ADDR_OPERATING_MODE = 11
 ADDR_TORQUE_ENABLE = 64
 ADDR_GOAL_CURRENT = 102
@@ -64,6 +65,16 @@ class ServoSpec:
         return self.current_unit_ma * self.current_limit_raw
 
 
+@dataclass(frozen=True)
+class DynamixelDeviceInfo:
+    """Read-only identity and safety state captured while opening a bus."""
+
+    device_id: int
+    model_number: int
+    return_delay_time: int
+    torque_enabled: bool
+
+
 # Sources (ROBOTIS e-Manual, accessed 2026-09-17):
 # https://emanual.robotis.com/docs/en/dxl/x/xm430-w350/
 #   Current/Goal Current unit: 2.69 mA; Current Limit range: 0..1193.
@@ -98,6 +109,16 @@ SERVO_TYPE_ALIASES = MappingProxyType(
         "XC330-T288-T": "XC330-T288",
         "XC330_T288": "XC330-T288",
         "XC330_T288_T": "XC330-T288",
+    }
+)
+
+# Official ROBOTIS control-table model numbers.  They are checked by the
+# phase-2.5 read-only tool so an ID wired to the wrong joint is visible before
+# any actuator register is written.
+MODEL_NUMBERS = MappingProxyType(
+    {
+        "XM430-W350": 1020,
+        "XC330-T288": 1220,
     }
 )
 
@@ -304,8 +325,10 @@ class DynamixelDriver(DynamixelIO):
         self._lock = RLock()
         self._port_open = False
         self._is_open = False
+        self._read_only = False
         self._torque_enabled = False
         self._latency_timer: int | None = None
+        self._device_info: tuple[DynamixelDeviceInfo, ...] = ()
 
         self._port_handler = PortHandler(str(self._port))
         self._packet_handler = PacketHandler(PROTOCOL_VERSION)
@@ -333,6 +356,17 @@ class DynamixelDriver(DynamixelIO):
             return self._is_open
 
     @property
+    def read_only(self) -> bool:
+        with self._lock:
+            return self._read_only
+
+    @property
+    def device_info(self) -> tuple[DynamixelDeviceInfo, ...]:
+        """Return device metadata captured by :meth:`open_read_only`."""
+        with self._lock:
+            return self._device_info
+
+    @property
     def port(self) -> str:
         return str(self._port)
 
@@ -344,52 +378,91 @@ class DynamixelDriver(DynamixelIO):
         """Open and configure every expected servo in a safe order."""
         with self._lock:
             if self._is_open:
+                if self._read_only:
+                    raise DynamixelError(
+                        "Dynamixel driver is already open in read-only mode"
+                    )
                 return
 
-            self._port = resolve_serial_port(self._configured_port)
-            self._latency_timer = read_ftdi_latency_timer(self._port)
-            if self._latency_timer is not None and self._latency_timer != 1:
-                raise DynamixelPortError(
-                    f"FTDI latency timer for {self._port} is "
-                    f"{self._latency_timer}, expected 1"
-                )
-
             try:
-                if not self._port_handler.openPort():
-                    raise DynamixelPortError(f"failed to open serial port {self._port}")
-                self._port_open = True
-                if not self._port_handler.setBaudRate(self._baudrate):
-                    raise DynamixelPortError(
-                        f"failed to set baudrate {self._baudrate} on {self._port}"
-                    )
-
-                for dxl_id in self._ids:
-                    _, comm_result, device_error = self._packet_handler.ping(
-                        self._port_handler, dxl_id
-                    )
-                    self._check_sdk_result(
-                        "ping", dxl_id, comm_result, device_error
-                    )
-
-                for dxl_id in self._ids:
-                    if not self._sync_read.addParam(dxl_id):
-                        raise DynamixelSdkError(
-                            f"sync read addParam failed for device ID {dxl_id}"
-                        )
+                self._open_serial_locked()
+                self._ping_devices_locked()
+                self._register_sync_read_locked()
 
                 self._set_torque_enabled_locked(False)
                 self._set_operating_mode_locked(CURRENT_CONTROL_MODE)
                 self._verify_operating_mode_locked(CURRENT_CONTROL_MODE)
                 self._set_torque_enabled_locked(True)
+                self._read_only = False
+                self._device_info = ()
                 self._is_open = True
             except Exception:
                 self._cleanup_failed_open_locked()
+                raise
+
+    def open_read_only(self) -> None:
+        """Open the bus for phase-2.5 inspection without issuing any write.
+
+        Every expected device must answer ping, report Return Delay Time 0, and
+        already have torque disabled.  Failure cleanup only closes the serial
+        port; it deliberately does not attempt a safety write because this
+        lifecycle is used to prove read-only communication.
+        """
+        with self._lock:
+            if self._is_open:
+                if not self._read_only:
+                    raise DynamixelError(
+                        "Dynamixel driver is already open in writable mode"
+                    )
+                return
+
+            try:
+                self._open_serial_locked()
+                model_numbers = self._ping_devices_locked()
+                device_info = []
+                for dxl_id, model_number in zip(self._ids, model_numbers):
+                    return_delay = self._read_byte_locked(
+                        dxl_id,
+                        ADDR_RETURN_DELAY_TIME,
+                        "read Return Delay Time",
+                    )
+                    torque_value = self._read_byte_locked(
+                        dxl_id,
+                        ADDR_TORQUE_ENABLE,
+                        "read Torque Enable",
+                    )
+                    if return_delay != 0:
+                        raise DynamixelSdkError(
+                            "Return Delay Time is not 0 for device "
+                            f"ID {dxl_id}: got {return_delay}"
+                        )
+                    if torque_value != TORQUE_DISABLE:
+                        raise DynamixelSdkError(
+                            f"torque is enabled for device ID {dxl_id}"
+                        )
+                    device_info.append(
+                        DynamixelDeviceInfo(
+                            device_id=dxl_id,
+                            model_number=model_number,
+                            return_delay_time=return_delay,
+                            torque_enabled=False,
+                        )
+                    )
+
+                self._register_sync_read_locked()
+                self._device_info = tuple(device_info)
+                self._read_only = True
+                self._torque_enabled = False
+                self._is_open = True
+            except Exception:
+                self._cleanup_failed_open_locked(allow_writes=False)
                 raise
 
     def set_operating_mode(self, mode: int) -> None:
         """Set Operating Mode while all servos are torque-disabled."""
         with self._lock:
             self._require_port_open()
+            self._require_writable()
             self._set_operating_mode_locked(mode)
 
     def verify_operating_mode(self, expected_mode: int) -> None:
@@ -404,6 +477,7 @@ class DynamixelDriver(DynamixelIO):
             raise TypeError("enabled must be a bool")
         with self._lock:
             self._require_port_open()
+            self._require_writable()
             if enabled:
                 self._verify_operating_mode_locked(CURRENT_CONTROL_MODE)
             self._set_torque_enabled_locked(enabled)
@@ -419,6 +493,8 @@ class DynamixelDriver(DynamixelIO):
                     break
             else:
                 detail = self._packet_handler.getTxRxResult(last_result)
+                if self._read_only:
+                    raise self._diagnose_sync_read_failure_locked(detail)
                 raise DynamixelSdkError(
                     f"read_state sync read failed: {detail}"
                 )
@@ -451,6 +527,7 @@ class DynamixelDriver(DynamixelIO):
         raw_currents = self._validate_currents(currents_ma)
         with self._lock:
             self._require_open()
+            self._require_writable()
             if not self._torque_enabled:
                 raise DynamixelError("write_currents requires torque to be enabled")
             self._write_raw_currents_locked(raw_currents)
@@ -460,6 +537,15 @@ class DynamixelDriver(DynamixelIO):
         with self._lock:
             if not self._port_open:
                 self._is_open = False
+                self._read_only = False
+                self._torque_enabled = False
+                return
+
+            if self._read_only:
+                self._port_handler.closePort()
+                self._port_open = False
+                self._is_open = False
+                self._read_only = False
                 self._torque_enabled = False
                 return
 
@@ -478,6 +564,7 @@ class DynamixelDriver(DynamixelIO):
                 self._port_handler.closePort()
                 self._port_open = False
                 self._is_open = False
+                self._read_only = False
                 if first_error is None:
                     self._torque_enabled = False
 
@@ -544,6 +631,70 @@ class DynamixelDriver(DynamixelIO):
             )
         return self._sync_read.getData(dxl_id, address, length)
 
+    def _read_byte_locked(
+        self, dxl_id: int, address: int, operation: str
+    ) -> int:
+        value, comm_result, device_error = self._packet_handler.read1ByteTxRx(
+            self._port_handler, dxl_id, address
+        )
+        self._check_sdk_result(operation, dxl_id, comm_result, device_error)
+        return value
+
+    def _open_serial_locked(self) -> None:
+        self._port = resolve_serial_port(self._configured_port)
+        self._latency_timer = read_ftdi_latency_timer(self._port)
+        if self._latency_timer is not None and self._latency_timer != 1:
+            raise DynamixelPortError(
+                f"FTDI latency timer for {self._port} is "
+                f"{self._latency_timer}, expected 1"
+            )
+        if not self._port_handler.openPort():
+            raise DynamixelPortError(
+                f"failed to open serial port {self._port}"
+            )
+        self._port_open = True
+        if not self._port_handler.setBaudRate(self._baudrate):
+            raise DynamixelPortError(
+                f"failed to set baudrate {self._baudrate} on {self._port}"
+            )
+
+    def _ping_devices_locked(self) -> tuple[int, ...]:
+        model_numbers = []
+        for dxl_id in self._ids:
+            ping_result = self._packet_handler.ping(self._port_handler, dxl_id)
+            model_number, comm_result, device_error = ping_result
+            self._check_sdk_result("ping", dxl_id, comm_result, device_error)
+            model_numbers.append(model_number)
+        return tuple(model_numbers)
+
+    def _register_sync_read_locked(self) -> None:
+        for dxl_id in self._ids:
+            if not self._sync_read.addParam(dxl_id):
+                raise DynamixelSdkError(
+                    f"sync read addParam failed for device ID {dxl_id}"
+                )
+
+    def _diagnose_sync_read_failure_locked(
+        self, sync_detail: str
+    ) -> DynamixelSdkError:
+        failures = []
+        for dxl_id in self._ids:
+            _, comm_result, device_error = self._packet_handler.ping(
+                self._port_handler, dxl_id
+            )
+            if comm_result == COMM_SUCCESS and device_error == 0:
+                continue
+            details = self._sdk_result_details(comm_result, device_error)
+            failures.append(f"ping failed for device ID {dxl_id}: {details}")
+        diagnosis = (
+            "; ".join(failures)
+            if failures
+            else "all diagnostic pings replied"
+        )
+        return DynamixelSdkError(
+            f"read_state sync read failed: {sync_detail}; {diagnosis}"
+        )
+
     def _write_raw_currents_locked(self, raw_currents: Sequence[int]) -> None:
         try:
             for dxl_id, raw_current in zip(self._ids, raw_currents):
@@ -587,14 +738,18 @@ class DynamixelDriver(DynamixelIO):
     ) -> None:
         if comm_result == COMM_SUCCESS and device_error == 0:
             return
+        raise DynamixelSdkError(
+            f"{operation} failed for device ID {dxl_id}: "
+            f"{self._sdk_result_details(comm_result, device_error)}"
+        )
+
+    def _sdk_result_details(self, comm_result: int, device_error: int) -> str:
         details = []
         if comm_result != COMM_SUCCESS:
             details.append(self._packet_handler.getTxRxResult(comm_result))
         if device_error != 0:
             details.append(self._packet_handler.getRxPacketError(device_error))
-        raise DynamixelSdkError(
-            f"{operation} failed for device ID {dxl_id}: {'; '.join(details)}"
-        )
+        return "; ".join(details)
 
     def _require_port_open(self) -> None:
         if not self._port_open:
@@ -604,16 +759,21 @@ class DynamixelDriver(DynamixelIO):
         if not self._is_open:
             raise DynamixelError("Dynamixel driver is not open")
 
-    def _cleanup_failed_open_locked(self) -> None:
+    def _require_writable(self) -> None:
+        if self._read_only:
+            raise DynamixelError("operation is unavailable in read-only mode")
+
+    def _cleanup_failed_open_locked(self, allow_writes: bool = True) -> None:
         if self._port_open:
-            try:
-                self._set_torque_enabled_locked(False)
-            except Exception:
-                pass
-            finally:
-                self._port_handler.closePort()
+            if allow_writes:
+                try:
+                    self._set_torque_enabled_locked(False)
+                except Exception:
+                    pass
+            self._port_handler.closePort()
         self._port_open = False
         self._is_open = False
+        self._read_only = False
         self._torque_enabled = False
 
 
