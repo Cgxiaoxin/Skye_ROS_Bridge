@@ -62,13 +62,20 @@ def test_playbook_for_teleop_record():
     cfg = {"step_timeout_s": 90.0}
     steps = playbook_for(UiMode.teleop_record, repo, "thor", cfg)
     assert steps[0]["id"] == "driver"
-    assert steps[0]["argv"] == [f"{repo}/scripts/start_skye_for_factr.sh"]
+    assert steps[0]["argv"] == [f"{repo}/scripts/start_skye_for_factr.sh", "thor"]
     assert steps[0]["env"]["ROBOT_PROFILE"] == "thor"
+    assert steps[0]["env"]["ROBOT_IP"] == "6.6.7.191"
     assert steps[0]["health_key"] == "driver"
     assert steps[1]["id"] == "marvin"
-    assert steps[1]["argv"] == [f"{repo}/scripts/run_marvin_m6_impedance.sh"]
+    assert steps[1]["argv"] == [
+        f"{repo}/scripts/run_marvin_m6_impedance.sh",
+        "thor",
+    ]
+    assert steps[1]["env"]["ROBOT_PROFILE"] == "thor"
+    assert steps[1]["env"]["ROBOT_IP"] == "6.6.7.191"
     optional = [s for s in steps if s.get("optional")]
-    assert any(s["id"] == "align" for s in optional)
+    align = next(s for s in optional if s["id"] == "align")
+    assert align["argv"] == [f"{repo}/scripts/start_follower_align.sh", "thor"]
 
 
 def test_playbook_for_dagger():
@@ -76,9 +83,16 @@ def test_playbook_for_dagger():
     cfg = {"step_timeout_s": 90.0}
     steps = playbook_for(UiMode.dagger, repo, "orin", cfg)
     assert steps[0]["health_key"] == "driver"
+    assert steps[0]["argv"] == [f"{repo}/scripts/start_skye_for_factr.sh", "orin"]
+    assert steps[0]["env"]["ROBOT_IP"] == "6.6.7.190"
+    assert steps[1]["argv"] == [
+        f"{repo}/scripts/run_marvin_m6_impedance.sh",
+        "orin",
+    ]
     assert steps[2]["id"] == "arbiter"
     assert steps[2]["argv"] == [f"{repo}/scripts/start_hitl_host.sh", "--arbiter-only"]
     assert steps[2]["env"]["ROBOT_PROFILE"] == "orin"
+    assert steps[2]["env"]["ROBOT_IP"] == "6.6.7.190"
     assert "ENABLE_RECORDER" not in steps[2]["env"]
     hitl_hosts = [
         s["argv"]
