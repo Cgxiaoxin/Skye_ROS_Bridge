@@ -579,3 +579,78 @@ def test_sdk_error_reports_operation_and_device_id(driver_factory, fake_sdk):
     assert "2" in message
     assert "communication error -1001" in message
     assert fake_sdk.events[-1] == ("closePort",)
+
+
+def test_fake_dynamixel_io_satisfies_protocol_and_injects_copied_state(
+    fake_dynamixel_io,
+):
+    assert isinstance(fake_dynamixel_io, driver_module.DynamixelIO)
+
+    positions = [float(index) for index in range(8)]
+    velocities = [-float(index) for index in range(8)]
+    fake_dynamixel_io.inject_state(positions, velocities)
+    actual_positions, actual_velocities = fake_dynamixel_io.read_state()
+
+    assert actual_positions.tolist() == positions
+    assert actual_velocities.tolist() == velocities
+    actual_positions[0] = 999.0
+    assert fake_dynamixel_io.read_state()[0][0] == 0.0
+
+
+def test_fake_dynamixel_io_records_latest_and_historical_currents(
+    fake_dynamixel_io,
+):
+    fake_dynamixel_io.set_torque_enabled(True)
+
+    fake_dynamixel_io.write_currents([1.0] * 8)
+    fake_dynamixel_io.write_currents([-2.0] * 8)
+
+    assert fake_dynamixel_io.last_currents_ma.tolist() == [-2.0] * 8
+    assert [item.tolist() for item in fake_dynamixel_io.current_history_ma] == [
+        [1.0] * 8,
+        [-2.0] * 8,
+    ]
+
+
+def test_fake_dynamixel_io_simulates_one_shot_timeout_and_recovery(
+    fake_dynamixel_io,
+):
+    fake_dynamixel_io.fail_next_read(TimeoutError("read timed out"))
+
+    with pytest.raises(TimeoutError, match="timed out"):
+        fake_dynamixel_io.read_state()
+
+    positions, velocities = fake_dynamixel_io.read_state()
+    assert positions.tolist() == [0.0] * 8
+    assert velocities.tolist() == [0.0] * 8
+
+
+def test_fake_dynamixel_io_simulates_communication_failure(
+    fake_dynamixel_io,
+):
+    fake_dynamixel_io.set_torque_enabled(True)
+    fake_dynamixel_io.fail_next_write(
+        driver_module.DynamixelSdkError("simulated communication failure")
+    )
+
+    with pytest.raises(driver_module.DynamixelSdkError, match="communication"):
+        fake_dynamixel_io.write_currents([0.0] * 8)
+
+    assert fake_dynamixel_io.last_currents_ma is None
+    fake_dynamixel_io.write_currents([0.0] * 8)
+    assert fake_dynamixel_io.last_currents_ma.tolist() == [0.0] * 8
+
+
+def test_fake_dynamixel_io_models_torque_and_close_state(fake_dynamixel_io):
+    assert fake_dynamixel_io.torque_enabled is False
+    with pytest.raises(driver_module.DynamixelError, match="torque"):
+        fake_dynamixel_io.write_currents([0.0] * 8)
+
+    fake_dynamixel_io.set_torque_enabled(True)
+    assert fake_dynamixel_io.torque_enabled is True
+    fake_dynamixel_io.close()
+
+    assert fake_dynamixel_io.torque_enabled is False
+    assert fake_dynamixel_io.closed is True
+    with pytest.raises(driver_module.DynamixelError, match="closed"):
+        fake_dynamixel_io.read_state()
