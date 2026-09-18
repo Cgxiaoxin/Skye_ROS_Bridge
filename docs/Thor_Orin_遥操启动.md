@@ -46,7 +46,7 @@
 | Robotiq 接线           | —                         | 左 ARM0 / 右 ARM1，均 `485A`，slave=`9` |
 | Robotiq 闭合开度         | —                         | 左 `2.0` mm / 右 `13.0` mm           |
 | 小臂标定目录               | `marvin_ws/configs/thor/` | `marvin_ws/configs/orin/`          |
-| 右小臂 J8 `joint_signs` | `+1`（与左同）                 | `+1`（旧 `-1` 会在 sync 时把张开打成闭合）      |
+| 右小臂 J8 `joint_signs` | `+1`（与左同）                 | **`-1`**（右扳机张开朝负角度；`+1` 时 sync 跟 state≈1 会打成闭合） |
 
 
 Profile 参数文件：

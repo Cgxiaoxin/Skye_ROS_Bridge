@@ -10,9 +10,9 @@ dynamixel:
   ]
   # Servo joint directions to match leader URDF / follower (大臂) frame.
   # 左臂对照: J6/J7 = -1；右臂同构需 J6/J7 = -1（旧值 +1 导致腕部与遥操反向）。
-  # J8 夹爪: 与左臂/Thor 同用 +1。旧 -1 会在 sync 跟 state≈1（开）时把扳机打成物理闭合，
-  #   之后 teleop 也张不开；配合 skye gripper_right_invert=true（FACTR 1=开 / 电机 0=开）。
-  joint_signs: [1, -1, 1, -1, 1, -1, -1, 1]
+  # J8 夹爪: Orin 右扳机物理张开朝负角度（0→负），须 -1 翻到 FACTR 正行程
+  #   （松开≈+limit_setpoint）。+1 时 sync 跟 state≈1（开）会打向闭合；gripper_right_invert 须 true。
+  joint_signs: [1, -1, 1, -1, 1, -1, -1, -1]
 
 arm_teleop:
   # URDF used for creating leader arm dynamics model to compute gravity compensation
