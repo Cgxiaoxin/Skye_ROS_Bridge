@@ -119,16 +119,19 @@ ros2 topic echo /skye/control_mode
 ## 接管 / 交还
 
 
-| 动作  | 推荐方式           | 期望 `control_mode`                           |
-| --- | -------------- | ------------------------------------------- |
-| 接管  | `takeover`（见下） | `HANDOVER_SYNC` → `HUMAN` / `source=teleop` |
-| 交还  | `return`       | `AUTONOMOUS` / `source=policy`              |
+| 动作 | 推荐方式 | 期望 `control_mode` |
+| --- | --- | --- |
+| 同步（接管第一步） | `takeover` / UI「同步」/ 键盘 `q` | `HANDOVER_SYNC` / `source=hold`（**不**自动进遥操） |
+| 进入遥操 | `enter_teleop` / UI「进入遥操」/ 键盘 `e`（须已 `SYNCED`） | `HUMAN` / `source=teleop` |
+| 交还 | `return` / UI「交还」/ 键盘 `w` | `AUTONOMOUS` / `source=policy` |
 
 
-**推荐：用 topic（launch 终端里直接按** `q`**/**`w` **常无效）：**
+**推荐：用 topic（launch 终端里直接按键常无效）：**
 
 ```bash
 ros2 topic pub --once /skye/intervention_cmd std_msgs/msg/String "{data: 'takeover'}"
+# 等 /teleop/state = SYNCED 且姿态确认安全后：
+ros2 topic pub --once /skye/intervention_cmd std_msgs/msg/String "{data: 'enter_teleop'}"
 ros2 topic pub --once /skye/intervention_cmd std_msgs/msg/String "{data: 'return'}"
 ```
 
@@ -138,12 +141,14 @@ ros2 topic pub --once /skye/intervention_cmd std_msgs/msg/String "{data: 'return
 export ROS_DOMAIN_ID=21
 source skye_ros2_ws/install/setup.bash
 ros2 run skye_hitl_dagger hitl_keyboard
-# tty: q=takeover, w=return；非 TTY 则输入后按 Enter
+# tty: q=同步(takeover), e=进入遥操, w=交还
 ```
 
-说明：`w` 仅在 `HUMAN` 下有效；`AUTONOMOUS` 下按 `w` 无效果。
+说明：`w` 在 `HUMAN` 或 `HANDOVER_SYNC` 下有效；`e` 仅在同步阶段有效。
 
-**接管对齐（`HANDOVER_SYNC`）：** 不会吃旧的 latched `SYNCED`；须先看到非对齐态（如 `TELEOP_SYNCING`）再等新的 `SYNCED`，并默认稳定 **`min_sync_hold_s:=2`** 秒后才 `switch_teleop`。卡死重发间隔为 `sync_timeout_s:=5.0`。
+**策略控制路径：** AUTONOMOUS / HANDOVER hold 写 `/gento/*_joint_control_abs`（follower 绝对角，经 inverse-sign）；HUMAN 透传 FACTR 到相对 `/gento/*_joint_control`。进入遥操前 arbiter 会调用 `hold_current` 清会话，避免假 leader→真 leader 跳变。
+
+**接管对齐（`HANDOVER_SYNC`）：** 不会吃旧的 latched `SYNCED`；须先看到非对齐态再等新的 `SYNCED`，并默认稳定 **`min_sync_hold_s:=2`** 秒。对齐完成后**停住**，由操作员点「进入遥操」才 `switch_teleop`。卡死重发间隔为 `sync_timeout_s:=5.0`。
 
 **hold 告警：** chunk 播完只 WARN 一次，之后静默继续 hold。
 
@@ -156,7 +161,7 @@ ros2 run skye_hitl_dagger hitl_keyboard
 ## 验收要点
 
 1. 初始 `AUTONOMOUS` + 策略（或 dummy）在控。
-2. `takeover` → `HUMAN`，主臂可改轨迹。
+2. `takeover` → `HANDOVER_SYNC`（同步 hold）；确认 `SYNCED` 后 `enter_teleop` → `HUMAN`，主臂可改轨迹。
 3. `return` → `AUTONOMOUS`，继续跟 chunk。
 4. 停策略发布 → 大臂 hold 末步，不自动切人；需再次 `takeover`。
 5. （可选）开 recorder，bag 含 `/skye/control_mode`。
@@ -189,7 +194,7 @@ ros2 run skye_hitl_dagger hitl_keyboard
         ↓
 ⑥ 终端 D：策略（本机 dummy 或远端 VLA → /skye/policy_action）
         ↓
-⑦ 测：策略 AUTONOMOUS → 卡住按 q → HUMAN 遥操 → 按 w 交还
+⑦ 测：策略 AUTONOMOUS → 卡住按 q 同步 → SYNCED 后按 e 进 HUMAN 遥操 → 按 w 交还
 注意：不要同时开日常 teleop launch 和 HITL launch（会抢写大臂）。
 ```
 

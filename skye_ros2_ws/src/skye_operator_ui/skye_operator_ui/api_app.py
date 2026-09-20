@@ -35,7 +35,8 @@ _PENDING_CONFIRMERS: dict[str, Any] = {
     "align_start": lambda m: m.get("align_status") == "ALIGNING"
     or m.get("align_status") in _ALIGN_DONE,
     "align_cancel": lambda m: m.get("align_status") != "ALIGNING",
-    "takeover": lambda m: m.get("hitl_mode") == "HUMAN",
+    "takeover": lambda m: m.get("hitl_mode") == "HANDOVER_SYNC",
+    "enter_teleop": lambda m: m.get("hitl_mode") == "HUMAN",
     "return": lambda m: m.get("hitl_mode") == "AUTONOMOUS",
     "recorder_start": lambda m: bool(m.get("recording_active")),
     "recorder_stop": lambda m: not m.get("recording_active"),

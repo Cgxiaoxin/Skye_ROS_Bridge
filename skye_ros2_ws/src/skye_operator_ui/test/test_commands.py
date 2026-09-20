@@ -13,6 +13,7 @@ def test_allowed_ops_exact_set():
             "recorder_start",
             "recorder_stop",
             "takeover",
+            "enter_teleop",
             "return",
             "emergency_stop",
             "hold_current",
@@ -49,7 +50,7 @@ def test_return_only_in_human():
     assert ok
 
 
-def test_takeover_only_autonomous():
+def test_enter_teleop_requires_handover_synced():
     s = SessionLogic()
     s.begin_start("thor", UiMode.dagger)
     s.precheck_ok()
@@ -67,6 +68,45 @@ def test_takeover_only_autonomous():
         session=s,
         teleop_state=None,
         hitl_mode="AUTONOMOUS",
+        align_status=None,
+    )
+    assert ok
+    ok, _ = command_allowed(
+        op="enter_teleop",
+        session=s,
+        teleop_state="SYNCED",
+        hitl_mode="AUTONOMOUS",
+        align_status=None,
+    )
+    assert not ok
+    ok, _ = command_allowed(
+        op="enter_teleop",
+        session=s,
+        teleop_state="TELEOP_SYNCING",
+        hitl_mode="HANDOVER_SYNC",
+        align_status=None,
+    )
+    assert not ok
+    ok, _ = command_allowed(
+        op="enter_teleop",
+        session=s,
+        teleop_state="SYNCED",
+        hitl_mode="HANDOVER_SYNC",
+        align_status=None,
+    )
+    assert ok
+
+
+def test_return_allowed_during_handover_sync():
+    s = SessionLogic()
+    s.begin_start("thor", UiMode.dagger)
+    s.precheck_ok()
+    s.mark_ready()
+    ok, _ = command_allowed(
+        op="return",
+        session=s,
+        teleop_state="SYNCED",
+        hitl_mode="HANDOVER_SYNC",
         align_status=None,
     )
     assert ok

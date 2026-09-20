@@ -168,8 +168,10 @@ def test_tick_loop_survives_supervisor_exception(fake_stack):
     [
         ("recorder_start", {"recording_active": True}, None),
         ("recorder_start", {"recording_active": False}, "recorder_start"),
-        ("takeover", {"hitl_mode": "HUMAN"}, None),
+        ("takeover", {"hitl_mode": "HANDOVER_SYNC"}, None),
         ("takeover", {"hitl_mode": "AUTONOMOUS"}, "takeover"),
+        ("enter_teleop", {"hitl_mode": "HUMAN"}, None),
+        ("enter_teleop", {"hitl_mode": "HANDOVER_SYNC"}, "enter_teleop"),
     ],
 )
 def test_pending_tracker_confirmers(op, mailbox, expected):

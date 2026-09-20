@@ -76,7 +76,21 @@ def test_dagger_autonomous_suggests_takeover():
         hitl_mode="AUTONOMOUS",
         align_status=None,
     )
-    assert "接管" in hint
+    assert "同步" in hint
+
+
+def test_dagger_handover_synced_suggests_enter_teleop():
+    s = SessionLogic()
+    s.begin_start("thor", UiMode.dagger)
+    s.precheck_ok()
+    s.mark_ready()
+    hint = next_hint(
+        session=s,
+        teleop_state="SYNCED",
+        hitl_mode="HANDOVER_SYNC",
+        align_status=None,
+    )
+    assert "进入遥操" in hint
 
 
 def test_dagger_human_suggests_return():

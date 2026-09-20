@@ -14,6 +14,7 @@ ALLOWED_OPS: frozenset[str] = frozenset(
         "recorder_start",
         "recorder_stop",
         "takeover",
+        "enter_teleop",
         "return",
         "emergency_stop",
         "hold_current",
@@ -31,7 +32,7 @@ _TELEOP_OPS = frozenset(
     }
 )
 
-_DAGGER_OPS = frozenset({"takeover", "return"})
+_DAGGER_OPS = frozenset({"takeover", "enter_teleop", "return"})
 
 _COMMON_OPS = frozenset(
     {
@@ -92,13 +93,20 @@ def command_allowed(
             return False, "当前为遥操数采模式，无法执行接管/交还"
 
     if op == "return":
-        if hitl_mode != "HUMAN":
-            return False, "仅在人工控制（HUMAN）时可交还"
+        if hitl_mode not in ("HUMAN", "HANDOVER_SYNC"):
+            return False, "仅在同步或人工控制时可交还"
         return True, ""
 
     if op == "takeover":
         if hitl_mode != "AUTONOMOUS":
-            return False, "仅在自主模式（AUTONOMOUS）时可接管"
+            return False, "仅在自主模式（AUTONOMOUS）时可同步接管"
+        return True, ""
+
+    if op == "enter_teleop":
+        if hitl_mode != "HANDOVER_SYNC":
+            return False, "请先点击「同步」进入接管对齐"
+        if teleop_state != "SYNCED":
+            return False, "请等待小臂同步完成（SYNCED）后再进入遥操"
         return True, ""
 
     if op == "switch_teleop":

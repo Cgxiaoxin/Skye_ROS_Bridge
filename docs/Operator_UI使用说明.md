@@ -19,7 +19,7 @@
 Operator UI 是本机浏览器控制台，封装现有 `scripts/*.sh` 与会话状态机，支持：
 
 - **遥操数采**（`teleop_record`）：driver → Docker 小臂 → follower_align → `skye_data_recorder`
-- **HITL DAgger**（`dagger`）：driver → Docker HITL launch → `start_hitl_host.sh`（arbiter）
+- **HITL DAgger**（`dagger`）：driver → Docker HITL launch → `start_hitl_host.sh`（arbiter）。接管拆成「同步」→ 确认后「进入遥操」
 
 设计细节见 `[docs/superpowers/specs/2026-09-15-skye-operator-ui-design.md](superpowers/specs/2026-09-15-skye-operator-ui-design.md)`。
 

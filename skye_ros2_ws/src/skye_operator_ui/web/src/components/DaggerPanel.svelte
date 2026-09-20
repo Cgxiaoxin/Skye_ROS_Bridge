@@ -52,10 +52,19 @@
     type="button"
     class="btn btn-primary action-btn action-btn-large"
     disabled={!check('takeover').allowed || busyOp === 'takeover' || !!snapshot?.pending_op}
-    title={check('takeover').reason || '接管控制权'}
+    title={check('takeover').reason || '同步：策略 hold + 小臂跟大臂'}
     on:click={() => run('takeover')}
   >
-    接管
+    同步
+  </button>
+  <button
+    type="button"
+    class="btn btn-primary action-btn action-btn-large"
+    disabled={!check('enter_teleop').allowed || busyOp === 'enter_teleop' || !!snapshot?.pending_op}
+    title={check('enter_teleop').reason || '确认对齐后再进入遥操（HUMAN）'}
+    on:click={() => run('enter_teleop')}
+  >
+    进入遥操
   </button>
   <button
     type="button"

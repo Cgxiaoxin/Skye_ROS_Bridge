@@ -9,7 +9,7 @@ const TELEOP_OPS = [
   'align_start',
   'align_cancel',
 ];
-const DAGGER_OPS = ['takeover', 'return'];
+const DAGGER_OPS = ['takeover', 'enter_teleop', 'return'];
 
 export function commandAllowed(op, snapshot) {
   if (!snapshot) {
@@ -52,20 +52,26 @@ export function commandAllowed(op, snapshot) {
     return { allowed: false, reason: '当前为遥操数采模式，无法执行接管/交还' };
   }
 
-  if (DAGGER_OPS.includes(op) && hitlMode === 'HANDOVER_SYNC') {
-    return { allowed: false, reason: '接管对齐中，请等待同步完成' };
-  }
-
   if (op === 'return') {
-    if (hitlMode !== 'HUMAN') {
-      return { allowed: false, reason: '仅在人工控制（HUMAN）时可交还' };
+    if (hitlMode !== 'HUMAN' && hitlMode !== 'HANDOVER_SYNC') {
+      return { allowed: false, reason: '仅在同步或人工控制时可交还' };
     }
     return { allowed: true, reason: '' };
   }
 
   if (op === 'takeover') {
     if (hitlMode !== 'AUTONOMOUS') {
-      return { allowed: false, reason: '仅在自主模式（AUTONOMOUS）时可接管' };
+      return { allowed: false, reason: '仅在自主模式（AUTONOMOUS）时可同步接管' };
+    }
+    return { allowed: true, reason: '' };
+  }
+
+  if (op === 'enter_teleop') {
+    if (hitlMode !== 'HANDOVER_SYNC') {
+      return { allowed: false, reason: '请先点击「同步」进入接管对齐' };
+    }
+    if (teleopState !== 'SYNCED') {
+      return { allowed: false, reason: '请等待小臂同步完成（SYNCED）后再进入遥操' };
     }
     return { allowed: true, reason: '' };
   }

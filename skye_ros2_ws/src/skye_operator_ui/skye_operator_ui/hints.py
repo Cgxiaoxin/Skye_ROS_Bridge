@@ -35,11 +35,13 @@ def next_hint(
 
     if mode == UiMode.dagger:
         if hitl_mode == "AUTONOMOUS":
-            return "策略自主运行中，需要干预时请点击「接管」"
+            return "策略自主运行中，需要干预时请先点「同步」"
         if hitl_mode == "HUMAN":
             return "人工控制中，可交还控制权或开始/停止录制"
         if hitl_mode == "HANDOVER_SYNC":
-            return "接管对齐中，请等待同步完成"
+            if teleop_state == "SYNCED":
+                return "同步已完成，确认姿态安全后点击「进入遥操」"
+            return "接管同步中：小臂正在跟大臂，请等待 SYNCED"
         return "等待控制模式就绪，观察 /skye/control_mode"
 
     if mode == UiMode.teleop_record:

@@ -23,6 +23,7 @@ _STRING_OPS: dict[str, tuple[str, str]] = {
     "align_start": ("/mode/align_follower", "align_follower"),
     "align_cancel": ("/mode/align_cancel", "align_cancel"),
     "takeover": ("/skye/intervention_cmd", "takeover"),
+    "enter_teleop": ("/skye/intervention_cmd", "enter_teleop"),
     "return": ("/skye/intervention_cmd", "return"),
 }
 
