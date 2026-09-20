@@ -7,9 +7,9 @@ def test_map_key_takeover():
     assert map_key("q\n") == "takeover"
 
 
-def test_map_key_return():
-    assert map_key("w") == "return"
-    assert map_key("W") == "return"
+def test_map_key_enter_teleop():
+    assert map_key("e") == "enter_teleop"
+    assert map_key("E") == "enter_teleop"
 
 
 def test_map_key_ignores_other_keys():

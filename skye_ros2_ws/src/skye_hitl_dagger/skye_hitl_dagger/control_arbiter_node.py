@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import time
-from typing import Optional
+from typing import Optional, Sequence
 
 import rclpy
 from rclpy.node import Node
@@ -16,6 +16,7 @@ from rclpy.qos import (
 )
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
+from std_srvs.srv import Trigger
 
 from skye_hitl_dagger.chunk_player import ChunkPlayer
 from skye_hitl_dagger.chunk_continuity import (
@@ -25,7 +26,7 @@ from skye_hitl_dagger.chunk_continuity import (
 )
 from skye_hitl_dagger.control_mode import ControlArbiterLogic, ControlModeState
 from skye_hitl_dagger.msg import ControlMode, PolicyActionChunk
-from skye_hitl_dagger.policy_relative import PolicyRelativeSession
+from skye_hitl_dagger.policy_abs import follower_pose_to_leader_abs
 from skye_hitl_dagger.teleop_sync import TeleopHandshake
 
 JOINTS_PER_ARM = 7
@@ -44,8 +45,7 @@ class ControlArbiterNode(Node):
         super().__init__("control_arbiter")
         self.declare_parameter("gripper_invert_on_driver", True)
         self.declare_parameter("sync_timeout_s", 5.0)
-        # 2s 对齐时间
-        self.declare_parameter("min_sync_hold_s", 2)
+        self.declare_parameter("min_sync_hold_s", 2.0)
         self.declare_parameter("chunk_start_max_jump_rad", 0.1)
         self.declare_parameter("chunk_freshness_fallback_s", 2.0)
         self.declare_parameter("feedback_stale_s", 0.2)
@@ -53,10 +53,15 @@ class ControlArbiterNode(Node):
         self.declare_parameter("mode_publish_hz", 5.0)
         self.declare_parameter("return_mode_command", "switch_sync")
         self.declare_parameter("joint_states_topic", "/gento/joint_states")
+        self.declare_parameter("hold_current_service", "/gento/hold_current")
         self.declare_parameter("left_joint_order", DEFAULT_JOINT_ORDER)
         self.declare_parameter("right_joint_order", DEFAULT_JOINT_ORDER)
         self.declare_parameter("left_joint_signs", DEFAULT_JOINT_SIGNS)
         self.declare_parameter("right_joint_signs", DEFAULT_JOINT_SIGNS)
+        self.declare_parameter(
+            "left_joint_offsets", [0.0] * JOINTS_PER_ARM)
+        self.declare_parameter(
+            "right_joint_offsets", [0.0] * JOINTS_PER_ARM)
 
         self._invert_gripper = bool(
             self.get_parameter("gripper_invert_on_driver").value)
@@ -81,17 +86,19 @@ class ControlArbiterNode(Node):
             self._return_command = "switch_sync"
         joint_states_topic = str(
             self.get_parameter("joint_states_topic").value)
-        left_order = list(self.get_parameter("left_joint_order").value)
-        right_order = list(self.get_parameter("right_joint_order").value)
-        left_signs = [float(v) for v in self.get_parameter("left_joint_signs").value]
-        right_signs = [float(v) for v in self.get_parameter("right_joint_signs").value]
+        hold_service = str(self.get_parameter("hold_current_service").value)
+        self._left_order = list(self.get_parameter("left_joint_order").value)
+        self._right_order = list(self.get_parameter("right_joint_order").value)
+        self._left_signs = [
+            float(v) for v in self.get_parameter("left_joint_signs").value]
+        self._right_signs = [
+            float(v) for v in self.get_parameter("right_joint_signs").value]
+        self._left_offsets = [
+            float(v) for v in self.get_parameter("left_joint_offsets").value]
+        self._right_offsets = [
+            float(v) for v in self.get_parameter("right_joint_offsets").value]
 
         self._logic = ControlArbiterLogic()
-        self._left_policy = PolicyRelativeSession(
-            signs=left_signs, joint_order=left_order)
-        self._right_policy = PolicyRelativeSession(
-            signs=right_signs, joint_order=right_order)
-        self._policy_session_dirty = True
         self._player = ChunkPlayer()
         self._handshake = TeleopHandshake(min_sync_hold_s=self._min_sync_hold)
         self._policy_version = ""
@@ -104,8 +111,8 @@ class ControlArbiterNode(Node):
         self._hold_tail_warned = False
         self._joint_feedback: Optional[dict] = None
         self._feedback_received_at: Optional[float] = None
+        self._abs_hold_after_teleop_request = False
 
-        # Match the driver command QoS: latest sample only, no retransmission.
         cmd_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST, depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -118,10 +125,17 @@ class ControlArbiterNode(Node):
             history=HistoryPolicy.KEEP_LAST, depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE)
-        self._left_pub = self.create_publisher(
+
+        # HUMAN teleop → relative path (FACTR leader angles).
+        self._left_rel_pub = self.create_publisher(
             JointState, "/gento/left_joint_control", cmd_qos)
-        self._right_pub = self.create_publisher(
+        self._right_rel_pub = self.create_publisher(
             JointState, "/gento/right_joint_control", cmd_qos)
+        # AUTONOMOUS / HANDOVER hold → absolute path (follower-space policy).
+        self._left_abs_pub = self.create_publisher(
+            JointState, "/gento/left_joint_control_abs", cmd_qos)
+        self._right_abs_pub = self.create_publisher(
+            JointState, "/gento/right_joint_control_abs", cmd_qos)
         self._left_gripper_pub = self.create_publisher(
             JointState, "/left_teleop_gripper/ctrl", cmd_qos)
         self._right_gripper_pub = self.create_publisher(
@@ -132,17 +146,18 @@ class ControlArbiterNode(Node):
         }
         self._mode_pub = self.create_publisher(
             ControlMode, "/skye/control_mode", mode_qos)
+        self._hold_client = self.create_client(Trigger, hold_service)
 
         self.create_subscription(
             PolicyActionChunk, "/skye/policy_action", self._policy_callback,
             cmd_qos)
         self.create_subscription(
             JointState, "/skye/teleop_action_left",
-            lambda msg: self._teleop_joint_callback(msg, self._left_pub),
+            lambda msg: self._teleop_joint_callback(msg, self._left_rel_pub),
             cmd_qos)
         self.create_subscription(
             JointState, "/skye/teleop_action_right",
-            lambda msg: self._teleop_joint_callback(msg, self._right_pub),
+            lambda msg: self._teleop_joint_callback(msg, self._right_rel_pub),
             cmd_qos)
         self.create_subscription(
             JointState, "/skye/teleop_gripper_left",
@@ -210,7 +225,6 @@ class ControlArbiterNode(Node):
                     f"policy chunk step0 jump {jump:.3f} rad > "
                     f"{self._chunk_start_max_jump:.3f}; rebased to current "
                     "follower pose to avoid discontinuity")
-                self._invalidate_policy_sessions()
         if not self._player.load(
                 msg.chunk_size, msg.dt, t0, left_joints, right_joints,
                 msg.left_gripper, msg.right_gripper):
@@ -225,7 +239,7 @@ class ControlArbiterNode(Node):
 
     def _intervention_callback(self, msg: String) -> None:
         if msg.data == "takeover" and self._logic.request_takeover():
-            self._invalidate_policy_sessions()
+            self._abs_hold_after_teleop_request = False
             self._sync_started = time.monotonic()
             sampled = self._player.sample(self._now_seconds())
             if sampled is not None:
@@ -235,8 +249,21 @@ class ControlArbiterNode(Node):
             self._publish_mode_command("switch_sync")
             self._handshake.start_sync()
             self._publish_mode()
+            self.get_logger().info(
+                "takeover: holding via abs + switch_sync; waiting for "
+                "enter_teleop after SYNCED")
+        elif msg.data == "enter_teleop" and self._logic.request_enter_teleop():
+            if not self._handshake.aligned_ready():
+                # Allow request but keep waiting; sync timer will fire teleop
+                # once min_sync_hold is satisfied. If never aligned, timeout
+                # republishes switch_sync until operator returns.
+                self.get_logger().warning(
+                    "enter_teleop before SYNCED hold complete; will switch_"
+                    "teleop once alignment is ready")
+            self._begin_enter_teleop()
+            self._publish_mode()
         elif msg.data == "return" and self._logic.request_return():
-            self._invalidate_policy_sessions()
+            self._abs_hold_after_teleop_request = False
             self._sync_started = None
             self._handshake.reset()
             self._player.clear()
@@ -248,6 +275,44 @@ class ControlArbiterNode(Node):
             self._last_target = feedback
             self._publish_mode_command(self._return_command)
             self._publish_mode()
+
+    def _begin_enter_teleop(self) -> None:
+        """Stop abs stream, hold pose, request FACTR teleop."""
+        self._call_hold_current()
+        self._abs_hold_after_teleop_request = True
+        self._sync_started = time.monotonic()
+        if self._handshake.aligned_ready():
+            self._publish_mode_command("switch_teleop")
+            self._handshake.start_teleop()
+            self.get_logger().info(
+                "enter_teleop: hold_current done; switch_teleop published")
+        else:
+            self.get_logger().info(
+                "enter_teleop: hold_current done; waiting for SYNCED before "
+                "switch_teleop")
+
+    def _call_hold_current(self) -> None:
+        """Clear abs/relative streaming and freeze arms at current pose."""
+        if not self._hold_client.wait_for_service(timeout_sec=0.5):
+            self.get_logger().warning(
+                "hold_current service unavailable; continuing without reset")
+            return
+        future = self._hold_client.call_async(Trigger.Request())
+        # Best-effort: do not block the executor; fire-and-forget with log.
+        def _done(fut) -> None:
+            try:
+                result = fut.result()
+            except Exception as exc:  # noqa: BLE001
+                self.get_logger().warning(f"hold_current failed: {exc}")
+                return
+            if result is None or not result.success:
+                msg = getattr(result, "message", "")
+                self.get_logger().warning(
+                    f"hold_current rejected: {msg}")
+            else:
+                self.get_logger().info("hold_current ok; relative session reset")
+
+        future.add_done_callback(_done)
 
     def _joint_states_callback(self, msg: JointState) -> None:
         positions = list(msg.position)
@@ -288,16 +353,34 @@ class ControlArbiterNode(Node):
     def _sync_timer_callback(self) -> None:
         if self._logic.mode() != ControlModeState.HANDOVER_SYNC:
             return
-        if self._handshake.aligned_ready():
-            self._sync_started = time.monotonic()
-            self._publish_mode_command("switch_teleop")
-            self._handshake.start_teleop()
+
+        # Phase A: sync only — never auto-enter teleop.
+        if not self._logic.teleop_requested():
+            if (self._sync_started is not None
+                    and time.monotonic() - self._sync_started
+                    >= self._sync_timeout):
+                pending = self._handshake.pending_command()
+                if pending == "switch_sync":
+                    self.get_logger().warning(
+                        f"sync timeout in state {self._handshake.state()}; "
+                        "re-publishing switch_sync")
+                    self._publish_mode_command("switch_sync")
+                    self._sync_started = time.monotonic()
             return
+
+        # Phase B: operator requested enter_teleop.
         if self._handshake.teleop_ready():
             self._complete_sync()
             return
+        if (self._handshake.aligned_ready()
+                and self._handshake.pending_command() != "switch_teleop"):
+            # Aligned after enter_teleop was pressed early — fire teleop now.
+            self._publish_mode_command("switch_teleop")
+            self._handshake.start_teleop()
+            self._sync_started = time.monotonic()
+            return
         if (self._sync_started is not None
-              and time.monotonic() - self._sync_started >= self._sync_timeout):
+                and time.monotonic() - self._sync_started >= self._sync_timeout):
             pending = self._handshake.pending_command()
             self.get_logger().warning(
                 f"teleop sync timeout in state {self._handshake.state()}; "
@@ -308,33 +391,25 @@ class ControlArbiterNode(Node):
 
     def _complete_sync(self) -> None:
         if self._logic.sync_completed():
-            self._invalidate_policy_sessions()
+            self._abs_hold_after_teleop_request = False
             self._handshake.reset()
             self._sync_started = None
             self._publish_mode()
-
-    def _invalidate_policy_sessions(self) -> None:
-        self._left_policy.invalidate()
-        self._right_policy.invalidate()
-        self._policy_session_dirty = True
-
-    def _ensure_policy_sessions(self) -> bool:
-        if not self._policy_session_dirty:
-            return self._left_policy.active and self._right_policy.active
-        if self._joint_feedback is None:
-            return False
-        self._left_policy.begin(self._joint_feedback["left"])
-        self._right_policy.begin(self._joint_feedback["right"])
-        self._policy_session_dirty = False
-        return True
+            self.get_logger().info(
+                "HUMAN: relative teleop forwarding enabled "
+                "(driver will reseed on first frame)")
 
     def _joint_timer_callback(self) -> None:
         mode = self._logic.mode()
         if mode == ControlModeState.HUMAN:
             return
+        # After enter_teleop + hold_current: do not fight relative reseed with abs.
+        if (mode == ControlModeState.HANDOVER_SYNC
+                and self._abs_hold_after_teleop_request):
+            return
         if mode == ControlModeState.HANDOVER_SYNC:
             if self._hold_target is not None:
-                self._publish_policy_relative(
+                self._publish_policy_abs(
                     self._hold_target["left"], self._hold_target["right"])
             return
         sampled = self._player.sample(self._now_seconds())
@@ -342,7 +417,7 @@ class ControlArbiterNode(Node):
             return
         if sampled is not None:
             self._last_target = sampled
-            self._publish_policy_relative(sampled["left"], sampled["right"])
+            self._publish_policy_abs(sampled["left"], sampled["right"])
             if sampled["holding_tail"]:
                 if not self._hold_tail_warned:
                     self.get_logger().warning(
@@ -351,7 +426,7 @@ class ControlArbiterNode(Node):
             else:
                 self._hold_tail_warned = False
         elif self._last_target is not None:
-            self._publish_policy_relative(
+            self._publish_policy_abs(
                 self._last_target["left"], self._last_target["right"])
 
     def _gripper_timer_callback(self) -> None:
@@ -359,8 +434,9 @@ class ControlArbiterNode(Node):
         if mode == ControlModeState.HUMAN:
             return
         if mode == ControlModeState.AUTONOMOUS and self._return_time is not None:
-            # Human owned the gripper until the return; do not fight it before
-            # the policy sends its first post-return chunk.
+            return
+        if (mode == ControlModeState.HANDOVER_SYNC
+                and self._abs_hold_after_teleop_request):
             return
         sampled = (self._hold_target if mode == ControlModeState.HANDOVER_SYNC
                    else self._player.sample(self._now_seconds()))
@@ -381,16 +457,20 @@ class ControlArbiterNode(Node):
         if self._logic.mode() == ControlModeState.HUMAN:
             publisher.publish(msg)
 
-    def _publish_policy_relative(self, left, right) -> None:
-        if not self._ensure_policy_sessions():
+    def _publish_policy_abs(
+            self, left: Sequence[float], right: Sequence[float]) -> None:
+        """Publish follower-space targets on abs topics (inverse-signed)."""
+        try:
+            left_cmd = follower_pose_to_leader_abs(
+                left, self._left_signs, self._left_order, self._left_offsets)
+            right_cmd = follower_pose_to_leader_abs(
+                right, self._right_signs, self._right_order, self._right_offsets)
+        except ValueError as exc:
+            self.get_logger().error(f"policy abs mapping failed: {exc}")
             return
-        left_leader = self._left_policy.follower_target_to_leader(left)
-        right_leader = self._right_policy.follower_target_to_leader(right)
-        self._left_policy.commit_published(left_leader)
-        self._right_policy.commit_published(right_leader)
         stamp = self.get_clock().now().to_msg()
-        self._left_pub.publish(self._joint_message(left_leader, stamp))
-        self._right_pub.publish(self._joint_message(right_leader, stamp))
+        self._left_abs_pub.publish(self._joint_message(left_cmd, stamp))
+        self._right_abs_pub.publish(self._joint_message(right_cmd, stamp))
 
     def _publish_gripper(self, left: float, right: float) -> None:
         stamp = self.get_clock().now().to_msg()

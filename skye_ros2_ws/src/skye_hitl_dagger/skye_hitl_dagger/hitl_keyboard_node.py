@@ -15,7 +15,8 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 KEY_TO_CMD = {
-    "q": "takeover",
+    "q": "takeover",       # AUTONOMOUS → HANDOVER_SYNC (sync only)
+    "e": "enter_teleop",   # HANDOVER_SYNC → request switch_teleop → HUMAN
     "w": "return",
 }
 
@@ -108,7 +109,7 @@ def main(args=None) -> None:
             "stdin is not a TTY; using line mode (type q or w then Enter)")
     else:
         node.get_logger().info(
-            "tty mode: q=takeover, w=return (no Enter required)")
+            "tty mode: q=sync(takeover), e=enter_teleop, w=return")
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
