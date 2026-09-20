@@ -209,7 +209,7 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
 |---|---|---|---|
 | Dynamixel 原始正方向 | ID 1--8 | 舵机 Present Position 原始计数增加的方向 | JSON 中 `position_delta_rad > 0`；与 URDF 无关 |
 | 配置映射正方向 | ID 1--8 | 原始增量乘以 YAML `joint_signs` 后为正 | JSON 中 `signed_position_delta_rad > 0`；终端表格对应 `signed_delta_rad > 0` |
-| URDF 正方向 | ID 1--7 | URDF 中该关节坐标增加的方向 | 在模型中令该关节从 `q=0` 增加到 `q=+0.1 rad`，观察 child link 的运动；或在正确的关节局部坐标系中按 `<axis>` 使用右手定则 |
+| URDF 正方向 | ID 1--7 | URDF 中该关节坐标增加的方向 | 在模型中令该关节从 `q=0` 增加到 `q=+0.2 rad`，观察 child link 的运动；或在正确的关节局部坐标系中按 `<axis>` 使用右手定则 |
 | 夹爪约定正方向 | ID 8 | 本项目人为规定的夹爪语义方向 | 本清单按现有 FACTR 语义固定为“打开为正、闭合为负”，并写入验收记录 |
 
 ID 1--7 的验收目标是证明“配置映射正方向”与“URDF 正方向”一致。计算关系为：
@@ -225,7 +225,7 @@ signed_position_delta_rad = position_delta_rad × joint_sign
 URDF 方向的推荐判定步骤：
 
 1. 在下表找到目标 ID 对应的 URDF joint；
-2. 在 URDF 可视化模型中只把该 joint 从当前位置增加一个小正值，例如 `+0.1 rad`；
+2. 在 URDF 可视化模型中只把该 joint 从当前位置增加一个小正值，例如 `+0.2 rad`；
 3. 记录 child link 的实际运动趋势，并在实体关节旁贴上“URDF +”箭头；
 4. 若只能阅读 URDF：右手拇指指向关节局部坐标中的 `<axis>` 正向，四指弯曲方向为
    URDF 正转；`<axis>` 属于关节局部坐标，不能直接把 `0 0 1` 理解成现场空间的“向上”；
@@ -266,6 +266,12 @@ URDF 方向的推荐判定步骤：
 这一步是纯模型可视化，不连接串口，也不启动 FACTR、Dynamixel 驱动或遥操节点。以下
 三个终端必须使用相同的 `ROS_DOMAIN_ID`。这里使用隔离的 `92`，避免模型话题混入当前
 机器人 ROS 域。
+
+本节截图统一保存到：
+
+```text
+/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/dev_docs/skye_factr_teleop_phase2_5_readonly
+```
 
 #### 终端 1：启动 URDF 发布器
 
@@ -353,17 +359,17 @@ GUI 应显示 `joint1_left`--`joint7_left` 或
 
 1. 点击 `Center`，确认七个关节的显示值均为 `0.000`；
 2. 在 RViz 中截图保存零位姿态；
-3. 只拖动目标 joint 的滑块，直到显示约 `+0.100`，其它六个关节保持 `0.000`；
-4. 观察 RViz 中从零位到 `+0.100 rad` 时 child link 的移动趋势；该趋势就是目标关节的
+3. 只拖动目标 joint 的滑块，直到显示约 `+0.200`，其它六个关节保持 `0.000`；
+4. 观察 RViz 中从零位到 `+0.200 rad` 时 child link 的移动趋势；该趋势就是目标关节的
    URDF 正方向；
 5. 截图，并记录“侧别、ID、joint 名称、从哪个视角观察、child link 向哪里移动”；
-6. 点击 `Center` 回到零位，再把同一滑块拖到约 `-0.100`；
+6. 点击 `Center` 回到零位，再把同一滑块拖到约 `-0.200`；
 7. 确认 child link 向相反方向移动；若没有反向，先排查是否误动了其它滑块；
 8. 再次点击 `Center`，然后测试下一个 joint；
 9. 对照实体 leader 的相同 child link，在实体关节旁贴上“URDF +”方向标记。
 
 GUI 的滑块值是 URDF 关节坐标，不是 Dynamixel 编码器读数，也没有应用 YAML
-`joint_signs`。因此 GUI 中从 `0.000` 到 `+0.100` 的运动可作为独立方向参照，随后才能
+`joint_signs`。因此 GUI 中从 `0.000` 到 `+0.200` 的运动可作为独立方向参照，随后才能
 用真实舵机只读结果验证 `joint_signs`。
 
 左右侧必须分别启动对应 URDF 并保存记录，不能用左侧模型的观察结果代替右侧。GUI
@@ -397,6 +403,74 @@ ros2 topic list | rg '^/(robot_description|joint_states|tf|tf_static)$'
   `ROS_DOMAIN_ID=92`；
 - 若 RobotModel 显示错误，展开其 `Status` 查看缺失的 mesh、TF 或描述话题；
 - 若模型过小或不在视野内，选中 `RobotModel` 后按 `F` 聚焦。
+
+#### 左侧各关节的定义如下
+
+`URDF axis` 是 `<joint><axis>` 在关节局部坐标系中的定义；“父 link 坐标系下的轴”还
+考虑了该 joint 的 `<origin rpy>` 旋转。下表中的正方向始终按对应旋转轴的右手定则
+判定。
+
+| ID | URDF axis | 父 link 坐标系下的轴 | `+0.2 rad` 的正确方向 |
+|---:|---|---|---|
+| 1 | `+Z` | `lbase_link` 的 `+Z` | 绕局部 `+Z` 按右手定则旋转 |
+| 2 | `+Z` | `Link1_left` 的 `-Y` | 绕局部 `+Z` 按右手定则旋转 |
+| 3 | `+Z` | `Link2_left` 的 `+Y` | 绕局部 `+Z` 按右手定则旋转 |
+| 4 | `+Z` | `Link3_left` 的 `+Y` | 绕局部 `+Z` 按右手定则旋转 |
+| 5 | `+Z` | `Link4_left` 的 `-Y` | 绕局部 `+Z` 按右手定则旋转 |
+| 6 | `-Z` | `Link5_left` 的 `+Y` | 绕局部 `-Z` 按右手定则旋转 |
+| 7 | `-Z` | `Link6_left` 的 `+Y` | 绕局部 `-Z` 按右手定则旋转 |
+
+左侧零位参考截图：
+
+- [后视图](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view1_back.png)
+- [顶视图](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view2_top.png)
+- [左后视图](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback.png)
+
+左侧各关节从 `0.000` 到约 `+0.200 rad` 的左后视图：
+
+- [joint1_left](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback_j1_dot2rad.png)
+- [joint2_left](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback_j2_dot2rad.png)
+- [joint3_left](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback_j3_dot2rad.png)
+- [joint4_left](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback_j4_dot2rad.png)
+- [joint5_left](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback_j5_dot2rad.png)
+- [joint6_left](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback_j6_dot2rad.png)
+- [joint7_left](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback_j7_dot2rad.png)
+
+#### 右侧各关节的定义如下
+
+| ID | URDF axis | 父 link 坐标系下的轴 | `+0.2 rad` 的正确方向 |
+|---:|---|---|---|
+| 1 | `+Z` | `rbase_link` 的 `+Z` | 绕局部 `+Z` 按右手定则旋转 |
+| 2 | `-Z` | `Link1_right` 的 `+Y` | 绕局部 `-Z` 按右手定则旋转 |
+| 3 | `+Z` | `Link2_right` 的 `+Y` | 绕局部 `+Z` 按右手定则旋转 |
+| 4 | `-Z` | `Link3_right` 的 `+Y` | 绕局部 `-Z` 按右手定则旋转 |
+| 5 | `+Z` | `Link4_right` 的 `-Y` | 绕局部 `+Z` 按右手定则旋转 |
+| 6 | `+Z` | `Link5_right` 的 `-Y` | 绕局部 `+Z` 按右手定则旋转 |
+| 7 | `+Z` | `Link6_right` 的 `-Y` | 绕局部 `+Z` 按右手定则旋转 |
+
+右侧零位参考截图：
+
+- [后视图](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view1_back.png)
+- [顶视图](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view2_top.png)
+- [右后视图](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback.png)
+
+右侧各关节从 `0.000` 到约 `+0.200 rad` 的右后视图：
+
+- [joint1_right](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback_j1_dot2rad.png)
+- [joint2_right](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback_j2_dot2rad.png)
+- [joint3_right](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback_j3_dot2rad.png)
+- [joint4_right](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback_j4_dot2rad.png)
+- [joint5_right](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback_j5_dot2rad.png)
+- [joint6_right](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback_j6_dot2rad.png)
+- [joint7_right](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback_j7_dot2rad.png)
+
+RViz 坐标轴颜色为红色 `+X`、绿色 `+Y`、蓝色 `+Z`。对于 `URDF axis=+Z` 的关节，
+拇指指向蓝色 `+Z` 箭头；对于 `URDF axis=-Z` 的关节，拇指指向蓝色箭头的反方向。
+从旋转轴正端朝关节中心观察时，正向旋转表现为逆时针。
+
+后续实体测试必须以 RViz 中目标关节从 `0.000` 移到约 `+0.200 rad` 时 child link 及其
+下游结构的实际运动趋势作为“URDF +”方向。不要根据屏幕上的固定顺/逆时针或 YAML
+`joint_signs` 决定实体移动方向；`joint_signs` 是后续需要用只读采样独立验证的对象。
 
 ### 4.3 执行顺序和每轮采样前的准备
 
