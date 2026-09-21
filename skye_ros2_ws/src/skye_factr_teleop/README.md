@@ -49,8 +49,7 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
 Use the corresponding right-side YAML and output path for the right bus. An
 automated `PASS` covers serial configuration, device identity, torque-off state,
 and sampled numeric ranges. USB side mapping, physical ID order, joint direction,
-continuous-angle motion, and the deliberate single-device disconnect remain
-operator checks. Follow the
+and continuous-angle motion remain operator checks. Follow the
 [phase 2.5.1 read-only checklist](dev_docs/skye_factr_teleop_phase2_5_readonly_checklist.md)
 before using the result as phase 2.5.1 acceptance evidence.
 
@@ -73,12 +72,21 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
 Repeat with the right-side YAML. The command succeeds only when the bus check and
 all eight guided ID/direction checks pass.
 
+When physical target identification is handled separately, add
+`--direction-only`. In that mode, non-target movement and non-target endpoint
+instability are recorded as warnings instead of failures. Target endpoint
+instability is also a warning; target direction, target movement, implausible
+sample velocity, and position discontinuity remain failure conditions. A
+successful run with warnings reports `PASS_WITH_WARNINGS`; it verifies joint
+direction but does not verify physical ID order or endpoint stability.
+
 For encoder-boundary acceptance, run one guided continuous check per side. Test
 safe joints and record an explicit skip reason for unsafe joints:
 
 ```bash
 ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
-  --guided-continuous --ids 1,2,3,4,5,6,7 --side left \
+  --guided-continuous --boundary-only --boundary-mode nonzero \
+  --boundary-margin 0.05 --ids 1,2,3,4,5,6,7 --side left \
   --config src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
   --baseline-frames 50 --continuous-max-frames 750 \
   --settle-frames 50 --endpoint-frames 100 --interval 0.02 \
@@ -87,9 +95,14 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
   --output validation_records/phase2_5_1/left_continuous.json
 ```
 
-The tool reports the nearest boundary and physical URDF direction, stops the
-sampling phase as soon as it detects a crossing or discontinuity, and distinguishes
-`PASS`, `FAIL`, `INCONCLUSIVE`, and `SKIPPED_UNSAFE` results.
+`--boundary-mode nonzero` selects the nearest nonzero `k * 2π` boundary, so a
+small crossing around zero is not used as the acceptance evidence. This test does
+not require rotating a full `2π`: start safely near the selected boundary and
+cross at least `--boundary-margin` beyond it. In `--boundary-only` mode, a target
+position discontinuity remains a failure and a missing crossing is inconclusive;
+direction, other-joint movement, velocity, reversal, and endpoint stability
+findings are recorded as warnings. The tool distinguishes `PASS`,
+`PASS_WITH_WARNINGS`, `FAIL`, `INCONCLUSIVE`, and `SKIPPED_UNSAFE` results.
 
 ## License
 

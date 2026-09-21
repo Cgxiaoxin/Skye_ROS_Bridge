@@ -30,6 +30,26 @@ DEFAULT_MAX_ABS_VELOCITY = 20.0
 DEFAULT_MAX_POSITION_STEP = math.pi
 
 
+def _select_continuous_boundary(
+    start_position: float, boundary_mode: str
+) -> tuple[int, float, int]:
+    """Return boundary index, radians, and raw direction for one crossing."""
+    if boundary_mode not in {"nearest", "nonzero"}:
+        raise ValueError("boundary_mode must be 'nearest' or 'nonzero'")
+    lower_index = math.floor(start_position / math.tau)
+    candidate_indices = {lower_index, lower_index + 1}
+    if boundary_mode == "nonzero":
+        candidate_indices.discard(0)
+        candidate_indices.update((-1, 1))
+    boundary_index = min(
+        candidate_indices,
+        key=lambda index: (abs(index * math.tau - start_position), index),
+    )
+    boundary_rad = float(boundary_index * math.tau)
+    raw_direction = -1 if boundary_rad <= start_position else 1
+    return boundary_index, boundary_rad, raw_direction
+
+
 def analyze_samples(
     positions: Sequence[np.ndarray],
     velocities: Sequence[np.ndarray],
@@ -103,6 +123,7 @@ def analyze_guided_attempt(
     max_position_step: float,
     max_hold_velocity: float = 0.05,
     max_hold_position_span: float = 0.01,
+    direction_only: bool = False,
 ) -> dict:
     """Evaluate one guided positive-direction movement."""
     if target_id not in EXPECTED_IDS:
@@ -153,8 +174,9 @@ def analyze_guided_attempt(
         devices.append(device)
 
     issues = list(sample_analysis["issues"])
+    warnings = []
     if detected_id != target_id:
-        issues.append(
+        (warnings if direction_only else issues).append(
             f"expected device ID {target_id} to move most, detected ID "
             f"{detected_id}"
         )
@@ -172,7 +194,7 @@ def analyze_guided_attempt(
         if dxl_id == target_id:
             continue
         if abs(float(delta)) >= max_other_delta:
-            issues.append(
+            (warnings if direction_only else issues).append(
                 f"device ID {dxl_id} moved {float(delta):.6f} rad, "
                 f"expected less than {max_other_delta:.6f} rad"
             )
@@ -181,14 +203,15 @@ def analyze_guided_attempt(
         zip(endpoint_position_spans, endpoint_max_velocities)
     ):
         dxl_id = index + 1
+        findings = warnings if direction_only else issues
         if float(hold_velocity) > max_hold_velocity:
-            issues.append(
+            findings.append(
                 f"device ID {dxl_id} endpoint velocity "
                 f"{float(hold_velocity):.6f} rad/s exceeds "
                 f"{max_hold_velocity:.6f}"
             )
         if float(position_span) > max_hold_position_span:
-            issues.append(
+            findings.append(
                 f"device ID {dxl_id} endpoint position span "
                 f"{float(position_span):.6f} rad exceeds "
                 f"{max_hold_position_span:.6f}"
@@ -197,9 +220,14 @@ def analyze_guided_attempt(
     return {
         "target_id": target_id,
         "detected_id": detected_id,
-        "result": "PASS" if not issues else "FAIL",
+        "result": (
+            "FAIL"
+            if issues
+            else "PASS_WITH_WARNINGS" if warnings else "PASS"
+        ),
         "devices": devices,
         "issues": issues,
+        "warnings": warnings,
     }
 
 
@@ -219,6 +247,8 @@ def analyze_continuous_attempt(
     max_hold_velocity: float,
     max_hold_position_span: float,
     motion_reversal_tolerance: float,
+    boundary_only: bool = False,
+    boundary_margin: float = 0.0,
 ) -> dict:
     """Evaluate a guided movement across one encoder revolution boundary."""
     if target_id not in EXPECTED_IDS[:-1]:
@@ -237,6 +267,8 @@ def analyze_continuous_attempt(
         raise ValueError(
             "motion_reversal_tolerance must be finite and non-negative"
         )
+    if not math.isfinite(boundary_margin) or boundary_margin < 0:
+        raise ValueError("boundary_margin must be finite and non-negative")
 
     sample_analysis = analyze_samples(
         positions,
@@ -262,16 +294,19 @@ def analyze_continuous_attempt(
     target_motion = position_array[
         baseline_frames - 1 : movement_end, target_index
     ]
+    crossing_target = boundary_rad + raw_direction * boundary_margin
     if raw_direction > 0:
         boundary_crossed = bool(
             baseline[target_index] < boundary_rad
-            and np.max(target_motion) >= boundary_rad
+            and np.max(target_motion) >= crossing_target
         )
+        actual_crossing_margin = float(np.max(target_motion) - boundary_rad)
     else:
         boundary_crossed = bool(
             baseline[target_index] > boundary_rad
-            and np.min(target_motion) <= boundary_rad
+            and np.min(target_motion) <= crossing_target
         )
+        actual_crossing_margin = float(boundary_rad - np.min(target_motion))
 
     devices = []
     for index, sampled_device in enumerate(sample_analysis["devices"]):
@@ -286,14 +321,33 @@ def analyze_continuous_attempt(
         )
         devices.append(device)
 
-    issues = list(sample_analysis["issues"])
-    if detected_id != target_id:
+    issues = [] if boundary_only else list(sample_analysis["issues"])
+    warnings = list(sample_analysis["issues"]) if boundary_only else []
+    movement_steps = np.diff(target_motion)
+    movement_max_step = (
+        float(np.max(np.abs(movement_steps))) if len(movement_steps) else 0.0
+    )
+    if boundary_only and movement_max_step > max_position_step:
         issues.append(
+            f"device ID {target_id} movement position step "
+            f"{movement_max_step:.6f} rad exceeds {max_position_step:.6f}"
+        )
+        warnings = [
+            warning
+            for warning in warnings
+            if not warning.startswith(
+                f"device ID {target_id} position step "
+            )
+        ]
+
+    secondary_findings = warnings if boundary_only else issues
+    if detected_id != target_id:
+        secondary_findings.append(
             f"expected device ID {target_id} to move most, detected ID "
             f"{detected_id}"
         )
     if float(raw_deltas[target_index]) * raw_direction <= 0:
-        issues.append(
+        secondary_findings.append(
             f"device ID {target_id} moved opposite the requested raw direction"
         )
 
@@ -301,7 +355,7 @@ def analyze_continuous_attempt(
     if len(directed_steps) and float(np.min(directed_steps)) < -float(
         motion_reversal_tolerance
     ):
-        issues.append(
+        secondary_findings.append(
             f"device ID {target_id} reversed by more than "
             f"{motion_reversal_tolerance:.6f} rad during the crossing"
         )
@@ -309,7 +363,7 @@ def analyze_continuous_attempt(
     for index, delta in enumerate(signed_deltas):
         dxl_id = index + 1
         if dxl_id != target_id and abs(float(delta)) >= max_other_delta:
-            issues.append(
+            secondary_findings.append(
                 f"device ID {dxl_id} moved {float(delta):.6f} rad, "
                 f"expected less than {max_other_delta:.6f} rad"
             )
@@ -319,13 +373,13 @@ def analyze_continuous_attempt(
     ):
         dxl_id = index + 1
         if float(hold_velocity) > max_hold_velocity:
-            issues.append(
+            secondary_findings.append(
                 f"device ID {dxl_id} endpoint velocity "
                 f"{float(hold_velocity):.6f} rad/s exceeds "
                 f"{max_hold_velocity:.6f}"
             )
         if float(position_span) > max_hold_position_span:
-            issues.append(
+            secondary_findings.append(
                 f"device ID {dxl_id} endpoint position span "
                 f"{float(position_span):.6f} rad exceeds "
                 f"{max_hold_position_span:.6f}"
@@ -334,7 +388,7 @@ def analyze_continuous_attempt(
     if issues:
         result = "FAIL"
     elif boundary_crossed:
-        result = "PASS"
+        result = "PASS_WITH_WARNINGS" if warnings else "PASS"
     else:
         result = "INCONCLUSIVE"
     return {
@@ -342,10 +396,14 @@ def analyze_continuous_attempt(
         "detected_id": detected_id,
         "raw_direction": raw_direction,
         "boundary_rad": float(boundary_rad),
+        "boundary_margin_rad": float(boundary_margin),
+        "crossing_target_rad": float(crossing_target),
+        "actual_crossing_margin_rad": actual_crossing_margin,
         "boundary_crossed": boundary_crossed,
         "result": result,
         "devices": devices,
         "issues": issues,
+        "warnings": warnings,
     }
 
 
@@ -397,7 +455,6 @@ def run_readonly_check(
             "physical_id_order": "PENDING",
             "joint_direction": "PENDING",
             "continuous_angle": "PENDING",
-            "single_device_disconnect": "PENDING",
         },
         "automated_result": "FAIL",
         "error": None,
@@ -513,6 +570,7 @@ def run_guided_check(
     max_position_step: float = 0.2,
     max_hold_velocity: float = 0.05,
     max_hold_position_span: float = 0.01,
+    direction_only: bool = False,
     driver_factory: Callable = DynamixelDriver,
     sleep: Callable[[float], None] = time.sleep,
     prompt: Callable[[str], str] = input,
@@ -580,6 +638,7 @@ def run_guided_check(
             "max_position_step": max_position_step,
             "max_hold_velocity": max_hold_velocity,
             "max_hold_position_span": max_hold_position_span,
+            "direction_only": direction_only,
         },
         "attempts": [],
         "bus_result": "FAIL",
@@ -590,7 +649,6 @@ def run_guided_check(
             "physical_id_order": "PENDING",
             "joint_direction": "PENDING",
             "continuous_angle": "PENDING",
-            "single_device_disconnect": "PENDING",
         },
         "error": None,
     }
@@ -691,6 +749,7 @@ def run_guided_check(
                 max_position_step,
                 max_hold_velocity,
                 max_hold_position_span,
+                direction_only=direction_only,
             )
             attempt = {
                 "target_id": target_id,
@@ -700,6 +759,7 @@ def run_guided_check(
                 "detected_id": analysis["detected_id"],
                 "devices": analysis["devices"],
                 "issues": analysis["issues"],
+                "warnings": analysis["warnings"],
                 "samples": samples,
             }
             report["attempts"].append(attempt)
@@ -707,15 +767,22 @@ def run_guided_check(
                 f"ID {target_id}: {attempt['result']} "
                 f"(detected ID {attempt['detected_id']})"
             )
+            for issue in attempt["issues"]:
+                notify(f"  - {issue}")
+            for warning in attempt["warnings"]:
+                notify(f"  - warning: {warning}")
 
+        results = {attempt["result"] for attempt in report["attempts"]}
         report["guided_result"] = (
-            "PASS"
-            if all(attempt["result"] == "PASS" for attempt in report["attempts"])
-            else "FAIL"
+            "FAIL"
+            if "FAIL" in results
+            else "PASS_WITH_WARNINGS"
+            if "PASS_WITH_WARNINGS" in results
+            else "PASS"
         )
-        report["manual_checks"]["physical_id_order"] = report[
-            "guided_result"
-        ]
+        report["manual_checks"]["physical_id_order"] = (
+            "NOT_CHECKED" if direction_only else report["guided_result"]
+        )
         report["manual_checks"]["joint_direction"] = report["guided_result"]
     except Exception as exc:
         report["error"] = str(exc)
@@ -796,6 +863,9 @@ def run_guided_continuous_check(
     max_hold_velocity: float = 0.05,
     max_hold_position_span: float = 0.01,
     motion_reversal_tolerance: float = 0.02,
+    boundary_only: bool = False,
+    boundary_mode: str = "nearest",
+    boundary_margin: float = 0.05,
     driver_factory: Callable = DynamixelDriver,
     sleep: Callable[[float], None] = time.sleep,
     prompt: Callable[[str], str] = input,
@@ -848,6 +918,10 @@ def run_guided_continuous_check(
         raise ValueError(
             "motion_reversal_tolerance must be finite and non-negative"
         )
+    if boundary_mode not in {"nearest", "nonzero"}:
+        raise ValueError("boundary_mode must be 'nearest' or 'nonzero'")
+    if not math.isfinite(boundary_margin) or boundary_margin <= 0:
+        raise ValueError("boundary_margin must be finite and positive")
 
     report = {
         "schema": "skye_factr_teleop.phase_2_5_1.continuous.v1",
@@ -875,6 +949,9 @@ def run_guided_continuous_check(
             "max_hold_velocity": max_hold_velocity,
             "max_hold_position_span": max_hold_position_span,
             "motion_reversal_tolerance": motion_reversal_tolerance,
+            "boundary_only": boundary_only,
+            "boundary_mode": boundary_mode,
+            "boundary_margin": boundary_margin,
         },
         "attempts": [],
         "bus_result": "FAIL",
@@ -885,7 +962,6 @@ def run_guided_continuous_check(
             "physical_id_order": "PENDING",
             "joint_direction": "PENDING",
             "continuous_angle": "PENDING",
-            "single_device_disconnect": "PENDING",
         },
         "error": None,
     }
@@ -930,23 +1006,39 @@ def run_guided_continuous_check(
                     if phase_index + 1 < count and interval:
                         sleep(interval)
 
-            notify(f"ID {target_id}: HOLD STILL (baseline)")
-            collect("baseline", baseline_frames)
             target_index = target_id - 1
-            start_position = float(
-                np.median(
-                    np.asarray(positions, dtype=float)[:, target_index]
+            effective_margin = boundary_margin if boundary_only else 0.0
+            while True:
+                notify(f"ID {target_id}: HOLD STILL (baseline)")
+                collect("baseline", baseline_frames)
+                start_position = float(
+                    np.median(
+                        np.asarray(positions, dtype=float)[:, target_index]
+                    )
                 )
+                (
+                    boundary_index,
+                    boundary_rad,
+                    raw_direction,
+                ) = _select_continuous_boundary(start_position, boundary_mode)
+                boundary_distance = abs(boundary_rad - start_position)
+                if not boundary_only or boundary_distance >= boundary_margin:
+                    break
+                prompt(
+                    f"ID {target_id}: start is only "
+                    f"{boundary_distance:.3f} rad from the boundary; reposition "
+                    f"at least {boundary_margin:.3f} rad away, hold still, then "
+                    "press Enter"
+                )
+                positions.clear()
+                velocities.clear()
+                samples.clear()
+                attempt_started = time.monotonic()
+
+            boundary_class = (
+                "zero" if boundary_index == 0 else "nonzero_revolution"
             )
-            lower_boundary = math.floor(start_position / math.tau) * math.tau
-            upper_boundary = lower_boundary + math.tau
-            if start_position - lower_boundary <= upper_boundary - start_position:
-                boundary_rad = lower_boundary
-                raw_direction = -1
-            else:
-                boundary_rad = upper_boundary
-                raw_direction = 1
-            boundary_distance = abs(boundary_rad - start_position)
+            crossing_target = boundary_rad + raw_direction * effective_margin
             urdf_direction = (
                 "URDF +"
                 if raw_direction
@@ -955,9 +1047,11 @@ def run_guided_continuous_check(
                 else "URDF -"
             )
             response = prompt(
-                f"ID {target_id}: current={start_position:.3f} rad, nearest "
-                f"boundary={boundary_rad:.3f} rad, distance="
-                f"{boundary_distance:.3f} rad, move toward {urdf_direction}. "
+                f"ID {target_id}: current={start_position:.3f} rad, boundary="
+                f"{boundary_rad:.3f} rad (k={boundary_index}, "
+                f"{boundary_class}), distance={boundary_distance:.3f} rad, "
+                f"crossing target={crossing_target:.3f} rad, move toward "
+                f"{urdf_direction}. "
                 "Press Enter to start, or type s:<reason> to skip"
             ).strip()
             if response.lower().startswith("s"):
@@ -985,7 +1079,12 @@ def run_guided_continuous_check(
                         "raw_direction": raw_direction,
                         "start_position_rad": start_position,
                         "boundary_rad": boundary_rad,
+                        "boundary_index": boundary_index,
+                        "boundary_class": boundary_class,
                         "boundary_distance_rad": boundary_distance,
+                        "boundary_margin_rad": effective_margin,
+                        "crossing_target_rad": crossing_target,
+                        "actual_crossing_margin_rad": 0.0,
                         "boundary_crossed": False,
                         "termination": (
                             "operator_skip"
@@ -997,6 +1096,7 @@ def run_guided_continuous_check(
                         "detected_id": None,
                         "devices": [],
                         "issues": skip_issues,
+                        "warnings": [],
                         "samples": samples,
                     }
                 )
@@ -1031,10 +1131,10 @@ def run_guided_continuous_check(
                     break
                 if (
                     raw_direction > 0
-                    and current_position >= boundary_rad
+                    and current_position >= crossing_target
                 ) or (
                     raw_direction < 0
-                    and current_position <= boundary_rad
+                    and current_position <= crossing_target
                 ):
                     boundary_crossed = True
                     termination = "boundary_crossed"
@@ -1044,7 +1144,14 @@ def run_guided_continuous_check(
                     sleep(interval)
 
             if boundary_crossed:
-                notify(f"ID {target_id}: BOUNDARY CROSSED")
+                notify(
+                    f"ID {target_id}: BOUNDARY CROSSED"
+                    + (
+                        f" (margin {effective_margin:.3f} rad reached)"
+                        if effective_margin
+                        else ""
+                    )
+                )
             elif termination == "position_discontinuity":
                 notify(f"ID {target_id}: POSITION DISCONTINUITY DETECTED")
             else:
@@ -1070,6 +1177,8 @@ def run_guided_continuous_check(
                 max_hold_velocity,
                 max_hold_position_span,
                 motion_reversal_tolerance,
+                boundary_only=boundary_only,
+                boundary_margin=effective_margin,
             )
             attempt = {
                 "target_id": target_id,
@@ -1078,7 +1187,14 @@ def run_guided_continuous_check(
                 "raw_direction": raw_direction,
                 "start_position_rad": start_position,
                 "boundary_rad": boundary_rad,
+                "boundary_index": boundary_index,
+                "boundary_class": boundary_class,
                 "boundary_distance_rad": boundary_distance,
+                "boundary_margin_rad": analysis["boundary_margin_rad"],
+                "crossing_target_rad": analysis["crossing_target_rad"],
+                "actual_crossing_margin_rad": analysis[
+                    "actual_crossing_margin_rad"
+                ],
                 "boundary_crossed": analysis["boundary_crossed"],
                 "termination": termination,
                 "result": analysis["result"],
@@ -1086,18 +1202,33 @@ def run_guided_continuous_check(
                 "detected_id": analysis["detected_id"],
                 "devices": analysis["devices"],
                 "issues": analysis["issues"],
+                "warnings": analysis["warnings"],
                 "samples": samples,
             }
             report["attempts"].append(attempt)
             notify(f"ID {target_id}: {attempt['result']}")
+            for issue in attempt["issues"]:
+                notify(f"  - {issue}")
+            for warning in attempt["warnings"]:
+                notify(f"  - warning: {warning}")
 
         results = [attempt["result"] for attempt in report["attempts"]]
+        has_warnings = any(
+            attempt.get("warnings") for attempt in report["attempts"]
+        )
+        has_skips = any(
+            result == "SKIPPED_UNSAFE" for result in results
+        )
         if any(result == "FAIL" for result in results):
             report["continuous_result"] = "FAIL"
         elif any(result == "INCONCLUSIVE" for result in results):
             report["continuous_result"] = "INCONCLUSIVE"
-        elif any(result == "SKIPPED_UNSAFE" for result in results):
+        elif has_skips and has_warnings:
+            report["continuous_result"] = "PASS_WITH_SKIPS_AND_WARNINGS"
+        elif has_skips:
             report["continuous_result"] = "PASS_WITH_SKIPS"
+        elif has_warnings:
+            report["continuous_result"] = "PASS_WITH_WARNINGS"
         else:
             report["continuous_result"] = "PASS"
         report["manual_checks"]["continuous_angle"] = report[
@@ -1190,6 +1321,34 @@ def _parser() -> argparse.ArgumentParser:
         help="interactively verify continuity across revolution boundaries",
     )
     parser.add_argument(
+        "--direction-only",
+        action="store_true",
+        help=(
+            "with --guided, report non-target movement and endpoint "
+            "instability as warnings"
+        ),
+    )
+    parser.add_argument(
+        "--boundary-only",
+        action="store_true",
+        help=(
+            "with --guided-continuous, fail only core target-boundary "
+            "continuity errors and report secondary findings as warnings"
+        ),
+    )
+    parser.add_argument(
+        "--boundary-mode",
+        choices=("nearest", "nonzero"),
+        default="nearest",
+        help="boundary selection for --guided-continuous",
+    )
+    parser.add_argument(
+        "--boundary-margin",
+        type=float,
+        default=0.05,
+        help="required distance past the boundary in --boundary-only mode",
+    )
+    parser.add_argument(
         "--ids",
         help="comma-separated target IDs for --guided-continuous",
     )
@@ -1224,6 +1383,12 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
+        if args.direction_only and not args.guided:
+            raise ValueError("--direction-only requires --guided")
+        if args.boundary_only and not args.guided_continuous:
+            raise ValueError("--boundary-only requires --guided-continuous")
+        if args.boundary_mode != "nearest" and not args.guided_continuous:
+            raise ValueError("--boundary-mode requires --guided-continuous")
         if args.guided_continuous:
             if not args.ids:
                 raise ValueError("--ids is required with --guided-continuous")
@@ -1251,6 +1416,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 max_hold_velocity=args.max_hold_velocity,
                 max_hold_position_span=args.max_hold_position_span,
                 motion_reversal_tolerance=args.motion_reversal_tolerance,
+                boundary_only=args.boundary_only,
+                boundary_mode=args.boundary_mode,
+                boundary_margin=args.boundary_margin,
             )
         elif args.guided:
             report = run_guided_check(
@@ -1268,6 +1436,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 max_position_step=args.max_position_step,
                 max_hold_velocity=args.max_hold_velocity,
                 max_hold_position_span=args.max_hold_position_span,
+                direction_only=args.direction_only,
             )
         else:
             report = run_readonly_check(
@@ -1302,11 +1471,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 for issue in attempt.get("issues", ()):
                     print(f"  - {issue}")
+                for warning in attempt.get("warnings", ()):
+                    print(f"  - warning: {warning}")
         if report["error"]:
             print(f"error: {report['error']}", file=sys.stderr)
         return (
             0
-            if report["continuous_result"] in {"PASS", "PASS_WITH_SKIPS"}
+            if report["continuous_result"]
+            in {
+                "PASS",
+                "PASS_WITH_WARNINGS",
+                "PASS_WITH_SKIPS",
+                "PASS_WITH_SKIPS_AND_WARNINGS",
+            }
             else 1
         )
 
@@ -1320,9 +1497,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             for issue in attempt.get("issues", ()):
                 print(f"  - {issue}")
+            for warning in attempt.get("warnings", ()):
+                print(f"  - warning: {warning}")
         if report["error"]:
             print(f"error: {report['error']}", file=sys.stderr)
-        return 0 if report["guided_result"] == "PASS" else 1
+        return (
+            0
+            if report["guided_result"] in {"PASS", "PASS_WITH_WARNINGS"}
+            else 1
+        )
 
     print(f"automated result: {report['automated_result']}")
     if report["analysis"]:

@@ -4,7 +4,8 @@
 name: grav_comp_m6_left
 
 dynamixel:
-  dynamixel_port: usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0
+  # dynamixel_port: usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0 # 遥操设备A
+  dynamixel_port: usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0 # 遥操设备B
   servo_types:
     - XM430-W350
     - XM430-W350
@@ -15,7 +16,8 @@ dynamixel:
     - XC330-T288
     - XC330-T288
   # Physical leader-servo directions only; not a follower semantic mapping.
-  joint_signs: [1, 1, 1, 1, 1, -1, -1, 1]
+  # joint_signs: [1, 1, 1, 1, 1, -1, -1, 1] # 遥操设备A
+  joint_signs: [1, 1, 1, 1, 1, -1, -1, 1] # 遥操设备B（checked 26/9/21）
 
 arm_teleop:
   leader_urdf_package: skye_factr_description

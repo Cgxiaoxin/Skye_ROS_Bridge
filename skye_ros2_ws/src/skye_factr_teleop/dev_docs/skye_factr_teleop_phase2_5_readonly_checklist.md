@@ -8,8 +8,8 @@
 
 ## 0. 推荐主流程
 
-本节是默认执行入口。第 1--6 节保留为安全要求、首次建立方向标记、连续角度检查、断连
-检查和失败复测的详细参考；引导检查通过时，不需要再逐条执行 4.3--4.5 的手工正反方向
+本节是默认执行入口。第 1--5 节保留为安全要求、首次建立方向标记、连续角度检查和失败
+复测的详细参考；引导检查通过时，不需要再逐条执行 4.3--4.5 的手工正反方向
 流程。
 
 ### 0.1 首次工程验收
@@ -26,7 +26,7 @@
    source /opt/ros/humble/setup.bash
    colcon build --packages-select skye_factr_description skye_factr_teleop
    source install/setup.bash
-   RECORD_ROOT=/home/lyy/projects/leader_for_skye/skye_ros2_ws/validation_records/phase2_5_1
+   RECORD_ROOT=/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase2_5_1
    mkdir -p "$RECORD_ROOT"
    ```
 
@@ -34,7 +34,7 @@
 
    ```bash
    ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
-     --guided --side left \
+     --guided --direction-only --side left \
      --config src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
      --baseline-frames 50 --movement-frames 200 \
      --settle-frames 50 --endpoint-frames 100 \
@@ -48,7 +48,8 @@
    - 看到 `MOVE NOW` 时，只沿实体“URDF +”方向缓慢移动当前关节；ID 8 执行打开动作；
    - 看到 `STOP NOW` 时停止移动；随后约 1 秒是反应缓冲，缓冲期仍持续采样；
    - 看到 `HOLD STILL (endpoint)` 时保持终点约 2 秒，工具会自动检查终点是否稳定；
-   - 当前 ID 显示 `PASS` 后再准备下一个 ID。
+   - 当前 ID 显示 `PASS` 或 `PASS_WITH_WARNINGS` 后再准备下一个 ID；warning 需要保留在
+     记录中，但不影响本轮方向判定。
 
    每个 ID 的自动采样时间约为 `1 + 4 + 1 + 2 = 8` 秒。ID 之间等待 Enter 的准备阶段
    不采样，操作者可以从容调整起点并确认其它关节稳定。
@@ -56,7 +57,7 @@
 
    ```bash
    ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
-     --guided --side right \
+     --guided --direction-only --side right \
      --config src/skye_factr_teleop/config/grav_comp_m6_right.yaml \
      --baseline-frames 50 --movement-frames 200 \
      --settle-frames 50 --endpoint-frames 100 \
@@ -65,22 +66,25 @@
      --output "$RECORD_ROOT/right_guided.json"
    ```
 
-7. 左右两侧都必须显示 `bus result: PASS`、`guided result: PASS`，并且 ID 1--8 每行均为
-   `PASS`；任一 ID 失败时，只按 4.3--4.5 的详细方法复测该 ID，不默认补做全部反方向；
+7. 左右两侧都必须显示 `bus result: PASS`，`guided result` 可以是 `PASS` 或
+   `PASS_WITH_WARNINGS`，并且 ID 1--8 均不得为 `FAIL`；任一 ID 失败时，只按
+   4.3--4.5 的详细方法复测该 ID，不默认补做全部反方向；
 8. 对能够安全跨越编码器圈界的关节，按 4.6 完成一次连续角度检查；不能安全跨越的关节
    记录机械或线缆限制；
-9. 每条独立总线按第 5 节完成一次断连诊断。连续角度和断连检查属于首次工程验收，日常
-   上电不重复；
-10. 按第 6 节保存验收结果和记录路径。
+9. 按第 5 节保存验收结果和记录路径。连续角度检查属于首次工程验收，日常上电不重复。
 
-引导检查在一次串口连接中完成该侧全部 ID。每个 ID 自动采集“起点静止—单向移动—停止
-缓冲—终点静止”四个窗口，并检查主要移动 ID、映射方向、移动幅度、其它 ID 误动、速度、
-位置跳变和终点稳定性。终点窗口内任一设备最大绝对速度超过 `0.05 rad/s`，或位置跨度
-超过 `0.01 rad`，本轮均判为 FAIL。
+推荐流程使用 `--direction-only`，因为实体目标关节由操作者根据已确认的标签独立选择，
+不在本轮重复验收 physical ID order。引导检查在一次串口连接中完成该侧全部 ID；每个 ID
+自动采集“起点静止—单向移动—停止缓冲—终点静止”四个窗口，并检查目标关节映射方向、
+移动幅度和终点稳定性。其它 ID 位移超限、任一 ID 的终点不稳定以及主要移动 ID 与目标
+不一致只记录 warning；任一 warning 存在时结果为 `PASS_WITH_WARNINGS`，退出码仍为 0，
+JSON 中 `physical_id_order` 为 `NOT_CHECKED`。目标 ID 方向或幅度错误、任一设备出现异常
+采样速度或位置跳变仍判为 FAIL。不带 `--direction-only` 时保留原严格模式，任一 ID 的终点
+不稳定或其它 ID 位移也会判为 FAIL。因此 direction-only 结果只验证方向，不验证终点稳定性。
 
 ### 0.2 日常或重新上电检查
 
-URDF、配置、机械装配和接线未改变时，不重复关节方向、连续角度和断连测试：
+URDF、配置、机械装配和接线未改变时，不重复关节方向和连续角度测试：
 
 1. 完成第 1 节安全确认；
 2. 若 USB 发生过拔插，按第 2 节重新设置当前侧 latency timer；
@@ -90,10 +94,9 @@ URDF、配置、机械装配和接线未改变时，不重复关节方向、连�
 ### 0.3 维修、重新接线或配置变更后
 
 - 只维修或重新接线一侧：对该侧重新执行 0.1 的引导检查；
-- 修改 `joint_signs`、URDF、关节装配或 ID：重新确认方向标记，并对受影响侧执行完整
-  引导检查；
+- 修改 `joint_signs`、URDF、关节装配或 ID：重新确认方向标记；若 ID 或接线改变，先通过
+  标签和接线表独立确认 physical ID order，再对受影响侧执行完整方向引导检查；
 - 引导检查失败但原因不明确：按 4.3--4.5 对失败 ID 单独执行正向和反向复测；
-- 更换 USB 转串口、总线拓扑或通信相关代码：同时重做第 5 节断连诊断。
 
 ---
 
@@ -124,16 +127,26 @@ find /dev/serial/by-id -maxdepth 1 -type l -printf '%p -> %l\n' | sort
 
 已知配置映射：
 
+遥操设备A：
+
 | 侧别 | USB by-id |
 |---|---|
 | 左 | `usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0` |
 | 右 | `usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0` |
+
+遥操设备B：
+
+| 侧别 | USB by-id |
+|---|---|
+| 左 | `usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0` |
+| 右 | `usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0` |
 
 拔插会使 FTDI latency timer 复位。本轮只设置待测一侧：先用对应的 USB by-id 解析实际
 tty，再将 latency timer 设置为 1 并回读确认。以下以左侧为例：
 
 ```bash
 USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0
+
 TTY_PATH=$(readlink -f "$USB_BY_ID")
 TTY_NAME=$(basename "$TTY_PATH")
 echo "USB by-id: $USB_BY_ID -> $TTY_PATH"
@@ -185,13 +198,13 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
 
 每侧的自动检查必须显示 `automated result: PASS`，并确认记录中：
 
-- [ ] 使用了对应侧的 USB by-id；
-- [ ] 波特率为 `4000000`，latency timer 为 `1`；
-- [ ] ID 1--2 的型号编号为 `1020`（XM430-W350）；
-- [ ] ID 3--8 的型号编号为 `1220`（XC330-T288）；
-- [ ] 每个设备的 Return Delay Time 为 `0`；
-- [ ] 每个设备的 `torque_enabled` 为 `false`；
-- [ ] 多帧位置和速度均为有限值，无超限速度或异常位置跳变。
+- [x] 使用了对应侧的 USB by-id；
+- [x] 波特率为 `4000000`，latency timer 为 `1`；
+- [x] ID 1--2 的型号编号为 `1020`（XM430-W350）；
+- [x] ID 3--8 的型号编号为 `1220`（XC330-T288）；
+- [x] 每个设备的 Return Delay Time 为 `0`；
+- [x] 每个设备的 `torque_enabled` 为 `false`；
+- [x] 多帧位置和速度均为有限值，无超限速度或异常位置跳变。
 
 任一项失败即停止，不进入后续步骤。
 
@@ -621,7 +634,8 @@ ID 8 不使用 URDF 标签：打开夹爪时用 `DIRECTION=gripper_open`，关�
 
 ```bash
 ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
-  --guided-continuous --ids 1,2,3,4,5,6,7 --side left \
+  --guided-continuous --boundary-only --boundary-mode nonzero \
+  --boundary-margin 0.05 --ids 1,2,3,4,5,6,7 --side left \
   --config src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
   --baseline-frames 50 --continuous-max-frames 750 \
   --settle-frames 50 --endpoint-frames 100 --interval 0.02 \
@@ -632,29 +646,46 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
 ```
 
 右侧改用 `--side right`、右侧 YAML 和 `right_continuous.json`。`--ids` 不得包含夹爪
-ID 8；完整首次验收应列出 ID 1--7，使每个关节最终都有 `PASS` 或
+ID 8；完整首次验收应列出 ID 1--7，使每个关节最终都有通过结果或
 `SKIPPED_UNSAFE` 记录。
+
+本检查验证的是读取位置在某个 `k × 2π` 圈界两侧连续，并不要求关节从起点累计旋转完整
+一圈。比如从 `2π - 0.2 rad` 移到 `2π + 0.2 rad` 已覆盖所需圈界；从 `-0.2 rad`
+移到 `+0.2 rad` 虽然也跨过数学上的零点，但没有覆盖非零圈界。首次验收推荐使用
+`--boundary-mode nonzero`，明确选择最近的非零圈界；`--boundary-margin 0.05` 要求读数
+至少越过圈界 `0.05 rad`，避免刚好落在边界附近的采样抖动被误判为通过。
 
 工具对每个 ID 自动执行：
 
 1. 提示操作者把目标关节放在安全起点并保持静止，按 Enter 后采集约 1 秒基线；
-2. 显示当前位置、最近的 `2π` 圈界、所需移动距离以及实体 `URDF +`/`URDF -` 方向；
+2. 显示当前位置、所选 `k × 2π` 圈界、圈界索引 `k`、越界目标、所需移动距离以及实体
+   `URDF +`/`URDF -` 方向；若起点离圈界不足越界裕量，按提示重新放置起点；
 3. 操作者确认该距离和方向安全后按 Enter；若不能安全跨越，输入
    `s:机械或线缆限制原因`；
 4. 看到 `MOVE NOW` 后只缓慢移动目标关节。工具最多监测 750 帧（约 15 秒），检测到
-   真正跨界、位置不连续或超时后自动提示停止；
+   超过圈界及裕量、位置不连续或超时后自动提示停止；
 5. 看到 `STOP NOW` 后停止，经过约 1 秒反应缓冲，再按提示保持终点约 2 秒；
-6. 工具自动检查跨界、方向、单向性、其它 ID 误动、速度、相邻帧跳变和终点稳定性。
+6. 工具自动检查跨界裕量、方向、单向性、其它 ID 误动、速度、相邻帧跳变和终点稳定性；
+   每个 ID 完成后立即输出 failure 和 warning 的具体原因。
+
+`--boundary-only` 将验收重点限定为“目标关节确实跨过指定圈界及裕量，且跨界过程中位置
+连续”。目标关节跨界过程出现超过 `--max-position-step` 的跳变仍为 `FAIL`；通信错误或
+非有限采样也仍会使整次检查失败。主要移动 ID 不一致、最终方向、运动反向、其它 ID
+误动、速度和终点稳定性均保留在 JSON 和终端中，但降级为 warning。省略
+`--boundary-only` 时保留原严格判定。
 
 单个 ID 的结果含义：
 
-- `PASS`：确实跨过指定圈界，位置连续，且其它检查全部通过；
-- `FAIL`：出现约 `2π` 跳变、方向错误、明显反向、其它 ID 误动或稳定性失败；
-- `INCONCLUSIVE`：在最大采样时间内没有真正跨界，不能作为通过证据；
+- `PASS`：确实越过指定圈界及裕量，目标位置连续，且没有 warning；
+- `PASS_WITH_WARNINGS`：核心跨界连续性通过，但存在上述次要检查 warning；
+- `FAIL`：目标关节跨界过程中出现大于阈值的位置跳变，或发生通信/数据错误；
+- `INCONCLUSIVE`：在最大采样时间内没有越过指定圈界及裕量，不能作为通过证据；
 - `SKIPPED_UNSAFE`：操作者确认不能安全跨界，并在 JSON 中保存了原因。
 
-整侧 `continuous result: PASS` 或 `PASS_WITH_SKIPS` 才可接受；后者要求每个跳过项都有明确
-的机械或线缆限制原因。`FAIL` 和 `INCONCLUSIVE` 均需要排查或重测。
+整侧 `continuous result` 为 `PASS`、`PASS_WITH_WARNINGS`、`PASS_WITH_SKIPS` 或
+`PASS_WITH_SKIPS_AND_WARNINGS` 时核心检查通过；含 warning 的结果必须复核并保留，含 skip
+的结果要求每个跳过项都有明确的机械或线缆限制原因。`FAIL` 和 `INCONCLUSIVE` 均需要
+排查或重测。
 
 不得为了跨圈而越过机械限位、扭转线缆或强行旋转关节。若某个关节在安全行程内无法
 跨越圈界，必须使用 `s:原因` 记录为 `SKIPPED_UNSAFE`，不得把普通小幅运动填写成
@@ -665,70 +696,150 @@ ID 8；完整首次验收应列出 ID 1--7，使每个关节最终都有 `PASS` 
 只有正反方向记录及其人工判读全部完成，并完成连续角度检查或正确记录无法安全跨圈的
 原因后，才逐项确认：
 
-- [ ] 左右两侧均有完整的 guided JSON 记录；
-- [ ] 左侧 ID 1--8 与物理关节/夹爪顺序一致；
-- [ ] 右侧 ID 1--8 与物理关节/夹爪顺序一致；
-- [ ] ID 1--7 的 URDF 正向记录中 `signed_position_delta_rad` 为正；
-- [ ] ID 8 打开记录为正；
-- [ ] 每次只有被操作关节出现主要位移；
-- [ ] 失败或存疑的 ID 已按 4.3--4.5 单独完成必要的正反方向复测；
-- [ ] 可安全跨圈的关节结果为 `PASS`，无约 `2π` 瞬时跳变；
-- [ ] 无法安全跨圈的关节为 `SKIPPED_UNSAFE`，已记录原因且未强行越过限位。
+- [x] 左右两侧均有完整的 guided JSON 记录；
+- [x] 左侧 ID 1--8 与物理关节/夹爪顺序已通过 Dynamixel Wizard 2.0 独立确认；
+- [x] 右侧 ID 1--8 与物理关节/夹爪顺序已通过 Dynamixel Wizard 2.0 独立确认；
+- [x] ID 1--7 的 URDF 正向记录中 `signed_position_delta_rad` 为正；
+- [x] ID 8 打开记录为正；
+- [x] `--direction-only` 记录中的 warning 已复核并保留；不存在任何 `FAIL`，且未将该记录
+  用作 physical ID order 的验收证据；
+- [x] warning 已人工复核并接受，无失败或存疑 ID 需要按 4.3--4.5 复测；
+- [x] 可安全跨圈的关节结果为 `PASS` 或 `PASS_WITH_WARNINGS`，已越过非零圈界及裕量，
+  且无约 `2π` 瞬时跳变；
+- [x] 无法安全跨圈的关节为 `SKIPPED_UNSAFE`；左右 ID 2、4、6、7 均因机械及
+  线束约束跳过，且未强行越过限位。
 
-## 5. 单设备断连诊断
-
-只在确认 torque 全部关闭后执行。使用预先准备的单设备安全隔离开关或可断开的测试分支；
-禁止在总线带电时直接拔插 DYNAMIXEL 接头。启动较长采样后，隔离一个预先记录的舵机：
-
-```bash
-RECORD_ROOT=/home/lyy/projects/leader_for_skye/skye_ros2_ws/validation_records/phase2_5_1
-mkdir -p "$RECORD_ROOT"
-ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
-  --side left \
-  --config src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
-  --frames 1500 --interval 0.02 \
-  --max-abs-velocity 20.0 --max-position-step 0.2 \
-  --output "$RECORD_ROOT/left_disconnect.json"
-```
-
-- [ ] 命令非零退出；
-- [ ] 错误包含 `read_state` 或 `ping` 操作名；
-- [ ] 错误包含被断开设备的 ID；
-- [ ] 进程退出且串口已关闭；
-- [ ] 记录文件保留失败前的采样和完整错误。
-
-右侧重复同样验证。恢复隔离设备前先断电。
-
-## 6. 验收记录
+## 5. 验收记录
 
 ```text
-日期/操作者：
-侧别：left / right
-记录根目录：
-USB by-id：
-配置文件：
-舵机型号与 ID：
+日期/操作者：2026-09-21 / lyy
+左侧采样时间：15:16:44--15:20:19 +08:00
+右侧采样时间：16:24:56--16:27:47 +08:00
+左侧连续角度采样时间：18:02:45--18:07:32 +08:00
+右侧连续角度采样时间：19:18:08--19:20:27 +08:00
+侧别：left + right
+记录根目录：/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase2_5_1
+左侧 USB by-id：usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0
+右侧 USB by-id：usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0
+左侧配置文件：/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml
+右侧配置文件：/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml
+舵机型号与 ID：ID 1--2 XM430-W350（model 1020）；ID 3--8 XC330-T288（model 1220）
 波特率：4000000
-FTDI latency timer：1
-Return Delay Time：0 / FAIL
-Torque Enable：全部 0 / FAIL
-连续采样记录：
-关节顺序结果：
-关节方向结果：
-连续角度结果：
-单设备断连 ID：
-断连错误是否含 ID 和操作名：
-记录索引路径：
-结论：PASS / FAIL
-备注：
+FTDI latency timer：左右均为 1
+Return Delay Time：左右 ID 1--8 全部 0 / PASS
+Torque Enable：左右 ID 1--8 全部 false / PASS
+总线检查结果：左右均为 PASS
+左侧引导采样记录：validation_records/phase2_5_1/left_guided.json
+右侧引导采样记录：validation_records/phase2_5_1/right_guided.json
+左侧连续角度记录：validation_records/phase2_5_1/left_continuous.json
+右侧连续角度记录：validation_records/phase2_5_1/right_continuous.json
+引导检查结果：左右均为 PASS_WITH_WARNINGS（direction_only=true）
+引导记录关节顺序结果：左右均为 NOT_CHECKED（direction-only 不作为顺序证据）
+关节顺序独立确认结果：左右均为 PASS
+关节顺序独立确认依据：Dynamixel Wizard 2.0
+关节方向结果：左右均为 PASS_WITH_WARNINGS
+连续角度结果：左右均为 PASS_WITH_SKIPS_AND_WARNINGS（boundary_only=true，boundary_mode=nonzero，boundary_margin=0.05 rad）
+记录索引路径：validation_records/phase2_5_1/left_guided.json；validation_records/phase2_5_1/right_guided.json；validation_records/phase2_5_1/left_continuous.json；validation_records/phase2_5_1/right_continuous.json
+结论：PASS（左右总线、方向引导、physical ID order 独立确认及连续角度检查均已完成）
+备注：操作者已复核并接受全部 warning，无需复测；左右 large_arm_motion_link_disconnected、usb_side_mapping 均为 PASS。USB 映射通过单侧 USB 多次拔插并更换 USB 口确认，设备名称保持一致。
 ```
 
-每个实际执行的记录占一行；左右侧、ID 1--8 的正反方向记录以及连续角度、断连记录均应
+每个实际执行的记录占一行；左右侧、ID 1--8 的正反方向记录以及连续角度记录均应
 列入索引：
 
 | 侧别 | ID | 测试方向/类型 | `signed_position_delta_rad` | JSON 路径 | 日志路径 | 结果 |
 |---|---:|---|---:|---|---|---|
-|  |  |  |  |  |  | PASS / FAIL |
+| left | 1 | URDF + / direction-only | +0.185612 | `validation_records/phase2_5_1/left_guided.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| left | 2 | URDF + / direction-only | +0.604388 | `validation_records/phase2_5_1/left_guided.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| left | 3 | URDF + / direction-only | +0.734777 | `validation_records/phase2_5_1/left_guided.json` | 未单独保存 | PASS |
+| left | 4 | URDF + / direction-only | +0.340544 | `validation_records/phase2_5_1/left_guided.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| left | 5 | URDF + / direction-only | +0.676486 | `validation_records/phase2_5_1/left_guided.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| left | 6 | URDF + / direction-only | +0.547631 | `validation_records/phase2_5_1/left_guided.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| left | 7 | URDF + / direction-only | +0.544563 | `validation_records/phase2_5_1/left_guided.json` | 未单独保存 | PASS |
+| left | 8 | open + / direction-only | +0.559903 | `validation_records/phase2_5_1/left_guided.json` | 未单独保存 | PASS |
+| right | 1 | URDF + / direction-only | +0.507748 | `validation_records/phase2_5_1/right_guided.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| right | 2 | URDF + / direction-only | +0.506214 | `validation_records/phase2_5_1/right_guided.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| right | 3 | URDF + / direction-only | +0.707165 | `validation_records/phase2_5_1/right_guided.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| right | 4 | URDF + / direction-only | +0.492408 | `validation_records/phase2_5_1/right_guided.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| right | 5 | URDF + / direction-only | +0.814544 | `validation_records/phase2_5_1/right_guided.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| right | 6 | URDF + / direction-only | +0.658078 | `validation_records/phase2_5_1/right_guided.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| right | 7 | URDF + / direction-only | +0.619728 | `validation_records/phase2_5_1/right_guided.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| right | 8 | open + / direction-only | +0.400369 | `validation_records/phase2_5_1/right_guided.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| left | 1 | `+2π` 非零圈界 / boundary-only | +0.414175 | `validation_records/phase2_5_1/left_continuous.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| left | 2 | `+2π` 非零圈界 / boundary-only | — | `validation_records/phase2_5_1/left_continuous.json` | 未单独保存 | SKIPPED_UNSAFE（机械及线束约束） |
+| left | 3 | `+2π` 非零圈界 / boundary-only | +6.037748 | `validation_records/phase2_5_1/left_continuous.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| left | 4 | `+2π` 非零圈界 / boundary-only | — | `validation_records/phase2_5_1/left_continuous.json` | 未单独保存 | SKIPPED_UNSAFE（机械及线束约束） |
+| left | 5 | `+2π` 非零圈界 / boundary-only | +6.332273 | `validation_records/phase2_5_1/left_continuous.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| left | 6 | `-2π` 非零圈界 / boundary-only | — | `validation_records/phase2_5_1/left_continuous.json` | 未单独保存 | SKIPPED_UNSAFE（机械及线束约束） |
+| left | 7 | `-2π` 非零圈界 / boundary-only | — | `validation_records/phase2_5_1/left_continuous.json` | 未单独保存 | SKIPPED_UNSAFE（机械及线束约束） |
+| right | 1 | `-2π` 非零圈界 / boundary-only | -1.684311 | `validation_records/phase2_5_1/right_continuous.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| right | 2 | `-2π` 非零圈界 / boundary-only | — | `validation_records/phase2_5_1/right_continuous.json` | 未单独保存 | SKIPPED_UNSAFE（机械及线束约束） |
+| right | 3 | `+2π` 非零圈界 / boundary-only | +6.266312 | `validation_records/phase2_5_1/right_continuous.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| right | 4 | `+2π` 非零圈界 / boundary-only | — | `validation_records/phase2_5_1/right_continuous.json` | 未单独保存 | SKIPPED_UNSAFE（机械及线束约束） |
+| right | 5 | `-2π` 非零圈界 / boundary-only | -6.392098 | `validation_records/phase2_5_1/right_continuous.json` | 未单独保存 | PASS_WITH_WARNINGS |
+| right | 6 | `-2π` 非零圈界 / boundary-only | — | `validation_records/phase2_5_1/right_continuous.json` | 未单独保存 | SKIPPED_UNSAFE（机械及线束约束） |
+| right | 7 | `-2π` 非零圈界 / boundary-only | — | `validation_records/phase2_5_1/right_continuous.json` | 未单独保存 | SKIPPED_UNSAFE（机械及线束约束） |
+
+左侧连续角度检查汇总：
+
+- 总线结果为 `PASS`，整侧结果为 `PASS_WITH_SKIPS_AND_WARNINGS`，`error=null`；
+- ID 1、3、5 分别越过 `+2π` 非零圈界，实际越界裕量为 `0.050621 rad`、
+  `0.056757 rad`、`0.070563 rad`，均达到 `0.05 rad` 要求；
+- ID 1、3、5 的最大相邻位置步长分别为 `0.012272 rad`、`0.042951 rad`、
+  `0.059825 rad`，均未超过 `0.2 rad`，未发现约 `2π` 瞬时跳变；
+- ID 2、4、6、7 在 JSON 中以 `limit` 记录为 `SKIPPED_UNSAFE`；操作者确认具体原因为
+  机械及线束约束，且未强行越过限位；其中 ID 2、4 对应 `+2π` 圈界，ID 6、7 对应
+  `-2π` 圈界；
+- ID 1 warning：非目标 ID 3 位移 `-0.237767 rad`；ID 1 endpoint velocity 为
+  `0.119904 rad/s`，endpoint position span 为 `0.024544 rad`；
+- ID 3 warning：ID 1 endpoint velocity 为 `0.071942 rad/s`；
+- ID 5 warning：非目标 ID 3 位移 `+0.039884 rad`；ID 3、6 endpoint velocity
+  均为 `0.095923 rad/s`；ID 4 endpoint position span 为 `0.021476 rad`。
+
+右侧连续角度检查汇总：
+
+- 总线结果为 `PASS`，整侧结果为 `PASS_WITH_SKIPS_AND_WARNINGS`，`error=null`；
+- ID 1、3、5 分别越过 `-2π`、`+2π`、`-2π` 非零圈界，实际越界裕量为
+  `0.050621 rad`、`0.067495 rad`、`0.062893 rad`，均达到 `0.05 rad` 要求；
+- ID 1、3、5 的最大相邻位置步长分别为 `0.029146 rad`、`0.044485 rad`、
+  `0.046019 rad`，均未超过 `0.2 rad`，未发现约 `2π` 瞬时跳变；
+- ID 2、4、6、7 在 JSON 中以 `limit` 记录为 `SKIPPED_UNSAFE`；操作者确认具体原因为
+  机械及线束约束，且未强行越过限位；其中 ID 2、6、7 对应 `-2π` 圈界，ID 4 对应
+  `+2π` 圈界；
+- ID 1 warning：非目标 ID 2、3、4、7 位移分别为 `+0.035282 rad`、
+  `+0.145728 rad`、`+0.139592 rad`、`-0.230097 rad`；ID 6 endpoint velocity
+  为 `0.071942 rad/s`；
+- ID 3 warning：非目标 ID 2、4 位移分别为 `-0.092039 rad`、`+0.066728 rad`；
+- ID 5 warning：非目标 ID 3 位移 `-0.184078 rad`；ID 3、4、5、6、7 endpoint
+  velocity 分别为 `0.071942 rad/s`、`0.143885 rad/s`、`0.455636 rad/s`、
+  `0.119904 rad/s`、`0.071942 rad/s`；ID 4、5 endpoint position span 分别为
+  `0.010738 rad`、`0.067495 rad`。
+
+左侧 direction-only warning 汇总：
+
+- ID 1：非目标 ID 4 位移 `-0.050621 rad`；
+- ID 2：非目标 ID 1、3、4 位移分别为 `-0.087437 rad`、`+0.047553 rad`、
+  `+0.075165 rad`；
+- ID 4：非目标 ID 1、2、3 位移分别为 `-0.039117 rad`、`+0.041417 rad`、
+  `+0.073631 rad`；
+- ID 5：非目标 ID 4 位移 `+0.038350 rad`；
+- ID 6：非目标 ID 4 endpoint position span 为 `0.012272 rad`，超过 `0.010000 rad`。
+
+右侧 direction-only warning 汇总：
+
+- ID 1：非目标 ID 2、3、4 位移分别为 `+0.426447 rad`、`-0.458660 rad`、
+  `+0.251573 rad`；
+- ID 2：非目标 ID 1 位移 `+0.039884 rad`；
+- ID 3：非目标 ID 1 位移 `+0.042951 rad`；
+- ID 4：非目标 ID 3、6、7 位移分别为 `+0.108913 rad`、`-0.207087 rad`、
+  `-0.285320 rad`；
+- ID 5：非目标 ID 4 位移 `-0.052155 rad`，且 ID 4 endpoint velocity 为
+  `0.071942 rad/s`，超过 `0.050000 rad/s`；
+- ID 6：非目标 ID 3、4、5、7 位移分别为 `-0.046019 rad`、`+0.065961 rad`、
+  `-0.042951 rad`、`+0.110447 rad`；
+- ID 7：非目标 ID 5、6 位移分别为 `+0.030680 rad`、`-0.144961 rad`，且 ID 6
+  endpoint position span 为 `0.012272 rad`，超过 `0.010000 rad`；
+- ID 8：非目标 ID 7 位移 `-0.032214 rad`。
 
 验收记录必须保存在持久化目录中，不得将 `/tmp` 中的临时文件直接作为最终验收证据。
 
