@@ -48,7 +48,10 @@ setup(
     entry_points={
         "console_scripts": [
             "skye_factr_teleop_driver = skye_factr_teleop.ros_driver:main",
-            "skye_factr_dynamixel_readonly_check = skye_factr_teleop.readonly_check:main",
+            "skye_factr_dynamixel_readonly_check = "
+            "skye_factr_teleop.readonly_check:main",
+            "skye_factr_dynamixel_low_current_check = "
+            "skye_factr_teleop.low_current_check:main",
         ],
     },
 )

@@ -392,6 +392,9 @@ class DynamixelDriver(DynamixelIO):
                 self._set_torque_enabled_locked(False)
                 self._set_operating_mode_locked(CURRENT_CONTROL_MODE)
                 self._verify_operating_mode_locked(CURRENT_CONTROL_MODE)
+                # Never enable current control with a Goal Current value left
+                # behind by an earlier process on an already-powered bus.
+                self._write_raw_currents_locked([0] * len(self._ids))
                 self._set_torque_enabled_locked(True)
                 self._read_only = False
                 self._device_info = ()

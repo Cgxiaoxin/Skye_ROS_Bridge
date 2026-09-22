@@ -329,6 +329,10 @@ def test_open_performs_safe_initialization_in_order(driver_factory, fake_sdk):
         ("write1", 2, 11, 0),
         ("read1", 1, 11),
         ("read1", 2, 11),
+        ("write.addParam", 1, [0, 0]),
+        ("write.addParam", 2, [0, 0]),
+        ("write.txPacket",),
+        ("write.clearParam",),
         ("write1", 1, 64, 1),
         ("write1", 2, 64, 1),
     ]

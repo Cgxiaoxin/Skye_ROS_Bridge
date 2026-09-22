@@ -104,6 +104,33 @@ direction, other-joint movement, velocity, reversal, and endpoint stability
 findings are recorded as warnings. The tool distinguishes `PASS`,
 `PASS_WITH_WARNINGS`, `FAIL`, `INCONCLUSIVE`, and `SKIPPED_UNSAFE` results.
 
+## Phase 2.5.2 single-servo low-current check
+
+`skye_factr_dynamixel_low_current_check` calls the production
+`DynamixelDriver` for exactly one configured ID. Before any writable open, it
+performs a separate read-only check of the model number, Return Delay Time,
+Torque Disable state, baud rate, and FTDI latency timer. Hardware mode requires
+`--confirm-single-servo` and applies both an explicit operator limit and a hard
+ceiling of `min(100 mA, 10% of the model rated current limit)`.
+
+Use `--prepare-only` before connecting hardware. This validates all parameters,
+shows the XM430/XC330 register conversion, and writes a JSON preparation record
+without constructing a driver or opening a serial port:
+
+```bash
+ros2 run skye_factr_teleop skye_factr_dynamixel_low_current_check -- \
+  --prepare-only --side left --id 1 \
+  --config src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
+  --current-limit-ma 50 --test-current-ma 20 \
+  --output /tmp/skye_phase2_5_2_left_id1_prepared.json
+```
+
+Follow the complete
+[phase 2.5.2 low-current checklist](dev_docs/skye_factr_teleop_phase2_5_low_current_checklist.md)
+before removing `--prepare-only`. Hardware mode sends short positive, zero,
+negative, and zero commands, checks encoder direction, and always invokes the
+production close path to write zero current and Torque Disable.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) and
