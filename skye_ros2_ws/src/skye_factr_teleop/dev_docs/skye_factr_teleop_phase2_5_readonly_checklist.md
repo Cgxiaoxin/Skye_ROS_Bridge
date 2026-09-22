@@ -12,66 +12,227 @@
 复测的详细参考；引导检查通过时，不需要再逐条执行 4.3--4.5 的手工正反方向
 流程。
 
+### 0.0 使用 Dynamixel Wizard 2.0 确认舵机零点
+
+首次工程验收前，必须先用 Dynamixel Wizard 2.0 分别确认左右 leader 的舵机零点，避免
+舵机位置中残留额外圈数：
+
+1. 保持 FACTR、Dynamixel 驱动、ROS 遥操节点和其它串口程序停止，每次只连接一侧；
+2. 在 Dynamixel Wizard 2.0 中连接当前侧总线并扫描 ID 1--8；
+3. 确认 ID 1--2 为 XM430-W350（model 1020），ID 3--8 为 XC330-T288（model 1220），
+   且所有舵机的 Torque Enable 均为关闭状态；
+4. 将各关节放到已知的机械零位，读取 Present Position，并与该关节的预期零点对照；
+5. 确认读数没有相对预期值多出或少出约 4096 counts（`2π`）或其整数倍，防止舵机
+   在错误圈数上开始验收；
+6. 左侧 ID 1--8 全部确认后断开左侧连接，再以相同步骤确认右侧；
+7. 记录左右侧舵机零点和 physical ID order 的确认结果。
+
+本步骤只读取并确认状态，不在本清单中通过 Dynamixel Wizard 2.0 修改寄存器。若零点、
+圈数、型号或 physical ID order 不符合预期，停止验收，排查并恢复正确状态后再进入
+0.1。
+
 ### 0.1 首次工程验收
 
-首次验收按以下顺序执行：
+首次验收按本节从上到下执行。必须先完成左侧的连接准备、普通方向引导和连续角度引导，
+再开始右侧。
 
-1. 完成第 1 节安全确认，并按第 2 节确认 USB by-id、设置当前侧 latency timer；
-2. 若实体上还没有经过独立确认的“URDF +”方向标记，只执行一次 4.2，在左右 leader 上
-   保留固定方向标记；以后 URDF 和机械装配不变时不重复；
-3. 构建并加载工作区：
+#### 0.1.1 安全确认
 
-   ```bash
-   cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
-   source /opt/ros/humble/setup.bash
-   colcon build --packages-select skye_factr_description skye_factr_teleop
-   source install/setup.bash
-   RECORD_ROOT=/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase2_5_1
-   mkdir -p "$RECORD_ROOT"
-   ```
+- [ ] 大臂运动链路已断开或保持停机，现场无其它程序可控制大臂；
+- [ ] 左右 leader 均处于可自由移动、不会因重力碰撞人员或设备的位置；
+- [ ] 已停止所有可能占用 leader 串口的 FACTR/Dynamixel 进程；
+- [ ] 操作者知道本轮验证的侧别，左右总线每次只验证一侧；
+- [ ] 准备好紧急断电方式；
+- [ ] 不运行阶段 2.5.2 或任何带 torque/current 写入的命令。
 
-4. 运行左侧引导检查：
+检查串口占用：
 
-   ```bash
-   ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
-     --guided --direction-only --side left \
-     --config src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
-     --baseline-frames 50 --movement-frames 200 \
-     --settle-frames 50 --endpoint-frames 100 \
-     --interval 0.02 --max-abs-velocity 20.0 --max-position-step 0.2 \
-     --max-hold-velocity 0.05 --max-hold-position-span 0.01 \
-     --output "$RECORD_ROOT/left_guided.json"
-   ```
+```bash
+pgrep -af 'factr_teleop|skye_factr_teleop|dynamixel' || true
+```
 
-5. 工具会从 ID 1 到 ID 8 依次提示。每个 ID 只做一次动作：
-   - 看到 `HOLD STILL (baseline)` 时保持全部关节静止约 1 秒；
-   - 看到 `MOVE NOW` 时，只沿实体“URDF +”方向缓慢移动当前关节；ID 8 执行打开动作；
-   - 看到 `STOP NOW` 时停止移动；随后约 1 秒是反应缓冲，缓冲期仍持续采样；
-   - 看到 `HOLD STILL (endpoint)` 时保持终点约 2 秒，工具会自动检查终点是否稳定；
-   - 当前 ID 显示 `PASS` 或 `PASS_WITH_WARNINGS` 后再准备下一个 ID；warning 需要保留在
-     记录中，但不影响本轮方向判定。
+若输出中存在仍在运行并可能占用串口的进程，先停止该进程，再继续。
 
-   每个 ID 的自动采样时间约为 `1 + 4 + 1 + 2 = 8` 秒。ID 之间等待 Enter 的准备阶段
-   不采样，操作者可以从容调整起点并确认其它关节稳定。
-6. 将第 2 节的 latency timer 设置切换到右侧，然后用右侧配置运行同一命令：
+#### 0.1.2 确认实体“URDF +”方向标记
 
-   ```bash
-   ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
-     --guided --direction-only --side right \
-     --config src/skye_factr_teleop/config/grav_comp_m6_right.yaml \
-     --baseline-frames 50 --movement-frames 200 \
-     --settle-frames 50 --endpoint-frames 100 \
-     --interval 0.02 --max-abs-velocity 20.0 --max-position-step 0.2 \
-     --max-hold-velocity 0.05 --max-hold-position-span 0.01 \
-     --output "$RECORD_ROOT/right_guided.json"
-   ```
+若实体上还没有经过独立确认的“URDF +”方向标记，使用以下截图确认并标记。需要重新
+生成截图时按 4.2 操作；URDF 和机械装配不变时不重复。
 
-7. 左右两侧都必须显示 `bus result: PASS`，`guided result` 可以是 `PASS` 或
-   `PASS_WITH_WARNINGS`，并且 ID 1--8 均不得为 `FAIL`；任一 ID 失败时，只按
-   4.3--4.5 的详细方法复测该 ID，不默认补做全部反方向；
-8. 对能够安全跨越编码器圈界的关节，按 4.6 完成一次连续角度检查；不能安全跨越的关节
-   记录机械或线缆限制；
-9. 按第 5 节保存验收结果和记录路径。连续角度检查属于首次工程验收，日常上电不重复。
+左侧零位参考截图：
+
+- [后视图](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view1_back.png)
+- [顶视图](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view2_top.png)
+- [左后视图](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback.png)
+
+左侧各关节从 `0.000` 到约 `+0.200 rad` 的左后视图：
+
+- [joint1_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j1_dot2rad.png)
+- [joint2_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j2_dot2rad.png)
+- [joint3_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j3_dot2rad.png)
+- [joint4_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j4_dot2rad.png)
+- [joint5_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j5_dot2rad.png)
+- [joint6_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j6_dot2rad.png)
+- [joint7_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j7_dot2rad.png)
+
+右侧零位参考截图：
+
+- [后视图](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view1_back.png)
+- [顶视图](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view2_top.png)
+- [右后视图](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback.png)
+
+右侧各关节从 `0.000` 到约 `+0.200 rad` 的右后视图：
+
+- [joint1_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j1_dot2rad.png)
+- [joint2_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j2_dot2rad.png)
+- [joint3_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j3_dot2rad.png)
+- [joint4_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j4_dot2rad.png)
+- [joint5_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j5_dot2rad.png)
+- [joint6_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j6_dot2rad.png)
+- [joint7_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j7_dot2rad.png)
+
+#### 0.1.3 构建并加载工作区
+
+在一个终端中执行，后续左右侧命令继续使用同一终端：
+
+```bash
+cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+source /opt/ros/humble/setup.bash
+colcon build --packages-select skye_factr_description skye_factr_teleop
+source install/setup.bash
+RECORD_ROOT=/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase2_5_1
+mkdir -p "$RECORD_ROOT"
+```
+
+#### 0.1.4 完整执行左侧验收
+
+先确认稳定设备名及左右映射：
+
+```bash
+find /dev/serial/by-id -maxdepth 1 -type l -printf '%p -> %l\n' | sort
+```
+
+当前左侧配置使用遥操设备 B。设置左侧 FTDI latency timer 并回读确认：
+
+```bash
+USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0
+
+TTY_PATH=$(readlink -f "$USB_BY_ID")
+TTY_NAME=$(basename "$TTY_PATH")
+echo "USB by-id: $USB_BY_ID -> $TTY_PATH"
+echo 1 | sudo tee "/sys/bus/usb-serial/devices/${TTY_NAME}/latency_timer"
+cat "/sys/bus/usb-serial/devices/${TTY_NAME}/latency_timer"
+```
+
+确认 `TTY_PATH` 是字符设备且回读结果为 `1`，然后运行左侧普通方向引导：
+
+```bash
+ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
+  --guided --direction-only --side left \
+  --config src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
+  --baseline-frames 50 --movement-frames 200 \
+  --settle-frames 50 --endpoint-frames 100 \
+  --interval 0.02 --max-abs-velocity 20.0 --max-position-step 0.2 \
+  --max-hold-velocity 0.05 --max-hold-position-span 0.01 \
+  --output "$RECORD_ROOT/left_guided.json"
+```
+
+工具会从 ID 1 到 ID 8 依次提示。每个 ID 只做一次动作：
+
+1. 看到 `HOLD STILL (baseline)` 时保持全部关节静止约 1 秒；
+2. 看到 `MOVE NOW` 时，只沿实体“URDF +”方向缓慢移动当前关节；ID 8 执行打开动作；
+3. 看到 `STOP NOW` 时停止移动；随后约 1 秒是反应缓冲，缓冲期仍持续采样；
+4. 看到 `HOLD STILL (endpoint)` 时保持终点约 2 秒；
+5. 当前 ID 显示 `PASS` 或 `PASS_WITH_WARNINGS` 后再准备下一个 ID。
+
+左侧普通方向引导完成后，立即运行左侧连续角度引导：
+
+```bash
+ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
+  --guided-continuous --boundary-only --boundary-mode nonzero \
+  --boundary-margin 0.05 --ids 1,2,3,4,5,6,7 --side left \
+  --config src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
+  --baseline-frames 50 --continuous-max-frames 750 \
+  --settle-frames 50 --endpoint-frames 100 --interval 0.02 \
+  --max-abs-velocity 20.0 --max-position-step 0.2 \
+  --max-other-delta 0.03 --motion-reversal-tolerance 0.02 \
+  --max-hold-velocity 0.05 --max-hold-position-span 0.01 \
+  --output "$RECORD_ROOT/left_continuous.json"
+```
+
+对 ID 1--7 逐个按提示操作：
+
+1. 将目标关节放在安全起点并保持静止，按 Enter 采集基线；
+2. 核对工具显示的圈界、越界目标、所需移动距离和实体移动方向；
+3. 确认安全后按 Enter；不能安全跨越时输入 `s:机械或线缆限制原因`；
+4. 看到 `MOVE NOW` 后只缓慢移动目标关节；
+5. 看到 `STOP NOW` 后立即停止，随后按提示保持终点；
+6. 当前 ID 完成并显示结果后再准备下一个 ID。
+
+左侧 `bus result` 必须为 `PASS`，`guided result` 可以为 `PASS` 或
+`PASS_WITH_WARNINGS`，ID 1--8 均不得为 `FAIL`。`continuous result` 可以为 `PASS`、
+`PASS_WITH_WARNINGS`、`PASS_WITH_SKIPS` 或 `PASS_WITH_SKIPS_AND_WARNINGS`，不得包含
+`FAIL` 或 `INCONCLUSIVE`。左侧全部完成后才进入右侧。
+
+#### 0.1.5 完整执行右侧验收
+
+重新确认稳定设备名及左右映射：
+
+```bash
+find /dev/serial/by-id -maxdepth 1 -type l -printf '%p -> %l\n' | sort
+```
+
+当前右侧配置使用遥操设备 B。设置右侧 FTDI latency timer 并回读确认：
+
+```bash
+USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0
+
+TTY_PATH=$(readlink -f "$USB_BY_ID")
+TTY_NAME=$(basename "$TTY_PATH")
+echo "USB by-id: $USB_BY_ID -> $TTY_PATH"
+echo 1 | sudo tee "/sys/bus/usb-serial/devices/${TTY_NAME}/latency_timer"
+cat "/sys/bus/usb-serial/devices/${TTY_NAME}/latency_timer"
+```
+
+确认 `TTY_PATH` 是字符设备且回读结果为 `1`，然后运行右侧普通方向引导：
+
+```bash
+ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
+  --guided --direction-only --side right \
+  --config src/skye_factr_teleop/config/grav_comp_m6_right.yaml \
+  --baseline-frames 50 --movement-frames 200 \
+  --settle-frames 50 --endpoint-frames 100 \
+  --interval 0.02 --max-abs-velocity 20.0 --max-position-step 0.2 \
+  --max-hold-velocity 0.05 --max-hold-position-span 0.01 \
+  --output "$RECORD_ROOT/right_guided.json"
+```
+
+按左侧普通方向引导的相同步骤完成右侧 ID 1--8。右侧普通方向引导完成后，立即运行右侧
+连续角度引导：
+
+```bash
+ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
+  --guided-continuous --boundary-only --boundary-mode nonzero \
+  --boundary-margin 0.05 --ids 1,2,3,4,5,6,7 --side right \
+  --config src/skye_factr_teleop/config/grav_comp_m6_right.yaml \
+  --baseline-frames 50 --continuous-max-frames 750 \
+  --settle-frames 50 --endpoint-frames 100 --interval 0.02 \
+  --max-abs-velocity 20.0 --max-position-step 0.2 \
+  --max-other-delta 0.03 --motion-reversal-tolerance 0.02 \
+  --max-hold-velocity 0.05 --max-hold-position-span 0.01 \
+  --output "$RECORD_ROOT/right_continuous.json"
+```
+
+按左侧连续角度引导的相同步骤完成右侧 ID 1--7。右侧 `bus result` 必须为 `PASS`，
+`guided result` 可以为 `PASS` 或 `PASS_WITH_WARNINGS`，ID 1--8 均不得为 `FAIL`。
+`continuous result` 可以为 `PASS`、`PASS_WITH_WARNINGS`、`PASS_WITH_SKIPS` 或
+`PASS_WITH_SKIPS_AND_WARNINGS`，不得包含 `FAIL` 或 `INCONCLUSIVE`。
+
+#### 0.1.6 完成条件
+
+1. 任一普通方向引导 ID 失败时，只按 4.3--4.5 复测失败 ID，不默认补做全部反方向；
+2. 连续角度引导中不能安全跨越圈界的关节必须记录明确的机械或线缆限制，不得强行越过；
+3. 左右两侧全部达到上述结果要求后，按第 5 节保存验收结果和记录路径；
+4. 连续角度检查属于首次工程验收，日常上电不重复。
 
 推荐流程使用 `--direction-only`，因为实体目标关节由操作者根据已确认的标签独立选择，
 不在本轮重复验收 physical ID order。引导检查在一次串口连接中完成该侧全部 ID；每个 ID
@@ -283,12 +444,12 @@ URDF 方向的推荐判定步骤：
 本节截图统一保存到：
 
 ```text
-/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/dev_docs/skye_factr_teleop_phase2_5_readonly
+/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_assets/phase2_5_1/urdf_direction_reference
 ```
 
 #### 终端 1：启动 URDF 发布器
 
-先构建描述包并选择侧别：
+查看左侧时，直接执行：
 
 ```bash
 cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
@@ -300,18 +461,22 @@ export ROS_LOCALHOST_ONLY=1
 
 SIDE=left
 URDF_PATH=$(ros2 pkg prefix --share skye_factr_description)/urdf/m6left_isomorphism.urdf
+test -f "$URDF_PATH" && echo "URDF: $URDF_PATH"
+ros2 run robot_state_publisher robot_state_publisher "$URDF_PATH"
 ```
 
-查看右侧时，将最后两行改为：
+查看右侧时，直接执行：
 
 ```bash
+cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+source /opt/ros/humble/setup.bash
+colcon build --packages-select skye_factr_description
+source install/setup.bash
+export ROS_DOMAIN_ID=92
+export ROS_LOCALHOST_ONLY=1
+
 SIDE=right
 URDF_PATH=$(ros2 pkg prefix --share skye_factr_description)/urdf/m6right_isomorphism.urdf
-```
-
-确认路径存在，然后启动 `robot_state_publisher`：
-
-```bash
 test -f "$URDF_PATH" && echo "URDF: $URDF_PATH"
 ros2 run robot_state_publisher robot_state_publisher "$URDF_PATH"
 ```
@@ -344,6 +509,8 @@ RViz 打开后按以下顺序设置：
 
 #### 终端 3：启动 Joint State Publisher GUI
 
+查看左侧时，直接执行：
+
 ```bash
 cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
 source /opt/ros/humble/setup.bash
@@ -355,9 +522,15 @@ URDF_PATH=$(ros2 pkg prefix --share skye_factr_description)/urdf/m6left_isomorph
 ros2 run joint_state_publisher_gui joint_state_publisher_gui "$URDF_PATH"
 ```
 
-查看右侧时，把最后两行替换为：
+查看右侧时，直接执行：
 
 ```bash
+cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=92
+export ROS_LOCALHOST_ONLY=1
+
 URDF_PATH=$(ros2 pkg prefix --share skye_factr_description)/urdf/m6right_isomorphism.urdf
 ros2 run joint_state_publisher_gui joint_state_publisher_gui "$URDF_PATH"
 ```
@@ -435,19 +608,19 @@ ros2 topic list | rg '^/(robot_description|joint_states|tf|tf_static)$'
 
 左侧零位参考截图：
 
-- [后视图](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view1_back.png)
-- [顶视图](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view2_top.png)
-- [左后视图](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback.png)
+- [后视图](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view1_back.png)
+- [顶视图](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view2_top.png)
+- [左后视图](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback.png)
 
 左侧各关节从 `0.000` 到约 `+0.200 rad` 的左后视图：
 
-- [joint1_left](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback_j1_dot2rad.png)
-- [joint2_left](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback_j2_dot2rad.png)
-- [joint3_left](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback_j3_dot2rad.png)
-- [joint4_left](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback_j4_dot2rad.png)
-- [joint5_left](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback_j5_dot2rad.png)
-- [joint6_left](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback_j6_dot2rad.png)
-- [joint7_left](skye_factr_teleop_phase2_5_readonly/leftarm_zerostate_view3_leftback_j7_dot2rad.png)
+- [joint1_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j1_dot2rad.png)
+- [joint2_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j2_dot2rad.png)
+- [joint3_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j3_dot2rad.png)
+- [joint4_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j4_dot2rad.png)
+- [joint5_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j5_dot2rad.png)
+- [joint6_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j6_dot2rad.png)
+- [joint7_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j7_dot2rad.png)
 
 #### 右侧各关节的定义如下
 
@@ -463,19 +636,19 @@ ros2 topic list | rg '^/(robot_description|joint_states|tf|tf_static)$'
 
 右侧零位参考截图：
 
-- [后视图](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view1_back.png)
-- [顶视图](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view2_top.png)
-- [右后视图](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback.png)
+- [后视图](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view1_back.png)
+- [顶视图](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view2_top.png)
+- [右后视图](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback.png)
 
 右侧各关节从 `0.000` 到约 `+0.200 rad` 的右后视图：
 
-- [joint1_right](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback_j1_dot2rad.png)
-- [joint2_right](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback_j2_dot2rad.png)
-- [joint3_right](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback_j3_dot2rad.png)
-- [joint4_right](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback_j4_dot2rad.png)
-- [joint5_right](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback_j5_dot2rad.png)
-- [joint6_right](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback_j6_dot2rad.png)
-- [joint7_right](skye_factr_teleop_phase2_5_readonly/rightarm_zerostate_view3_rightback_j7_dot2rad.png)
+- [joint1_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j1_dot2rad.png)
+- [joint2_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j2_dot2rad.png)
+- [joint3_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j3_dot2rad.png)
+- [joint4_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j4_dot2rad.png)
+- [joint5_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j5_dot2rad.png)
+- [joint6_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j6_dot2rad.png)
+- [joint7_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j7_dot2rad.png)
 
 RViz 坐标轴颜色为红色 `+X`、绿色 `+Y`、蓝色 `+Z`。对于 `URDF axis=+Z` 的关节，
 拇指指向蓝色 `+Z` 箭头；对于 `URDF axis=-Z` 的关节，拇指指向蓝色箭头的反方向。
@@ -724,6 +897,8 @@ ID 8；完整首次验收应列出 ID 1--7，使每个关节最终都有通过�
 左侧配置文件：/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml
 右侧配置文件：/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml
 舵机型号与 ID：ID 1--2 XM430-W350（model 1020）；ID 3--8 XC330-T288（model 1220）
+舵机标识照片：validation_assets/phase2_5_1/servo_identification/
+URDF 方向参考：validation_assets/phase2_5_1/urdf_direction_reference/
 波特率：4000000
 FTDI latency timer：左右均为 1
 Return Delay Time：左右 ID 1--8 全部 0 / PASS
