@@ -36,8 +36,8 @@ DEFAULT_SDK = Path("/data/coding/tianji/tianji-robot-SDK-Gento_Skye-Luna")
 PROFILE_IP = {"orin": "6.6.7.190", "thor": "6.6.7.191"}
 
 # Match official ImpJoint example defaults.
-K_IMP = [3.0, 3.0, 3.0, 2.0, 1.0, 1.0, 1.0]
-D_IMP = [0.2] * 7
+K_IMP = [60.0, 60.0, 60.0, 40.0, 20.0, 20.0, 20.0]
+D_IMP = [0.3] * 7
 K_DRAG = list(K_IMP)
 D_DRAG = list(D_IMP)
 
@@ -216,7 +216,7 @@ def cmd_play_ptp(args, robot, FXObjType, state_map, error_dict):
               f"fb={[round(x, 2) for x in fb]}")
         rows.append([i, f"{t_arrive:.4f}", f"{err_max:.4f}"]
                     + [f"{x:.4f}" for x in target] + [f"{x:.4f}" for x in fb])
-        time.sleep(0.5)  # example pauses between targets
+        # time.sleep(0.5)  # example pauses between targets 再等0.5s
 
     args.log.parent.mkdir(parents=True, exist_ok=True)
     with args.log.open("w", newline="") as f:
