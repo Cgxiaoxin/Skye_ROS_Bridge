@@ -1,11 +1,24 @@
 #!/usr/bin/env python3
-"""Drag-teach waypoints + impedance stream replay (lag / arrival test).
+"""ImpJoint waypoint test — aligned with example_basic_ImpJoint.py.
 
-Requires exclusive Gento link (stop skye_robot_driver first).
+Official ImpJoint usage (see pd_test/example/example_basic_ImpJoint.py):
+  1) link → recover Error/IDLE
+  2) switch_to_imp_joint_mode(vel, acc, k, d)
+  3) SetJointPosCmd(ONE target) → poll until approx equal → next target
+  4) switch_to_idle
 
-  export GENTO_SDK_ROOT=/path/to/tianji-robot-SDK-Gento_Skye-Luna
-  python pd_test/imp_traj_test.py --collect --arm left --profile orin
-  python pd_test/imp_traj_test.py --play --arm left --profile orin --vel 100 --acc 100 --dt 0.02
+NOT the previous wall-clock stream (that changes the target before the arm arrives,
+so Imp always lags — large err, and vel/acc ratio looks “useless”).
+
+  # teach (DragJoint)
+  python pd_test/imp_traj_test.py --collect --arm right --profile orin
+
+  # replay waypoints point-to-point (like the official example)
+  python pd_test/imp_traj_test.py --play --arm right --profile orin --vel 10 --acc 10
+
+  # optional: stream stress test (policy-like; expect larger lag)
+  python pd_test/imp_traj_test.py --play --style stream --arm right --profile orin \\
+      --vel 100 --acc 100 --seg-time 1.0 --dt 0.02
 """
 
 from __future__ import annotations
@@ -19,35 +32,31 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parent
 DEFAULT_SDK = Path("/data/coding/tianji/tianji-robot-SDK-Gento_Skye-Luna")
 PROFILE_IP = {"orin": "6.6.7.190", "thor": "6.6.7.191"}
 
-# Match skye_robot_driver imp_joint defaults.
-K = [25.0] * 7
-D = [6.0] * 7
-# Soft gains for drag teach.
-K_DRAG = [3.0, 3.0, 3.0, 2.0, 1.0, 1.0, 1.0]
-D_DRAG = [0.2] * 7
+# Match official ImpJoint example defaults.
+K_IMP = [3.0, 3.0, 3.0, 2.0, 1.0, 1.0, 1.0]
+D_IMP = [0.2] * 7
+K_DRAG = list(K_IMP)
+D_DRAG = list(D_IMP)
 
 
 def _setup_sdk():
     root = Path(os.environ.get("GENTO_SDK_ROOT", DEFAULT_SDK))
-    py = root / "PYTHON_SDK"
-    if not (py / "GentoRobot.py").is_file():
-        raise SystemExit(
-            f"GentoRobot not found under {py}. Set GENTO_SDK_ROOT to the SDK tree."
-        )
+    if not (root / "PYTHON_SDK" / "GentoRobot.py").is_file():
+        raise SystemExit(f"GentoRobot not found under {root}/PYTHON_SDK. Set GENTO_SDK_ROOT.")
     sys.path.insert(0, str(root))
     from PYTHON_SDK.GentoRobot import (  # noqa: E402
         FXLogMask,
         FXObjMask,
         FXObjType,
         GentoRobot,
+        error_dict,
         state_map,
     )
 
-    return GentoRobot, FXLogMask, FXObjMask, FXObjType, state_map
+    return GentoRobot, FXLogMask, FXObjMask, FXObjType, state_map, error_dict
 
 
 def parse_ip(s: str):
@@ -61,16 +70,20 @@ def arm_obj(arm: str, FXObjType):
     return (FXObjType.OBJ_ARM0, 0) if arm == "left" else (FXObjType.OBJ_ARM1, 1)
 
 
-def ensure_idle(robot, obj, state_map, timeout_ms=2000):
+def recover_idle(robot, obj, state_map, error_dict, timeout_ms=2000):
+    """Same recover path as example_basic_ImpJoint.py."""
     st = state_map[robot.current_state(obj)]
+    print(f"  state={st}")
     if st == "Error":
-        ret, _ = robot.reset_error(obj, timeout_ms)
+        ret, code = robot.reset_error(obj, timeout_ms)
         if ret != 0:
-            raise RuntimeError(f"reset_error failed: {ret}")
+            raise RuntimeError(f"reset_error failed: {error_dict.get(code, code)}")
+        print("  reset_error → IDLE")
     elif st != "IDLE":
         ret = robot.switch_to_idle(obj, timeout_ms)
         if ret != 0:
             raise RuntimeError(f"switch_to_idle failed: {robot._get_operate_error_msg(ret)}")
+        print("  switch_to_idle ok")
 
 
 def read_waypoints(path: Path):
@@ -104,7 +117,7 @@ def start_estop(robot, FXObjMask):
             input()
         except EOFError:
             return
-        print("\n[E-STOP] Enter pressed")
+        print("\n[E-STOP]")
         try:
             robot.emergency_stop(FXObjMask.OBJ_ALL_FLAG)
         except Exception as e:
@@ -114,13 +127,37 @@ def start_estop(robot, FXObjMask):
     threading.Thread(target=_run, daemon=True).start()
 
 
-def cmd_collect(args, robot, FXObjType, FXObjMask, state_map):
+def go_to_wait(robot, obj, idx, target, tol, timeout_s=60.0, log_every_s=0.5):
+    """example style: one SetJointPosCmd, then poll until approx equal."""
+    ret = robot.runtime_set_joint_pos_cmd(obj, target)
+    if ret != 0:
+        raise RuntimeError(f"SetJointPosCmd failed: {robot._get_operate_error_msg(ret)}")
+    t0 = time.perf_counter()
+    t_last_log = t0
+    while True:
+        fb = list(robot.get_rt_dict()["arms"][idx]["fb"]["fb_pos"])
+        err = [abs(fb[j] - target[j]) for j in range(7)]
+        err_max = max(err)
+        now = time.perf_counter()
+        if robot.check_sequences_approx_equal(fb, target, tolerance=tol):
+            return now - t0, fb
+        if now - t0 > timeout_s:
+            raise TimeoutError(f"arrive timeout {timeout_s}s err_max={err_max:.2f}deg")
+        if now - t_last_log >= log_every_s:
+            print(f"  waiting t={now - t0:.1f}s err_max={err_max:.2f}deg "
+                  f"err={[round(e, 2) for e in err]} "
+                  f"fb={[round(x, 2) for x in fb]}")
+            t_last_log = now
+        time.sleep(0.001)
+
+
+def cmd_collect(args, robot, FXObjType, state_map, error_dict):
     obj, idx = arm_obj(args.arm, FXObjType)
-    ensure_idle(robot, obj, state_map)
+    recover_idle(robot, obj, state_map, error_dict)
     ret = robot.switch_to_drag_joint(obj, 2000, K_DRAG, D_DRAG)
     if ret != 0:
         raise RuntimeError(f"DragJoint failed: {robot._get_operate_error_msg(ret)}")
-    print(f"DragJoint on {args.arm}. Drag arm, Enter=save, q=quit")
+    print(f"DragJoint on {args.arm}. Enter=save, q=quit (hold terminal drag button)")
 
     pts = []
     while True:
@@ -131,38 +168,100 @@ def cmd_collect(args, robot, FXObjType, FXObjMask, state_map):
         pts.append(fb)
         print(f"  #{len(pts)} {[round(x, 2) for x in fb]}")
 
+    if not pts:
+        print("no waypoints")
+        recover_idle(robot, obj, state_map, error_dict)
+        return
+
     args.waypoints.parent.mkdir(parents=True, exist_ok=True)
     with args.waypoints.open("w") as f:
         f.write("# deg, 7 joints per line\n")
         for p in pts:
             f.write(" ".join(f"{x:.6f}" for x in p) + "\n")
-    print(f"saved {len(pts)} waypoints → {args.waypoints}")
-    ensure_idle(robot, obj, state_map)
+    print(f"saved {len(pts)} → {args.waypoints}")
+    recover_idle(robot, obj, state_map, error_dict)
 
 
-def cmd_play(args, robot, FXObjType, FXObjMask, state_map):
+def enter_imp(robot, obj, idx, vel, acc, k, d):
+    """example_basic_ImpJoint: switch once, print sg readback."""
+    ret = robot.switch_to_imp_joint_mode(obj, 2000, vel, acc, k, d)
+    if ret != 0:
+        raise RuntimeError(f"ImpJoint failed: {robot._get_operate_error_msg(ret)}")
+    # Example relies on vel/acc passed into SwitchToImpJointMode (not stream spam).
+    robot.runtime_set_speed_ratio(obj, vel, acc)
+    sg = robot.get_sg_dict()["arms"][idx]["set"]
+    print(f"ImpJoint vel={sg['vel_ratio']} acc={sg['acc_ratio']} "
+          f"k={sg['joint_k']} d={sg['joint_d']}")
+    return sg
+
+
+def cmd_play_ptp(args, robot, FXObjType, state_map, error_dict):
+    """Point-to-point: same motion pattern as example_basic_ImpJoint."""
+    obj, idx = arm_obj(args.arm, FXObjType)
+    wps = read_waypoints(args.waypoints)
+    k = [args.k] * 7 if args.k is not None else list(K_IMP)
+    d = [args.d] * 7 if args.d is not None else list(D_IMP)
+
+    print(f"style=ptp waypoints={len(wps)} vel={args.vel} acc={args.acc} tol={args.tol}")
+    recover_idle(robot, obj, state_map, error_dict)
+    enter_imp(robot, obj, idx, args.vel, args.acc, k, d)
+
+    rows = []
+    for i, target in enumerate(wps):
+        print(f"\n### goto wp[{i}] {[round(x, 2) for x in target]}")
+        t_arrive, fb = go_to_wait(robot, obj, idx, target, args.tol, args.timeout)
+        err = [abs(fb[j] - target[j]) for j in range(7)]
+        err_max = max(err)
+        print(f"  arrived in {t_arrive:.3f}s  err_max={err_max:.3f}deg  "
+              f"fb={[round(x, 2) for x in fb]}")
+        rows.append([i, f"{t_arrive:.4f}", f"{err_max:.4f}"]
+                    + [f"{x:.4f}" for x in target] + [f"{x:.4f}" for x in fb])
+        time.sleep(0.5)  # example pauses between targets
+
+    args.log.parent.mkdir(parents=True, exist_ok=True)
+    with args.log.open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["i", "t_arrive_s", "err_max_deg"]
+                   + [f"cmd{j}" for j in range(7)] + [f"fb{j}" for j in range(7)])
+        w.writerows(rows)
+
+    ts = [float(r[1]) for r in rows]
+    es = [float(r[2]) for r in rows]
+    print("\n--- summary (ptp / example-style) ---")
+    print(f"points={len(rows)}  t_arrive: mean={sum(ts)/len(ts):.3f}s max={max(ts):.3f}s")
+    print(f"err_max_deg: mean={sum(es)/len(es):.3f} max={max(es):.3f}")
+    print(f"log → {args.log}")
+
+    ret = robot.switch_to_idle(obj, 2000)
+    if ret != 0:
+        print(f"warn IDLE: {robot._get_operate_error_msg(ret)}")
+
+
+def cmd_play_stream(args, robot, FXObjType, state_map, error_dict):
+    """Optional stress: dense stream without wait (policy-like). Expect lag."""
     obj, idx = arm_obj(args.arm, FXObjType)
     wps = read_waypoints(args.waypoints)
     traj = interpolate(wps, args.seg_time, args.dt)
-    print(f"waypoints={len(wps)} traj={len(traj)} dt={args.dt}s "
-          f"vel={args.vel} acc={args.acc} tol={args.tol}deg")
+    k = [args.k] * 7 if args.k is not None else list(K_IMP)
+    d = [args.d] * 7 if args.d is not None else list(D_IMP)
 
-    ensure_idle(robot, obj, state_map)
+    print(f"style=stream waypoints={len(wps)} traj={len(traj)} "
+          f"seg_time={args.seg_time}s dt={args.dt}s vel={args.vel} acc={args.acc}")
+    print("NOTE: stream does NOT wait for arrival — Imp will lag if too fast.")
+
+    recover_idle(robot, obj, state_map, error_dict)
+    enter_imp(robot, obj, idx, args.vel, args.acc, k, d)
+
+    # Reach first waypoint before stream (example-style wait).
+    print("go to wp[0] before stream...")
+    go_to_wait(robot, obj, idx, wps[0], args.tol, args.timeout)
     time.sleep(0.3)
-    ret = robot.switch_to_imp_joint_mode(obj, 2000, args.vel, args.acc, K, D)
-    if ret != 0:
-        raise RuntimeError(f"ImpJoint failed: {robot._get_operate_error_msg(ret)}")
-    # Re-assert speed after mode switch (firmware requirement).
-    robot.runtime_set_speed_ratio(obj, args.vel, args.acc)
-    sg = robot.get_sg_dict()["arms"][idx]["set"]
-    print(f"imp vel={sg['vel_ratio']} acc={sg['acc_ratio']} k={sg['joint_k']}")
 
     rows = []
     late = 0
     t0 = time.perf_counter()
     for i, cmd in enumerate(traj):
         t_cmd = i * args.dt
-        # Pace to wall clock so lag is measurable.
         wait = t0 + t_cmd - time.perf_counter()
         if wait > 0:
             time.sleep(wait)
@@ -173,8 +272,7 @@ def cmd_play(args, robot, FXObjType, FXObjMask, state_map):
         rt = robot.get_rt_dict()["arms"][idx]
         fb = list(rt["fb"]["fb_pos"])
         vel = list(rt["fb"]["fb_vel"])
-        err = [abs(fb[j] - cmd[j]) for j in range(7)]
-        err_max = max(err)
+        err_max = max(abs(fb[j] - cmd[j]) for j in range(7))
         vel_max = max(abs(v) for v in vel)
         arrived = int(err_max < args.tol)
         late += 1 - arrived
@@ -188,58 +286,68 @@ def cmd_play(args, robot, FXObjType, FXObjMask, state_map):
     args.log.parent.mkdir(parents=True, exist_ok=True)
     with args.log.open("w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(
-            ["i", "t_cmd", "err_max_deg", "fb_vel_max", "arrived"]
-            + [f"cmd{j}" for j in range(7)]
-            + [f"fb{j}" for j in range(7)]
-        )
+        w.writerow(["i", "t_cmd", "err_max_deg", "fb_vel_max", "arrived"]
+                   + [f"cmd{j}" for j in range(7)] + [f"fb{j}" for j in range(7)])
         w.writerows(rows)
 
     errs = [float(r[2]) for r in rows]
     vels = [float(r[3]) for r in rows]
-    print("--- summary ---")
+    print("\n--- summary (stream) ---")
     print(f"steps={len(rows)} wall={elapsed:.2f}s expected={len(traj)*args.dt:.2f}s")
-    print(f"late(arrived=0)={late}/{len(rows)} "
-          f"({100.0 * late / max(len(rows), 1):.1f}%)")
+    print(f"late={late}/{len(rows)} ({100.0*late/max(len(rows),1):.1f}%)")
     if errs:
         print(f"err_max_deg: mean={sum(errs)/len(errs):.3f} max={max(errs):.3f}")
         print(f"fb_vel_max:  mean={sum(vels)/len(vels):.3f} max={max(vels):.3f}")
     print(f"log → {args.log}")
-    ensure_idle(robot, obj, state_map)
+
+    ret = robot.switch_to_idle(obj, 2000)
+    if ret != 0:
+        print(f"warn IDLE: {robot._get_operate_error_msg(ret)}")
 
 
 def main():
-    p = argparse.ArgumentParser(description="Impedance traj follow test")
+    p = argparse.ArgumentParser(description="ImpJoint waypoint test (example-style)")
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--collect", action="store_true")
     g.add_argument("--play", action="store_true")
-    p.add_argument("--arm", choices=("left", "right"), default="left")
+    p.add_argument("--style", choices=("ptp", "stream"), default="ptp",
+                   help="ptp=wait each waypoint (official); stream=timed dense cmds")
+    p.add_argument("--arm", choices=("left", "right"), default="right")
     p.add_argument("--profile", choices=("orin", "thor"), default="orin")
     p.add_argument("--ip", default=None)
     p.add_argument("--waypoints", type=Path, default=HERE / "waypoints.txt")
     p.add_argument("--log", type=Path, default=HERE / "play_log.csv")
-    p.add_argument("--vel", type=float, default=100.0)
-    p.add_argument("--acc", type=float, default=100.0)
-    p.add_argument("--dt", type=float, default=0.02)
-    p.add_argument("--seg-time", type=float, default=1.0)
-    p.add_argument("--tol", type=float, default=1.0)
+    p.add_argument("--vel", type=float, default=10.0, help="vel ratio %% (example uses 10)")
+    p.add_argument("--acc", type=float, default=10.0, help="acc ratio %% (example uses 10)")
+    p.add_argument("--k", type=float, default=None, help="uniform K; default=example [3,3,3,2,1,1,1]")
+    p.add_argument("--d", type=float, default=None, help="uniform D; default=example 0.2")
+    p.add_argument("--tol", type=float, default=5.0,
+                   help="arrive tol deg: |fb-target| per joint must be < tol (default 5)")
+    p.add_argument("--timeout", type=float, default=60.0, help="per-waypoint timeout s")
+    p.add_argument("--dt", type=float, default=0.02, help="stream only: cmd period s")
+    p.add_argument("--seg-time", type=float, default=1.0, help="stream only: s per segment")
     args = p.parse_args()
     args.ip = args.ip or PROFILE_IP[args.profile]
 
-    GentoRobot, FXLogMask, FXObjMask, FXObjType, state_map = _setup_sdk()
+    GentoRobot, FXLogMask, FXObjMask, FXObjType, state_map, error_dict = _setup_sdk()
     robot = GentoRobot()
-    start_estop(robot, FXObjMask)
-    ip = parse_ip(args.ip)
+    if args.play:
+        start_estop(robot, FXObjMask)
+        print("play: Enter = E-STOP")
+
     try:
         print(f"link {args.ip} arm={args.arm} ...")
-        ret = robot.link(*ip, log_level=FXLogMask.FX_LOG_INFO_FLAG)
+        ret = robot.link(*parse_ip(args.ip), log_level=FXLogMask.FX_LOG_INFO_FLAG)
         if not robot._connected:
             raise RuntimeError(f"link failed: {robot._get_operate_error_msg(ret)}")
         print(f"sdk={robot.get_sdk_version()} ctrl={robot.get_controller_version()}")
+
         if args.collect:
-            cmd_collect(args, robot, FXObjType, FXObjMask, state_map)
+            cmd_collect(args, robot, FXObjType, state_map, error_dict)
+        elif args.style == "stream":
+            cmd_play_stream(args, robot, FXObjType, state_map, error_dict)
         else:
-            cmd_play(args, robot, FXObjType, FXObjMask, state_map)
+            cmd_play_ptp(args, robot, FXObjType, state_map, error_dict)
     except KeyboardInterrupt:
         print("\nInterrupted")
     finally:
