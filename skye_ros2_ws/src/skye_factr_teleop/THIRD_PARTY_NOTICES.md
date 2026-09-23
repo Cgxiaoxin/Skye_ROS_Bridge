@@ -8,10 +8,12 @@
 - License: Apache-2.0
 - Copyright: Copyright (c) 2025 Jason Jingzhou Liu and Yulong Li
 
-The package layout and metadata were informed by FACTR_Teleop. At task 1.1,
-no upstream runtime source file has been copied or adapted into this package;
-the Python runtime modules are new placeholders. Derived-file mappings will be
-added here when later tasks introduce derived implementation code.
+The package layout and metadata were informed by FACTR_Teleop. The stage-3
+`skye_factr_teleop/control_core.py` control laws and quarter-turn calibration
+were adapted from upstream
+`src/factr_teleop/factr_teleop/factr_teleop.py` and rewritten as ROS-free,
+validated, single-cycle functions. Other runtime-module provenance is tracked
+with each implementation task.
 
 The reference commit does not contain a `NOTICE` file.
 
