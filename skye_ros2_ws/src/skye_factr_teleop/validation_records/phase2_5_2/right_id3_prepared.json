@@ -1,0 +1,85 @@
+{
+  "schema": "skye_factr_teleop.phase_2_5_2.v1",
+  "started_at": "2026-09-23T15:51:27+08:00",
+  "mode": "prepare-only",
+  "side": "right",
+  "config": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml",
+  "configured_port": "usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0",
+  "resolved_port": null,
+  "baudrate": 4000000,
+  "latency_timer": null,
+  "device": {
+    "id": 3,
+    "configured_model": "XC330-T288",
+    "expected_model_number": 1220,
+    "reported_model_number": null,
+    "return_delay_time": null,
+    "torque_enabled_before_test": null,
+    "joint_sign": 1.0
+  },
+  "limits": {
+    "model_current_unit_ma": 1.0,
+    "model_rated_limit_ma": 910.0,
+    "smoke_ceiling_ma": 91.0,
+    "operator_limit_ma": 50.0,
+    "test_current_ma": 20.0,
+    "pulse_seconds": 0.5,
+    "settle_seconds": 0.2,
+    "min_direction_delta_rad": 0.001
+  },
+  "initialization": {
+    "expected_sequence": [
+      "Torque Disable",
+      "Current Control Mode",
+      "Zero Goal Current",
+      "Torque Enable"
+    ],
+    "result": "NOT_RUN"
+  },
+  "commands": {
+    "positive": {
+      "current_ma": 20.0,
+      "raw": 20,
+      "encoded": [
+        20,
+        0
+      ],
+      "effective_current_ma": 20.0
+    },
+    "zero_after_positive": {
+      "current_ma": 0.0,
+      "raw": 0,
+      "encoded": [
+        0,
+        0
+      ]
+    },
+    "negative": {
+      "current_ma": -20.0,
+      "raw": -20,
+      "encoded": [
+        236,
+        255
+      ],
+      "effective_current_ma": -20.0
+    },
+    "zero_after_negative": {
+      "current_ma": 0.0,
+      "raw": 0,
+      "encoded": [
+        0,
+        0
+      ]
+    }
+  },
+  "command_log": [],
+  "direction": {
+    "result": "NOT_RUN"
+  },
+  "shutdown": {
+    "result": "NOT_RUN"
+  },
+  "result": "PREPARED",
+  "interrupted": false,
+  "error": null
+}

@@ -3,9 +3,10 @@
 ROS 2 Humble `ament_python` package for Skye/M6 FACTR-style leader-arm
 teleoperation.
 
-The package skeleton and immutable YAML configuration model from development-plan
-tasks 1.1 and 1.2 are implemented. Control, hardware, and launch behavior are
-implemented in later tasks.
+The package includes validated YAML configuration, the production Dynamixel
+adapter, and a ROS-free single-cycle control core. The ROS node and launch
+integration are later tasks; the low-current hardware smoke check remains
+pending in development-plan stage 7.
 
 ## Configuration
 
@@ -130,6 +131,25 @@ Follow the complete
 before removing `--prepare-only`. Hardware mode sends short positive, zero,
 negative, and zero commands, checks encoder direction, and always invokes the
 production close path to write zero current and Torque Disable.
+
+## Stage 3 control core (no hardware)
+
+`control_core.py` contains explicit quarter-turn calibration, physical/logical
+joint mapping, individually switchable joint-limit, gravity, static-friction,
+and null-space terms, plus one non-blocking `ControlCore.step()` call. A runtime
+adapter supplies the dynamics interface (`gravity`, `jacobian`, and
+`forward_kinematics`) and an explicit current limit; constructing the core does
+not open a serial port or enable torque. The step writes no current when torque
+is disabled. On read, computation, or write failure it attempts zero current
+and Torque Disable. Follower torque and gripper feedback are interface-only
+until stage 8.
+
+The fixed-input and fake-device tests run without ROS, serial hardware,
+Pinocchio, or Ruckig:
+
+```bash
+python3 -m pytest -q test/test_control_core.py
+```
 
 ## License
 
