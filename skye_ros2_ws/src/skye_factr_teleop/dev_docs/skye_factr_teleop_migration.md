@@ -52,3 +52,20 @@
   仅表示外部目标完成，不能据此进入 TELEOP；需要 stop 后重新执行 follower sync。
 - follower 同步、保持和 TELEOP 期间反馈失效会停止；运动初始化或控制异常会关闭
   串口并停用定时器，需要重启节点。一般 stop 或同步超时可在有效新请求时重新使能。
+
+## 2026-09-28：任务 5.2 基础 launch
+
+- 通过新包的 `start_teleop_m6_left.launch.py`、`start_teleop_m6_right.launch.py`、
+  `start_teleop_m6_dual.launch.py` 启动，每侧均使用 `skye_factr_teleop_driver`。
+- 显式使用 `robot_profile:=thor|orin`（默认 thor），不读取旧启动脚本的环境变量。
+  thor 使用现有 `config/`，orin 使用新增 `config/orin/`；所有默认文件从包 share 查找。
+  Orin 参数来自仓库 `marvin_ws/configs/orin/grav_comp_m6_{left,right}.yaml`，仅调整
+  新包资源路径、配置名称并显式声明已有的重力计算模式。保留端口、方向、增益和关闭的
+  关节限位屏障；迁移不代表已完成 Orin 真机验收。
+- 每侧必须传入 `left_params_file` / `right_params_file`，包含该硬件的标定偏移及
+  电流、轨迹上限；不自动填入默认标定值。可用 `left_config` / `right_config` 覆盖
+  profile 对应的控制 YAML；这项选择优先于参数文件内的 `config_path`。
+- follower 状态与控制命令分别 remap 到 `/gento/<side>_joint_states` 和
+  `/gento/<side>_joint_control`；独立走位、leader 当前/目标状态使用左右独立话题。
+  模式请求和 `/teleop/state` 保持共享。基础 launch 不启动键盘或大臂节点，使用
+  ROS CLI 发出模式请求。

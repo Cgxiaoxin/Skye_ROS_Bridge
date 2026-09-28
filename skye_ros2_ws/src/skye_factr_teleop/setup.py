@@ -8,7 +8,7 @@ from setuptools import find_packages, setup
 
 
 package_name = "skye_factr_teleop"
-config_files = glob(os.path.join("config", "*.yaml"))
+config_files = glob(os.path.join("config", "**", "*.yaml"), recursive=True)
 launch_files = glob(os.path.join("launch", "*.launch.py"))
 
 data_files = [
@@ -22,9 +22,10 @@ data_files = [
     ),
 ]
 
-if config_files:
+for directory in sorted({os.path.dirname(path) for path in config_files}):
     data_files.append(
-        (os.path.join("share", package_name, "config"), config_files)
+        (os.path.join("share", package_name, directory),
+         sorted(path for path in config_files if os.path.dirname(path) == directory))
     )
 
 if launch_files:

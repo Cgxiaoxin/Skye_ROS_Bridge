@@ -4,9 +4,9 @@ ROS 2 Humble `ament_python` package for Skye/M6 FACTR-style leader-arm
 teleoperation.
 
 The package includes validated YAML configuration, the production Dynamixel
-adapter, a ROS-free single-cycle control core, and the single-arm ROS driver.
-Launch integration remains task 5.2; the low-current hardware smoke check
-remains pending in development-plan stage 7.
+adapter, a ROS-free single-cycle control core, the single-arm ROS driver, and
+left/right/dual-arm launch files. The low-current hardware smoke check remains
+pending in development-plan stage 7.
 
 ## Configuration
 
@@ -14,6 +14,11 @@ The verified default Thor M6 parameters are installed as
 `config/grav_comp_m6_left.yaml` and `config/grav_comp_m6_right.yaml`. Load and
 validate either file with `skye_factr_teleop.config.load_config`. Returned nested
 dataclasses and numeric tuples are immutable.
+
+The Orin profile is installed under `config/orin/`, migrated from the existing
+repository Orin configurations. Its servo ports, directions, gains, and disabled
+arm-limit barrier are preserved; it has not undergone new-package hardware
+acceptance. These are leader hardware profiles, not follower joint-sign mappings.
 
 Set `controller.gravity_comp.mode` in the left/right YAML to choose compensation:
 
@@ -131,7 +136,78 @@ python3 -m pytest -q test/test_ros_driver.py test/test_dynamics.py test/test_dyn
 ```
 
 Result: 211 passed. The node tests require ROS Humble; model tests require
-Pinocchio. Launch and cross-node message/remap acceptance remain tasks 5.2/5.3.
+Pinocchio. Cross-node message/remap acceptance remains task 5.3.
+
+## Task 5.2 basic launch
+
+The three entry points launch only the requested leader nodes, using the same
+`skye_factr_teleop_driver` executable. They do not start a keyboard node or the
+follower driver. `robot_profile` defaults to `thor` and accepts only `thor|orin`.
+Control YAML and relative file paths are resolved from this package's share
+directory. No environment or Python module search paths are changed.
+
+| Argument | Meaning |
+|---|---|
+| `robot_profile` | `thor`: `config/grav_comp_m6_<side>.yaml`; `orin`: `config/orin/grav_comp_m6_<side>.yaml` |
+| `left_params_file`, `right_params_file` | Required for each launched arm: ROS parameter YAML containing its calibrated offsets, current ceiling, and trajectory limits described above |
+| `left_config`, `right_config` | Optional control YAML override for each launched arm; empty selects the profile default |
+
+Both file arguments accept absolute paths or paths relative to the package
+share. The selected control YAML takes precedence over any `config_path` in the
+ROS parameter file. A single-arm launch declares only that arm's arguments.
+In a dual-arm launch, both sets of file paths are checked before starting nodes.
+The parameter files should use node keys `skye_factr_teleop_left` and
+`skye_factr_teleop_right`, respectively, or `/**` with separate files per arm.
+Launch does not supply invented calibration offsets or motion/current limits.
+
+After hardware acceptance, use operator-supplied runtime parameter files:
+
+```bash
+ros2 launch skye_factr_teleop start_teleop_m6_left.launch.py \
+  robot_profile:=thor left_params_file:=/path/to/left_runtime.yaml
+
+ros2 launch skye_factr_teleop start_teleop_m6_right.launch.py \
+  robot_profile:=orin right_params_file:=/path/to/right_runtime.yaml
+
+ros2 launch skye_factr_teleop start_teleop_m6_dual.launch.py \
+  robot_profile:=thor \
+  left_params_file:=/path/to/left_runtime.yaml \
+  right_params_file:=/path/to/right_runtime.yaml
+```
+
+Each side is remapped independently:
+
+| Node interface | Left destination | Right destination |
+|---|---|---|
+| `/joint_state` | `/gento/left_joint_states` | `/gento/right_joint_states` |
+| `/joint_control` | `/gento/left_joint_control` | `/gento/right_joint_control` |
+| `/joint_move` | `/left_joint_move` | `/right_joint_move` |
+| `/leader_arm/current_state` | `/left_leader_arm/current_state` | `/right_leader_arm/current_state` |
+| `/leader_arm/target_joint_state` | `/left_leader_arm/target_joint_state` | `/right_leader_arm/target_joint_state` |
+
+Mode requests and `/teleop/state` retain their shared global names. During basic
+acceptance, request modes through ROS CLI; in a dual launch both arms receive
+these requests and apply their own state/freshness checks:
+
+```bash
+ros2 topic pub --once /mode/switch_sync std_msgs/msg/String '{data: switch_sync}'
+ros2 topic pub --once /mode/switch_teleop std_msgs/msg/String '{data: switch_teleop}'
+ros2 topic pub --once /mode/switch_stop std_msgs/msg/String '{data: switch_stop}'
+```
+
+To inspect arguments without starting hardware nodes:
+
+```bash
+ros2 launch skye_factr_teleop start_teleop_m6_dual.launch.py --show-args
+```
+
+`test/test_launch.py` expands the actual launch actions and inspects the resulting
+commands/parameters/remaps with process execution intercepted. It covers all
+three entry points and both profiles without opening serial devices:
+
+```bash
+python3 -m pytest -q test/test_launch.py test/test_config.py
+```
 
 ## Phase 2.5.1 read-only bus check
 

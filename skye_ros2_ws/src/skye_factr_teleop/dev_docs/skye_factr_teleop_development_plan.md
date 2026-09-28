@@ -913,6 +913,31 @@ QoS 与 `skye_robot_driver` 对齐：
 - 不修改 `PYTHONPATH` 指向 `/opt/openrobots`；
 - 不启动键盘节点。基础验收阶段通过 ROS CLI 发布模式请求。
 
+完成记录（2026-09-28）：
+
+- [x] 5.2 已实现 `start_teleop_m6_left.launch.py`、`start_teleop_m6_right.launch.py`、
+  `start_teleop_m6_dual.launch.py`，共用 `launch_support.py`；左右使用同一个
+  `skye_factr_teleop_driver` executable，以 `--side` 选择侧别，节点名唯一。
+- `robot_profile` 默认 thor，限制为 thor/orin。thor 使用现有 `config/`；orin
+  使用迁移的 `config/orin/`，保留原有端口、方向、增益及关节限位屏障开关，替换
+  description 包资源引用。Orin 配置迁移尚不代表新包真机验收。
+- 默认控制配置从包 share 查找；支持 `left_config` / `right_config` 覆盖。
+  每侧必须提供 `left_params_file` / `right_params_file`，承接任务 5.1 要求的
+  标定偏移、电流与轨迹上限；文件可为绝对路径或包 share 下相对路径。
+  双臂启动在创建可执行动作前检查两侧文件，所选控制 YAML 优先于参数文件内的
+  `config_path`，不自动填入未经标定的偏移或运动上限。
+- follower 状态与控制分别 remap 到 `/gento/<side>_joint_states` 与
+  `/gento/<side>_joint_control`；独立走位及 leader 当前/目标状态左右隔离。
+  模式请求与 `/teleop/state` 保持原全局契约；不启动键盘或 follower 节点。
+- 安装规则支持嵌套配置目录，补充 `launch` / `launch_ros` 依赖；README 和迁移说明
+  已记录参数优先级、profile 来源、三种启动命令与 ROS CLI 模式请求。
+- 验证：新增 16 项 launch 测试，拦截进程执行后展开真实 Node 动作，覆盖三种入口、
+  两种 profile、左右 remap、参数文件传递、覆盖路径及无效输入拒绝；与配置测试合计
+  48 项通过。`colcon build --packages-select skye_factr_teleop --symlink-install`
+  通过，`colcon test --packages-select skye_factr_teleop` 全包 287 项通过，
+  `colcon test-result` 零错误、零失败、零跳过。安装后的三个 `--show-args` 入口及
+  四份控制配置可从包 share 读取。未连接真机，跨节点 ROS 图验收继续由 5.3 承担。
+
 ### 任务 5.3：ROS 接口测试
 
 测试内容：
