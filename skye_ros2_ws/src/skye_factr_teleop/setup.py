@@ -18,7 +18,7 @@ data_files = [
     ),
     (
         os.path.join("share", package_name),
-        ["package.xml", "LICENSE", "README.md", "THIRD_PARTY_NOTICES.md"],
+        ["package.xml", "LICENSE", "README.md", "README.zh-CN.md", "THIRD_PARTY_NOTICES.md"],
     ),
 ]
 

@@ -1,5 +1,7 @@
 # skye_factr_teleop
 
+[简体中文版](README.zh-CN.md). Keep this README and its Chinese translation in sync when changing behavior, commands, or parameters.
+
 ROS 2 Humble `ament_python` package for Skye/M6 FACTR-style leader-arm
 teleoperation.
 
