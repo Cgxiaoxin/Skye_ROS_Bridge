@@ -38,7 +38,8 @@ ROBOT_PROFILE="$(resolve_robot_profile "${MARVIN_WS}")"
 validate_robot_profile "${ROBOT_PROFILE}" || exit 1
 export ROBOT_PROFILE
 
-IMAGE="${IMAGE:-harbor.amigos-robot.com/tmp/marvin-m6-ros2:humble}"
+# -harbor.amigos-robot.com/tmp/marvin-m6-ros2:humble 老版镜像
+IMAGE="${IMAGE:-marvin-m6-ros2:e5a9d8fd}"
 # Legacy: first leftover arg may still be a docker image tag/path.
 if [[ -n "${1:-}" && "${1}" != -* ]]; then
   IMAGE="${1}"

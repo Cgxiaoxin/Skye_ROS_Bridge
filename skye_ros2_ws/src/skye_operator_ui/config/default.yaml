@@ -28,7 +28,8 @@ teardown:
   disable_leader: true
   # Host Python usually lacks dynamixel_sdk; prefer one-shot Marvin image.
   disable_via_docker: true
-  marvin_image: harbor.amigos-robot.com/tmp/marvin-m6-ros2:humble
+  # 老版镜像 harbor.amigos-robot.com/tmp/marvin-m6-ros2:humble
+  marvin_image: marvin-m6-ros2:e5a9d8fd
   docker_rm_timeout_s: 20.0
   disable_timeout_s: 60.0
 

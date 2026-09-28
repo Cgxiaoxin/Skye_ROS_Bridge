@@ -12,7 +12,8 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONTAINER = "skye_marvin_m6"
-DEFAULT_IMAGE = "harbor.amigos-robot.com/tmp/marvin-m6-ros2:humble"
+# 老版镜像：harbor.amigos-robot.com/tmp/marvin-m6-ros2:humble
+DEFAULT_IMAGE = "marvin-m6-ros2:e5a9d8fd"
 
 
 def _teardown_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
