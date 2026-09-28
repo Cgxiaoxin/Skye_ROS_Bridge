@@ -92,6 +92,18 @@ class DriverNode : public rclcpp::Node {
   double max_delta_per_cycle_{0.05};
   double command_timeout_s_{0.20};
   TeleopMappingMode teleop_mapping_mode_{TeleopMappingMode::kRelative};
+  // Relative assist (soft compress / bounded leash / offset resync). Defaults
+  // keep recording-safe: idle resync rate 0; motion-masked resync is mild.
+  bool relative_assist_enable_{true};
+  double soft_compress_delta_{0.087};       // ~5°
+  double leash_lambda_{0.052};              // ~3°
+  double offset_max_{0.262};                // ~15° |o - o_cal|
+  double resync_alpha_{0.08};               // fraction of |dqL|
+  double resync_rate_motion_max_{0.052};    // ~3°/s
+  double resync_rate_idle_{0.0};            // 0 during collection
+  double still_displacement_rad_{0.0045};   // ~0.26° window
+  double still_time_s_{0.5};
+  double tracking_error_freeze_rad_{0.14};  // ~8° follower lag → freeze o
   std::optional<JointArray> left_gento_ref_;
   std::optional<JointArray> right_gento_ref_;
   // Continuous (unwrapped) leader tracking per arm, used by the relative teleop
@@ -102,6 +114,8 @@ class DriverNode : public rclcpp::Node {
   JointArray right_leader_continuous_{};
   JointArray left_leader_cont_ref_{};
   JointArray right_leader_cont_ref_{};
+  double left_still_elapsed_s_{0.0};
+  double right_still_elapsed_s_{0.0};
   std::optional<JointArray> left_last_command_;
   std::optional<JointArray> right_last_command_;
   std::optional<JointArray> left_abs_last_command_;

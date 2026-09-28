@@ -142,6 +142,21 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   command_timeout_s_ = declare_parameter<double>("command_timeout_s", 0.50);
   teleop_mapping_mode_ = parse_teleop_mapping_mode(
       declare_parameter<std::string>("teleop_mapping_mode", "relative"));
+  relative_assist_enable_ =
+      declare_parameter<bool>("relative_assist_enable", true);
+  soft_compress_delta_ =
+      declare_parameter<double>("soft_compress_delta", 0.087);
+  leash_lambda_ = declare_parameter<double>("leash_lambda", 0.052);
+  offset_max_ = declare_parameter<double>("offset_max", 0.262);
+  resync_alpha_ = declare_parameter<double>("resync_alpha", 0.08);
+  resync_rate_motion_max_ =
+      declare_parameter<double>("resync_rate_motion_max", 0.052);
+  resync_rate_idle_ = declare_parameter<double>("resync_rate_idle", 0.0);
+  still_displacement_rad_ =
+      declare_parameter<double>("still_displacement_rad", 0.0045);
+  still_time_s_ = declare_parameter<double>("still_time_s", 0.5);
+  tracking_error_freeze_rad_ =
+      declare_parameter<double>("tracking_error_freeze_rad", 0.14);
   const auto enable_gripper = declare_parameter<bool>("enable_gripper", true);
   const auto gripper_rate_hz =
       declare_parameter<double>("gripper_rate_hz", 100.0);
@@ -586,11 +601,13 @@ void DriverNode::reset_teleop_session(DriverCore::Arm arm) {
     left_gento_ref_.reset();
     left_last_command_.reset();
     left_streaming_ = false;
+    left_still_elapsed_s_ = 0.0;
     return;
   }
   right_gento_ref_.reset();
   right_last_command_.reset();
   right_streaming_ = false;
+  right_still_elapsed_s_ = 0.0;
 }
 
 void DriverNode::reset_absolute_session(DriverCore::Arm arm) {
@@ -775,7 +792,99 @@ void DriverNode::handle_command(
     return;
   }
   // This frame was consumed by the continuous unwrap tracking.
+  // Capture per-joint leader frame motion before overwriting prev (for resync).
+  JointArray leader_frame_delta{};
+  for (std::size_t i = 0; i < leader.size(); ++i) {
+    double d = leader[i] - leader_prev[i];
+    constexpr double kPi = 3.14159265358979323846;
+    if (d > kPi) {
+      d -= 2.0 * kPi;
+    } else if (d < -kPi) {
+      d += 2.0 * kPi;
+    }
+    leader_frame_delta[i] = d;
+  }
   leader_prev = leader;
+
+  auto &still_elapsed = arm == DriverCore::Arm::kLeft ? left_still_elapsed_s_
+                                                       : right_still_elapsed_s_;
+  double dt = command_timeout_s_;
+  if (streaming && last_command_time.nanoseconds() > 0) {
+    dt = std::clamp((now() - last_command_time).seconds(), 1e-4, 0.05);
+  } else {
+    dt = 0.004;
+  }
+
+  bool freeze_offset = false;
+  if (teleop_mapping_mode_ == TeleopMappingMode::kRelative &&
+      relative_assist_enable_ && last_command.has_value()) {
+    const auto state = core_.read_state();
+    if (state) {
+      const auto &measured = arm == DriverCore::Arm::kLeft
+                                 ? state->left_position
+                                 : state->right_position;
+      double max_err = 0.0;
+      for (std::size_t i = 0; i < measured.size(); ++i) {
+        max_err = std::max(max_err, std::abs((*last_command)[i] - measured[i]));
+      }
+      if (max_err > tracking_error_freeze_rad_) {
+        freeze_offset = true;
+        RCLCPP_WARN_THROTTLE(
+            get_logger(), *get_clock(), 1000,
+            "%s relative assist: freeze offset (track err %.3f rad > %.3f)",
+            arm_name, max_err, tracking_error_freeze_rad_);
+      }
+    }
+  }
+
+  if (teleop_mapping_mode_ == TeleopMappingMode::kRelative &&
+      relative_assist_enable_ && !freeze_offset) {
+    DriverCore::apply_bounded_leash(
+        mapped, *gento_ref, leader_cont_ref, order, signs, minimum, maximum,
+        offsets, leash_lambda_, offset_max_);
+    mapped = DriverCore::soft_compress(
+        mapped, minimum, maximum, soft_compress_delta_);
+
+    double max_abs_disp = 0.0;
+    for (std::size_t i = 0; i < leader_frame_delta.size(); ++i) {
+      max_abs_disp = std::max(max_abs_disp, std::abs(leader_frame_delta[i]));
+    }
+    if (max_abs_disp < still_displacement_rad_) {
+      still_elapsed += dt;
+    } else {
+      still_elapsed = 0.0;
+    }
+    const double s_idle =
+        still_elapsed >= still_time_s_
+            ? std::min(1.0, (still_elapsed - still_time_s_) / 0.3)
+            : 0.0;
+
+    JointArray rate_limit{};
+    for (std::size_t out = 0; out < rate_limit.size(); ++out) {
+      const auto src = static_cast<std::size_t>(order[out]);
+      const double dq = std::abs(leader_frame_delta[src]) / dt;
+      const double motion =
+          std::min(resync_alpha_ * dq, resync_rate_motion_max_);
+      const double rate = motion + resync_rate_idle_ * s_idle;
+      rate_limit[out] = rate * dt;
+    }
+    DriverCore::apply_offset_resync(
+        *gento_ref, leader_cont_ref, order, signs, offsets, mapped, minimum,
+        maximum, rate_limit, soft_compress_delta_);
+    // Recompute mapped after o nudge so command reflects the resync step.
+    mapped = DriverCore::apply_relative_joint_mapping(
+        leader, leader, leader_continuous, leader_cont_ref, *gento_ref, order,
+        signs);
+    // apply_relative with leader_now==leader_prev adds 0 to continuous; OK.
+    mapped = DriverCore::soft_compress(
+        mapped, minimum, maximum, soft_compress_delta_);
+  } else if (
+      teleop_mapping_mode_ == TeleopMappingMode::kRelative &&
+      relative_assist_enable_ && freeze_offset) {
+    // Keep command near measured pose; do not grow offset while blocked.
+    mapped = DriverCore::soft_compress(
+        mapped, minimum, maximum, soft_compress_delta_);
+  }
 
   const auto desired = mapped;
   mapped = DriverCore::clamp_to_limits(desired, minimum, maximum);
@@ -794,7 +903,8 @@ void DriverNode::handle_command(
         get_logger(), *get_clock(), 1000,
         "%s command clamped:%s; other joints still tracking",
         arm_name, oss.str().c_str());
-    if (teleop_mapping_mode_ == TeleopMappingMode::kRelative) {
+    if (teleop_mapping_mode_ == TeleopMappingMode::kRelative &&
+        !freeze_offset) {
       DriverCore::clutch_saturated_joints(
           desired, mapped, leader_continuous, leader_cont_ref, *gento_ref,
           order);

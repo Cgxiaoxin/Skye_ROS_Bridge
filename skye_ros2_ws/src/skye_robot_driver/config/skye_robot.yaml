@@ -30,6 +30,19 @@ skye_robot_driver:
     command_timeout_s: 0.50
     # relative: delta from teleop entry (safe if sync incomplete). absolute: legacy.
     teleop_mapping_mode: relative     # relative | absolute
+    # Relative assist on top of clutch: soft edge + bounded leash + mild o→o_cal.
+    # resync_rate_idle=0 keeps collection free of silent ghost motion; raise only
+    # between episodes / during reset if you want faster absolute convergence.
+    relative_assist_enable: true
+    soft_compress_delta: 0.087          # ~5°
+    leash_lambda: 0.052                 # ~3°
+    offset_max: 0.262                   # ~15° |o - o_cal|
+    resync_alpha: 0.08                  # motion-masked fraction of |dqL|
+    resync_rate_motion_max: 0.052       # ~3°/s
+    resync_rate_idle: 0.0               # rad/s; 0 during collection
+    still_displacement_rad: 0.0045      # ~0.26°
+    still_time_s: 0.5
+    tracking_error_freeze_rad: 0.14     # ~8° follower lag freezes offset updates
     # 关节阻抗 K/D（imp_joint）。对齐旧 Marvin left_pd/right_pd，原样进 SDK。
     impedance_stiffness: [25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0]
     impedance_damping: [6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0]

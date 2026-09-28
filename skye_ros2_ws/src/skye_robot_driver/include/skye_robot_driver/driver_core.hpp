@@ -91,6 +91,35 @@ class DriverCore {
       JointArray &leader_continuous, const JointArray &leader_cont_ref,
       const JointArray &follower_ref, const std::array<int, 7> &joint_order,
       const JointArray &signs);
+  // Effective relative offset in follower frame:
+  //   o_eff[out] = gento_ref[out] - signs[out] * leader_cont_ref[src]
+  // Absolute calibration target is typically the configured joint offsets.
+  static JointArray effective_offset(
+      const JointArray &gento_ref, const JointArray &leader_cont_ref,
+      const std::array<int, 7> &joint_order, const JointArray &signs);
+  // Soft position compression near follower limits (C1 at the soft edge):
+  // q = a + δ·tanh((r-a)/δ) for r beyond a = Fmax-δ (symmetric on min).
+  static JointArray soft_compress(
+      const JointArray &raw, const JointArray &minimum,
+      const JointArray &maximum, double delta);
+  // Bounded leash: if raw target exceeds [Fmin-Λ, Fmax+Λ], drag o via gento_ref
+  // so r stays at the leash end. Freezes further o growth when |o-o_cal|>o_max.
+  // Returns true if any joint was leashed or frozen.
+  static bool apply_bounded_leash(
+      JointArray &raw_target, JointArray &gento_ref,
+      const JointArray &leader_cont_ref, const std::array<int, 7> &joint_order,
+      const JointArray &signs, const JointArray &minimum,
+      const JointArray &maximum, const JointArray &o_cal, double lambda,
+      double o_max);
+  // Slowly nudge o_eff → o_cal by adjusting gento_ref (follower moves without
+  // leader motion). rate_limit[i] is max |Δo| this cycle. Skips joints where the
+  // nudge would increase soft-limit compression (admission).
+  static bool apply_offset_resync(
+      JointArray &gento_ref, const JointArray &leader_cont_ref,
+      const std::array<int, 7> &joint_order, const JointArray &signs,
+      const JointArray &o_cal, const JointArray &q_target,
+      const JointArray &minimum, const JointArray &maximum,
+      const JointArray &rate_limit, double soft_delta);
   // Per-joint clutch: if desired[i] was clamped, absorb that joint's leader
   // travel (re-baseline the continuous leader reference) so reversing does not
   // chase accumulated error. Other joints unchanged.

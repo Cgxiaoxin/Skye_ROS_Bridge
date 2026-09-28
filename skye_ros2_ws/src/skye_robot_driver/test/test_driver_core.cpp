@@ -192,3 +192,69 @@ TEST(DriverCore, RelativeKeepsLegitimateLargeSwing) {
   EXPECT_NEAR(step(-1.0), -3.0, 1e-9);
   EXPECT_NEAR(step(-2.0), -4.0, 1e-9);
 }
+
+TEST(DriverCore, SoftCompressIsIdentityInsideAndAsymptotesToLimit) {
+  DriverCore::JointArray raw{};
+  raw[0] = 0.5;
+  raw[3] = kMax[3] + 1.0;  // far past J4 max
+  const double delta = 0.087;
+  const auto soft = DriverCore::soft_compress(raw, kMin, kMax, delta);
+  EXPECT_NEAR(soft[0], 0.5, 1e-12);
+  EXPECT_LT(soft[3], kMax[3]);
+  EXPECT_GT(soft[3], kMax[3] - delta);
+  // Value and slope continuity at soft edge: r = a = Fmax - delta → q = a.
+  raw[3] = kMax[3] - delta;
+  const auto at_edge = DriverCore::soft_compress(raw, kMin, kMax, delta);
+  EXPECT_NEAR(at_edge[3], kMax[3] - delta, 1e-12);
+}
+
+TEST(DriverCore, BoundedLeashDragsOffsetAndCapsAtOMax) {
+  DriverCore::JointArray gento_ref{};
+  DriverCore::JointArray leader_cont_ref{};
+  DriverCore::JointArray o_cal{};
+  DriverCore::JointArray raw{};
+  // Drive J0 past Fmax + lambda.
+  const double lambda = 0.05;
+  raw[0] = kMax[0] + lambda + 0.2;
+  EXPECT_TRUE(DriverCore::apply_bounded_leash(
+      raw, gento_ref, leader_cont_ref, kOrder, kJ4NegSigns, kMin, kMax, o_cal,
+      lambda, 0.30));
+  EXPECT_NEAR(raw[0], kMax[0] + lambda, 1e-9);
+  EXPECT_NEAR(gento_ref[0], -0.2, 1e-9);
+
+  // Further excess that would push |o| beyond o_max freezes o growth.
+  raw[0] = kMax[0] + lambda + 0.5;
+  const double o_before = gento_ref[0];
+  EXPECT_TRUE(DriverCore::apply_bounded_leash(
+      raw, gento_ref, leader_cont_ref, kOrder, kJ4NegSigns, kMin, kMax, o_cal,
+      lambda, 0.25));
+  EXPECT_NEAR(gento_ref[0], o_before, 1e-12);
+  EXPECT_NEAR(raw[0], kMax[0] + lambda, 1e-9);
+}
+
+TEST(DriverCore, OffsetResyncMovesTowardOCalWithoutWorseningLimitMargin) {
+  DriverCore::JointArray gento_ref{};
+  gento_ref[0] = 0.20;
+  DriverCore::JointArray leader_cont_ref{};
+  DriverCore::JointArray o_cal{};  // zero
+  DriverCore::JointArray q_target{};
+  q_target[0] = 0.0;
+  DriverCore::JointArray rate{};
+  rate[0] = 0.05;
+  const double soft_delta = 0.087;
+  EXPECT_TRUE(DriverCore::apply_offset_resync(
+      gento_ref, leader_cont_ref, kOrder, kJ4NegSigns, o_cal, q_target, kMin,
+      kMax, rate, soft_delta));
+  EXPECT_NEAR(gento_ref[0], 0.15, 1e-12);
+
+  // Inside soft zone near upper limit: a positive step increases compression →
+  // rejected.
+  gento_ref[0] = 0.0;
+  o_cal[0] = 0.5;
+  q_target[0] = kMax[0] - soft_delta + 0.01;
+  rate[0] = 0.05;
+  EXPECT_FALSE(DriverCore::apply_offset_resync(
+      gento_ref, leader_cont_ref, kOrder, kJ4NegSigns, o_cal, q_target, kMin,
+      kMax, rate, soft_delta));
+  EXPECT_NEAR(gento_ref[0], 0.0, 1e-12);
+}

@@ -125,6 +125,123 @@ DriverCore::JointArray DriverCore::apply_relative_joint_mapping(
   return mapped;
 }
 
+DriverCore::JointArray DriverCore::effective_offset(
+    const JointArray &gento_ref, const JointArray &leader_cont_ref,
+    const std::array<int, 7> &joint_order, const JointArray &signs) {
+  JointArray o{};
+  for (std::size_t out = 0; out < o.size(); ++out) {
+    const auto src = static_cast<std::size_t>(joint_order[out]);
+    o[out] = gento_ref[out] - signs[out] * leader_cont_ref[src];
+  }
+  return o;
+}
+
+DriverCore::JointArray DriverCore::soft_compress(
+    const JointArray &raw, const JointArray &minimum,
+    const JointArray &maximum, double delta) {
+  JointArray out{};
+  const double d = std::max(delta, 1e-9);
+  for (std::size_t i = 0; i < raw.size(); ++i) {
+    if (!std::isfinite(raw[i])) {
+      out[i] = raw[i];
+      continue;
+    }
+    const double hi = maximum[i];
+    const double lo = minimum[i];
+    const double a_hi = hi - d;
+    const double a_lo = lo + d;
+    if (raw[i] > a_hi) {
+      out[i] = a_hi + d * std::tanh((raw[i] - a_hi) / d);
+    } else if (raw[i] < a_lo) {
+      out[i] = a_lo + d * std::tanh((raw[i] - a_lo) / d);
+    } else {
+      out[i] = raw[i];
+    }
+  }
+  return out;
+}
+
+bool DriverCore::apply_bounded_leash(
+    JointArray &raw_target, JointArray &gento_ref,
+    const JointArray &leader_cont_ref, const std::array<int, 7> &joint_order,
+    const JointArray &signs, const JointArray &minimum,
+    const JointArray &maximum, const JointArray &o_cal, double lambda,
+    double o_max) {
+  bool touched = false;
+  const double lam = std::max(0.0, lambda);
+  const double o_cap = std::max(0.0, o_max);
+  for (std::size_t out = 0; out < raw_target.size(); ++out) {
+    if (!std::isfinite(raw_target[out])) {
+      continue;
+    }
+    const auto src = static_cast<std::size_t>(joint_order[out]);
+    const double o_eff =
+        gento_ref[out] - signs[out] * leader_cont_ref[src];
+    const double hi_leash = maximum[out] + lam;
+    const double lo_leash = minimum[out] - lam;
+    double excess = 0.0;
+    if (raw_target[out] > hi_leash) {
+      excess = raw_target[out] - hi_leash;
+    } else if (raw_target[out] < lo_leash) {
+      excess = raw_target[out] - lo_leash;
+    } else {
+      continue;
+    }
+    // Dragging o by -excess brings raw back to the leash end.
+    const double o_new = o_eff - excess;
+    if (std::abs(o_new - o_cal[out]) > o_cap &&
+        std::abs(o_new - o_cal[out]) > std::abs(o_eff - o_cal[out])) {
+      // Freeze further offset growth away from calibration; clamp command only.
+      raw_target[out] = std::clamp(raw_target[out], lo_leash, hi_leash);
+      touched = true;
+      continue;
+    }
+    gento_ref[out] -= excess;
+    raw_target[out] -= excess;
+    touched = true;
+    (void)src;
+  }
+  return touched;
+}
+
+bool DriverCore::apply_offset_resync(
+    JointArray &gento_ref, const JointArray &leader_cont_ref,
+    const std::array<int, 7> &joint_order, const JointArray &signs,
+    const JointArray &o_cal, const JointArray &q_target,
+    const JointArray &minimum, const JointArray &maximum,
+    const JointArray &rate_limit, double soft_delta) {
+  bool moved = false;
+  const double d = std::max(soft_delta, 0.0);
+  auto compression = [d](double q, double lo, double hi) {
+    const double a_hi = hi - d;
+    const double a_lo = lo + d;
+    return std::max(0.0, std::max(q - a_hi, a_lo - q));
+  };
+  for (std::size_t out = 0; out < gento_ref.size(); ++out) {
+    const auto src = static_cast<std::size_t>(joint_order[out]);
+    const double o_eff =
+        gento_ref[out] - signs[out] * leader_cont_ref[src];
+    const double err = o_cal[out] - o_eff;
+    if (err == 0.0 || !std::isfinite(err)) {
+      continue;
+    }
+    const double lim = std::max(0.0, rate_limit[out]);
+    if (lim <= 0.0) {
+      continue;
+    }
+    const double step = std::clamp(err, -lim, lim);
+    const double q_new = q_target[out] + step;
+    if (compression(q_new, minimum[out], maximum[out]) >
+        compression(q_target[out], minimum[out], maximum[out]) + 1e-12) {
+      continue;
+    }
+    gento_ref[out] += step;
+    moved = true;
+    (void)src;
+  }
+  return moved;
+}
+
 bool DriverCore::clutch_saturated_joints(
     const JointArray &desired, const JointArray &clamped,
     const JointArray &leader_continuous, JointArray &leader_cont_ref,
