@@ -164,6 +164,28 @@ Pinocchio, or Ruckig:
 python3 -m pytest -q test/test_control_core.py
 ```
 
+## Stage 4.1 state transition contract
+
+The frozen contract treats synchronization timeout as failure:
+`TELEOP_SYNCING -> IDLE`. It must not enter `SYNCED` or permit
+`switch_teleop` after timeout. Retry with `switch_sync`, wait for successful
+completion (`SYNCED`), then request `switch_teleop`.
+
+This changes the timeout-to-`SYNCED` behavior described by the earlier plan.
+See the [migration notes](dev_docs/skye_factr_teleop_migration.md) for source
+limitations and caller changes. State-machine implementation remains task 4.2;
+trajectory cleanup and hold integration remain tasks 4.3/4.4.
+
+Run the parameterized contract tests from the package directory:
+
+```bash
+python3 -m pytest -q test/test_state_machine.py
+```
+
+Until `StateMachine` exists, these tests report expected failures (`xfail`),
+not implemented behavior. The marker automatically stops applying when the
+class is introduced, so contract violations then fail normally.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) and

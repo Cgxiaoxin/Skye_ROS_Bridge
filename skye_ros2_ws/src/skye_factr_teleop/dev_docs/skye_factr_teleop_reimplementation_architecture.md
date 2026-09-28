@@ -246,7 +246,11 @@ class ControlMode:
     TELEPOSE = 5
 ```
 
-主要状态转换：
+以下为早期接口分析的状态转换记录。新包以开发计划任务 4.1 于 2026-09-28 冻结的
+规则为准：同步超时回到 `IDLE`，只有正常完成进入 `SYNCED`；基础阶段不实现
+`TELEPOSE` 转换。详见[迁移说明](skye_factr_teleop_migration.md)。
+
+早期记录：
 
 ```text
              switch_sync

@@ -685,21 +685,43 @@ return observable state/result
 
 ### 任务 4.1：冻结状态转换规则
 
-实现前把以下行为写成参数化测试：
+已于 2026-09-28 冻结：采用同步超时回到 `IDLE` 的保守方案。实现前的参数化
+契约测试见 `test/test_state_machine.py`。
 
 | 当前状态 | 事件 | 结果 |
 |---|---|---|
 | `IDLE` | `switch_sync` | `TELEOP_SYNCING` |
 | `TELEOP_SYNCING` | Ruckig 完成 | `SYNCED` |
-| `TELEOP_SYNCING` | 超时 | 按兼容契约进入 `SYNCED` 并产生 warning，或在实现前明确改为 `IDLE` |
+| `TELEOP_SYNCING` | 超时 | `IDLE`，本次同步失败，不允许直接进入遥操 |
 | `SYNCED` | `switch_teleop` | `TELEOP` |
 | 非 `SYNCED` | `switch_teleop` | 拒绝 |
 | 任意活动状态 | `switch_stop` | `IDLE` |
 | `SYNCED`/`TELEOP_SYNCING` | `switch_sync` | 忽略 |
+| `TELEOP` | `switch_sync` | 拒绝，需先 `switch_stop` |
+| `IDLE` | `switch_stop` | 接受，幂等地保持 `IDLE` |
+| 非 `TELEOP_SYNCING` | Ruckig 完成或超时事件 | 忽略，保持当前状态 |
 
-同步超时语义必须在编码前确定。原扩展公开文档表示“Ruckig 完成或超时后进入
-SYNCED”，安全性上更保守的方案是超时回到 `IDLE`；若改变兼容语义，需要在 README
-和迁移说明中明确记录。
+超时后必须重新 `switch_sync`，并在新的同步成功后才能通过 `switch_teleop`
+进入遥操。超时退出同步时，后续控制层须停止自动走位并清除轨迹、hold 积分和旧目标；
+不得启动成功后的 hold。该动作联动在任务 4.3/4.4 实现和验证。
+
+旧计划将原 `.so` 公开接口文档转述为“Ruckig 完成或超时后进入 SYNCED”，但未保留
+具体方法名和原文，不能据此认定已核验旧运行行为。本次明确不沿用该转述中的超时
+成功语义；兼容性变化见 README 和
+[迁移说明](skye_factr_teleop_migration.md)。
+
+任务 4.2 的最小测试接口冻结为：`StateMachine(now=...)` 从 `IDLE` 启动，
+`state` 使用 `ControlMode`（`IDLE=0`、`TELEOP_SYNCING=1`、`SYNCED=2`、`TELEOP=3`）；
+`handle(event, now=...)` 接收 `switch_sync`、`switch_teleop`、`switch_stop`、
+`sync_complete` 或 `sync_timeout`，返回值的 `outcome` 为 `accepted`、`rejected`
+或 `ignored`，拒绝时 `reason` 为非空字符串。拒绝和忽略均保持当前状态。
+`sync_complete` 表示 Ruckig 正常完成；`sync_timeout` 由调用层根据显式时间和配置
+产生，不能伪装成完成事件。截止时间到达时优先产生超时事件，完成只在截止时间前
+有效；时间判定与轨迹联动由任务 4.3/4.4 验证。
+
+- [x] 4.1 冻结转换表、超时失败和重新同步规则；写入参数化测试及迁移说明。
+- 测试在 `StateMachine` 尚不存在时标记为预期失败（`xfail`）；任务 4.2 引入该类
+  后自动启用正常断言。当前 `xfail` 不代表状态机实现或阶段 4 验收通过。
 
 基础状态机只实现 `IDLE`、`TELEOP_SYNCING`、`SYNCED` 和 `TELEOP`。
 `TELEPOSE=5` 的兼容枚举值可以预留，但 `switch_telepose` 转换和行为在基础硬件验收
@@ -1078,7 +1100,7 @@ q → 退出
 
 1. **URDF/mesh 许可和来源**：未确认前不能将安装产物直接复制为新描述包；
 2. **Pinocchio/Ruckig 部署方式**：当前主机 Python 3.10 无法导入；
-3. **同步超时语义**：兼容原行为进入 SYNCED，还是更保守地回 IDLE；
+3. **同步超时语义（已冻结，2026-09-28）**：超时回 `IDLE`，重新同步成功后才允许遥操；
 4. **follower arm effort 来源**：当前 Skye JointState 是否提供可用于外力估计的臂 effort；
 5. **TELEPOSE 下游接口**：当前 Skye driver 是否存在可达的笛卡尔命令入口；
 6. **力矩—电流参数来源**：按具体舵机型号和硬件实测冻结；
