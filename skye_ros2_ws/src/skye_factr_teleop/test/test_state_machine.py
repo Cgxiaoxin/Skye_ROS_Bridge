@@ -1,23 +1,11 @@
 # Copyright (c) 2026 lyy
 # SPDX-License-Identifier: Apache-2.0
 
-"""Task 4.1 behavioral contract; implementation belongs to task 4.2.
-
-The conditional marker only covers the absent StateMachine placeholder. Once
-the class exists, all tests run normally, including missing API failures.
-"""
+"""Pure state-machine contracts with caller-supplied time and no hardware."""
 
 import pytest
 
 from skye_factr_teleop import state_machine as sm
-
-
-pytestmark = pytest.mark.xfail(
-    not hasattr(sm, "StateMachine"),
-    reason="Task 4.2 pending: StateMachine is not implemented",
-    raises=AttributeError,
-    strict=True,
-)
 
 
 def _machine_in(state):
@@ -63,12 +51,20 @@ def _machine_in(state):
 )
 def test_transition_contract(initial, event, expected, outcome):
     machine = _machine_in(initial)
+    entered_at = machine.entered_at
     result = machine.handle(event, now=4.0)
     assert machine.state == getattr(sm.ControlMode, expected)
+    assert result.previous_state == getattr(sm.ControlMode, initial)
+    assert result.state == machine.state
+    assert result.entered_at == machine.entered_at
+    assert machine.entered_at == (4.0 if initial != expected else entered_at)
     assert result.outcome == outcome
+    if outcome != "accepted":
+        assert result.actions == ()
     if outcome == "rejected":
         assert isinstance(result.reason, str)
         assert result.reason.strip()
+        assert machine.last_rejection_reason == result.reason
 
 
 @pytest.mark.parametrize("exit_event", ["sync_timeout", "switch_stop"])
@@ -106,3 +102,79 @@ def test_base_control_mode_values():
     assert sm.ControlMode.TELEOP_SYNCING.value == 1
     assert sm.ControlMode.SYNCED.value == 2
     assert sm.ControlMode.TELEOP.value == 3
+
+
+@pytest.mark.parametrize(
+    "initial,event,actions",
+    [
+        ("IDLE", "switch_sync", ("clear_sync", "start_sync")),
+        ("TELEOP_SYNCING", "sync_complete", ("stop_motion", "start_hold")),
+        ("SYNCED", "switch_teleop", ("stop_motion", "clear_sync", "start_teleop")),
+        ("TELEOP_SYNCING", "sync_timeout", ("stop_motion", "clear_sync")),
+        ("IDLE", "switch_stop", ("stop_motion", "clear_sync")),
+        ("TELEOP_SYNCING", "switch_stop", ("stop_motion", "clear_sync")),
+        ("SYNCED", "switch_stop", ("stop_motion", "clear_sync")),
+        ("TELEOP", "switch_stop", ("stop_motion", "clear_sync")),
+    ],
+)
+def test_ordered_control_actions(initial, event, actions):
+    machine = _machine_in(initial)
+    result = machine.handle(event, now=4.0)
+    assert result.actions == tuple(sm.Action(action) for action in actions)
+    if event == "sync_timeout":
+        assert result.reason == "sync_timeout"
+
+
+@pytest.mark.parametrize("state", ["IDLE", "TELEOP_SYNCING", "SYNCED", "TELEOP"])
+@pytest.mark.parametrize("event", ["switch_telepose", "unknown"])
+def test_unsupported_events_are_rejected(state, event):
+    machine = _machine_in(state)
+    entered_at = machine.entered_at
+    result = machine.handle(event, now=4.0)
+    assert result.outcome == "rejected"
+    assert result.reason == "unsupported_event"
+    assert machine.last_rejection_reason == result.reason
+    assert result.actions == ()
+    assert machine.state == getattr(sm.ControlMode, state)
+    assert machine.entered_at == entered_at
+
+
+def test_explicit_events_and_recorded_rejection():
+    machine = sm.StateMachine(now=10.0)
+    assert machine.entered_at == 10.0
+    assert machine.last_rejection_reason is None
+    rejected = machine.handle(sm.Event.SWITCH_TELEOP, now=11.0)
+    assert rejected.reason == "not_synced"
+    machine.handle(sm.Event.SWITCH_SYNC, now=12.0)
+    assert machine.entered_at == 12.0
+    assert machine.last_rejection_reason == "not_synced"
+    # Repeated sync requests must not restart the timeout window.
+    machine.handle(sm.Event.SWITCH_SYNC, now=13.0)
+    assert machine.entered_at == 12.0
+    machine.handle(sm.Event.SYNC_TIMEOUT, now=14.0)
+    assert machine.entered_at == 14.0
+    assert rejected.state == sm.ControlMode.IDLE
+    assert rejected.entered_at == 10.0
+
+
+@pytest.mark.parametrize("now", [float("nan"), float("inf"), -float("inf")])
+def test_nonfinite_time_does_not_mutate_state(now):
+    with pytest.raises(ValueError, match="finite"):
+        sm.StateMachine(now=now)
+    machine = _machine_in("TELEOP_SYNCING")
+    with pytest.raises(ValueError, match="finite"):
+        machine.handle("sync_complete", now=now)
+    assert machine.state == sm.ControlMode.TELEOP_SYNCING
+    assert machine.entered_at == 1.0
+    assert machine.last_rejection_reason is None
+    assert machine.handle("sync_complete", now=2.0).outcome == "accepted"
+
+
+def test_time_cannot_move_backwards_but_same_timestamp_is_allowed():
+    machine = _machine_in("TELEOP_SYNCING")
+    machine.handle("switch_sync", now=3.0)
+    with pytest.raises(ValueError, match="nondecreasing"):
+        machine.handle("sync_complete", now=2.0)
+    assert machine.state == sm.ControlMode.TELEOP_SYNCING
+    assert machine.entered_at == 1.0
+    assert machine.handle("sync_complete", now=3.0).outcome == "accepted"

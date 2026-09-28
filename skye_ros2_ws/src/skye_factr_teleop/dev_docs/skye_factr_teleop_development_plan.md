@@ -720,8 +720,7 @@ return observable state/result
 有效；时间判定与轨迹联动由任务 4.3/4.4 验证。
 
 - [x] 4.1 冻结转换表、超时失败和重新同步规则；写入参数化测试及迁移说明。
-- 测试在 `StateMachine` 尚不存在时标记为预期失败（`xfail`）；任务 4.2 引入该类
-  后自动启用正常断言。当前 `xfail` 不代表状态机实现或阶段 4 验收通过。
+- 任务 4.2 已移除原占位实现的 `xfail` 标记，契约测试按正常断言执行。
 
 基础状态机只实现 `IDLE`、`TELEOP_SYNCING`、`SYNCED` 和 `TELEOP`。
 `TELEPOSE=5` 的兼容枚举值可以预留，但 `switch_telepose` 转换和行为在基础硬件验收
@@ -737,6 +736,24 @@ return observable state/result
 - 使用显式事件和动作返回值；
 - 时间由调用者传入，测试不依赖真实时钟；
 - 记录拒绝原因和状态进入时间。
+
+完成记录（2026-09-28）：
+
+- [x] 4.2 已实现 `ControlMode`、`Event`、`Action`、不可变 `TransitionResult`
+  和 `StateMachine`，仅依赖 Python 标准库。
+- 返回值包含前后状态、处理结果、原因、有序动作和状态进入时间 `entered_at`。
+  `last_rejection_reason` 保存最近一次拒绝原因，后续接受或忽略事件不会清除该记录。
+- 调用者传入有限且不递减的 `now`；只有状态改变才更新 `entered_at`，重复 sync
+  不会重置同步起始时间。非法时间抛出 `ValueError`，不改变状态。
+- 超时/stop 返回 `STOP_MOTION -> CLEAR_SYNC`；同步完成返回
+  `STOP_MOTION -> START_HOLD`；进入遥操返回
+  `STOP_MOTION -> CLEAR_SYNC -> START_TELEOP`；开始同步返回
+  `CLEAR_SYNC -> START_SYNC`。拒绝或忽略事件不返回动作。
+- `STOP_MOTION` 表示停止自动走位、hold 和遥操发布；`CLEAR_SYNC` 表示清除轨迹、
+  hold 积分和旧目标。状态机只返回动作，实际执行与截止时间判定归任务 4.3/4.4。
+- 未知事件和 `switch_telepose` 被拒绝；`TELEPOSE=5` 仅为兼容枚举预留。
+- 验证：`python3 -m pytest -q test/test_state_machine.py`，44 项通过，无 `xfail`。
+  本结果不代表 Ruckig/hold 联动或阶段 4 整体验收完成。
 
 ### 任务 4.3：实现 Ruckig 同步和保持
 

@@ -164,7 +164,7 @@ Pinocchio, or Ruckig:
 python3 -m pytest -q test/test_control_core.py
 ```
 
-## Stage 4.1 state transition contract
+## Stage 4.1/4.2 state machine
 
 The frozen contract treats synchronization timeout as failure:
 `TELEOP_SYNCING -> IDLE`. It must not enter `SYNCED` or permit
@@ -173,8 +173,34 @@ completion (`SYNCED`), then request `switch_teleop`.
 
 This changes the timeout-to-`SYNCED` behavior described by the earlier plan.
 See the [migration notes](dev_docs/skye_factr_teleop_migration.md) for source
-limitations and caller changes. State-machine implementation remains task 4.2;
+limitations and caller changes. The pure Python state machine is implemented;
 trajectory cleanup and hold integration remain tasks 4.3/4.4.
+
+Construct `StateMachine(now=...)` and pass explicit events to
+`handle(event, now=...)`. Events accept `Event` members or the frozen string
+names. Supply finite, nondecreasing timestamps from the same clock; no clock is
+read internally. The trajectory adapter must emit `sync_timeout` at the deadline
+instead of `sync_complete`.
+
+Each immutable `TransitionResult` contains `previous_state`, `state`, `outcome`,
+`reason`, ordered `actions`, and `entered_at`. `accepted` means the event was
+handled, so an accepted timeout still means synchronization failed. The machine
+records `last_rejection_reason` across subsequent events. `entered_at` changes
+only when the state changes; repeated sync requests do not restart its timer.
+
+The caller executes the returned actions in order:
+
+| Action | Control adapter responsibility |
+|---|---|
+| `stop_motion` | Stop automatic leader motion, hold, and teleop publication |
+| `clear_sync` | Clear the trajectory, hold integral, and previous target |
+| `start_sync` | Capture a fresh synchronization start and target |
+| `start_hold` | Hold the completed synchronization target |
+| `start_teleop` | Enable leader-to-follower command publication |
+
+Stop and timeout return `stop_motion`, then `clear_sync`. Rejected or ignored
+events return no actions. `TELEPOSE=5` is reserved; `switch_telepose` is rejected.
+This module has no ROS, serial, Ruckig, or hardware side effects.
 
 Run the parameterized contract tests from the package directory:
 
@@ -182,9 +208,8 @@ Run the parameterized contract tests from the package directory:
 python3 -m pytest -q test/test_state_machine.py
 ```
 
-Until `StateMachine` exists, these tests report expected failures (`xfail`),
-not implemented behavior. The marker automatically stops applying when the
-class is introduced, so contract violations then fail normally.
+All 44 state-machine tests pass with explicit test timestamps; the task 4.1
+expected-failure marker has been removed.
 
 ## License
 
