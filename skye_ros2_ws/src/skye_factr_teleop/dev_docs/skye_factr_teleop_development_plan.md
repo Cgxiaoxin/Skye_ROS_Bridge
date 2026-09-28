@@ -703,8 +703,8 @@ return observable state/result
 
 超时后必须重新 `switch_sync`，并在新的同步成功后才能通过 `switch_teleop`
 进入遥操。超时退出同步时，后续控制层须停止自动走位并清除轨迹、hold 积分和旧目标；
-不得启动成功后的 hold。该动作联动已在任务 4.3 实现并完成基础测试，任务 4.4
-负责联动验收。
+不得启动成功后的 hold。该动作联动已在任务 4.3 实现，并通过任务 4.4 无硬件
+联动验收。
 
 旧计划将原 `.so` 公开接口文档转述为“Ruckig 完成或超时后进入 SYNCED”，但未保留
 具体方法名和原文，不能据此认定已核验旧运行行为。本次明确不沿用该转述中的超时
@@ -804,6 +804,38 @@ return observable state/result
 - 进入 TELEOP 后不再输出 leader 自动走位目标。
 
 阶段验收：所有状态机和轨迹测试使用 fake clock、fake Ruckig 和 fake hardware 通过。
+
+完成记录（2026-09-28）：
+
+- [x] 4.4 状态与轨迹联动无硬件验收通过；M4 完成。
+- 新增 `test/test_state_trajectory_integration.py`，使用 `FakeClock`、假 Ruckig
+  Python API 和可统计读取次数的 Fake Dynamixel，执行真实 `ControlCore`、
+  `RuckigTrajectory` 及 `StateMachine` 调用链。左右臂配置各运行 11 项，共 22 项。
+- 测试通过依赖注入替代 `ruckig` 模块，验证适配器的 `update/pass_to_input` 连续性，
+  不依赖已安装的 Ruckig、ROS、Pinocchio 或实际串口设备。
+
+| 验收项 | 测试证据 |
+|---|---|
+| sync 起点捕获 | 完整流程验证 8 轴方向/offset 映射及位置、速度；重新同步读取新的起点 |
+| 目标维度和有限值 | 沿用 4.3 的长度、NaN、夹爪检查；补充二维数组及正/负 Inf，验证拒绝后可重新同步 |
+| Ruckig 完成 | `Working -> Finished -> SYNCED`，进入最终目标 hold；下一周期产生积分 |
+| 超时 | 分别验证截止时间之前、等于和之后；到期优先于完成，零电流、关闭 torque 并拒绝遥操 |
+| sync 中 stop | 立即回 `IDLE`，不额外读状态；停止后重新同步不调用旧轨迹 |
+| hold 积分清零 | hold 中 stop、进入 TELEOP、重新同步及再次完成时均验证积分清零 |
+| 重复 sync/teleop | 同步中、SYNCED、TELEOP 各状态验证忽略/拒绝，不重建轨迹、不读写硬件、不替换目标 |
+| TELEOP 无自动走位目标 | 连续三个周期验证目标为 `None`、tracking torque 为零、旧轨迹不更新；普通补偿仍可输出 |
+
+另覆盖 Ruckig 错误返回码的异常停机，防止误进入 `SYNCED`。
+
+验证命令（功能包目录）：
+
+```bash
+python3 -m pytest -q test/test_state_trajectory_integration.py test/test_sync_hold.py test/test_state_machine.py test/test_control_core.py
+```
+
+结果：120 项通过，无失败或跳过。其中 119 项为 fake/纯逻辑测试，另 1 项为任务 4.3
+保留的真实 Ruckig 无硬件轨迹检查。本次未修改运行控制代码，未连接真机；ROS 集成和
+真机运动验收仍分别属于阶段 5 及阶段 7。
 
 ## 10. 阶段 5：基础 ROS 2 驱动节点和 launch
 
@@ -1126,7 +1158,7 @@ q → 退出
 | M2 | 真实 Python Dynamixel SDK 适配器 | M1 | `dynamixel_driver.py` 完整实现，mock SDK 调用与错误测试通过 |
 | M2.5-P | Dynamixel 只读验收与低电流无硬件准备 | M2 | 左右总线只读通过，低电流清单第 1--3 节通过 |
 | M3 | 控制核心 | M2.5-P | fake hardware/dynamics 测试通过，不连接真实硬件 |
-| M4 | 状态机、Ruckig、hold | M3 | 全部状态与轨迹测试通过 |
+| M4 | 状态机、Ruckig、hold | M3 | 已完成（2026-09-28）：全部状态与轨迹测试通过，相关测试共 120 项 |
 | M5 | 基础 ROS 节点和 launch | M4 | ROS CLI 可驱动基础状态机 |
 | M6 | 基础无硬件集成和软件性能 | M5 | colcon 全绿、依赖独立、无硬件性能记录完成 |
 | M2.5-H | 阶段 2.5.2 真机验证与 2.5.3 冒烟记录（阶段 7 任务 7.1） | M6 | XM430/XC330 单舵机低电流、安全关闭和左右验收记录通过 |

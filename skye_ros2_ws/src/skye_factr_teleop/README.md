@@ -294,15 +294,29 @@ terms remain available; ROS publication belongs to stage 5. Observe `mode`,
 fields are `None` outside sync/hold. `wrote_current` describes the normal cycle
 write; a safety zero write during cleanup is separate.
 
-Run the task 4.3 checks and related regressions from the package directory:
+## Stage 4.4 state/trajectory integration acceptance
+
+`test/test_state_trajectory_integration.py` runs the production core, state
+machine, and Ruckig adapter with a fake clock, fake Ruckig Python API, and fake
+Dynamixel hardware. Its 22 cases cover both left and right configurations:
+the complete sync/hold/teleop/stop sequence, repeated requests without side
+effects, completion before/at/after the deadline, fresh start capture after
+stop/timeout, integral reset, invalid targets, and Ruckig error results.
+Several consecutive TELEOP cycles verify that automatic leader targets remain
+absent while normal compensation can continue.
+
+Run the stage 4 acceptance checks and control-core regressions from the package
+directory:
 
 ```bash
-python3 -m pytest -q test/test_sync_hold.py test/test_control_core.py test/test_state_machine.py
+python3 -m pytest -q test/test_state_trajectory_integration.py test/test_sync_hold.py test/test_state_machine.py test/test_control_core.py
 ```
 
-The 98 checks pass, including a real Ruckig 0.19.4 trajectory with limit checks
-and no hardware. That one test skips if Ruckig is absent. Hardware acceptance
-and the task 4.4 integration acceptance remain separate.
+All 120 checks pass: 119 fake/pure-logic checks plus the retained real Ruckig
+0.19.4 trajectory limit check. Only that real-library test skips if Ruckig is
+absent; integration acceptance uses a fake module and needs no installed
+Ruckig. Task 4.4 and milestone M4 are complete. ROS integration and hardware
+acceptance remain stages 5 and 7 respectively.
 
 ## License
 
