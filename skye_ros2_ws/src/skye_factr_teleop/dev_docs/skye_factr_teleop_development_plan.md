@@ -703,7 +703,8 @@ return observable state/result
 
 超时后必须重新 `switch_sync`，并在新的同步成功后才能通过 `switch_teleop`
 进入遥操。超时退出同步时，后续控制层须停止自动走位并清除轨迹、hold 积分和旧目标；
-不得启动成功后的 hold。该动作联动在任务 4.3/4.4 实现和验证。
+不得启动成功后的 hold。该动作联动已在任务 4.3 实现并完成基础测试，任务 4.4
+负责联动验收。
 
 旧计划将原 `.so` 公开接口文档转述为“Ruckig 完成或超时后进入 SYNCED”，但未保留
 具体方法名和原文，不能据此认定已核验旧运行行为。本次明确不沿用该转述中的超时
@@ -766,6 +767,28 @@ return observable state/result
 - 同步完成后进入 hold；
 - hold 使用配置中的 P/I/D、积分阈值和积分限幅；
 - stop 清除轨迹、hold 积分和旧目标。
+
+完成记录（2026-09-28）：
+
+- [x] 4.3 在 `control_core.py` 中实现 `TrajectoryIO`、延迟导入的
+  `RuckigTrajectory` 和 `ControlCore.handle()/step(now=...)/stop()` 联动。
+- 接受同步时读取并捕获 leader 当前 8 轴逻辑位置/速度，复制 follower 7 轴位置和
+  夹爪 setpoint；没有加速度测量，初始加速度设为 0，目标速度/加速度设为 0。
+- 每周期最多一次 Ruckig update；同步 PD 与 hold PID 使用配置中的各自增益，
+  重力项使用对应阶段的 gravity gain，沿用电流限幅与方向映射。同步/hold 时禁用
+  零空间项，避免与完整关节目标冲突。
+- hold 使用显式时间差积分：`abs(error) <= hold_i_thresh` 时累加 `error * dt`，
+  超阈值按轴清零；`hold_i_max` 限制积分状态（rad·s），随后乘 `hold_ki`。
+- 现有 YAML 未定义轨迹速度/加速度/jerk 上限；真实适配器要求通过
+  `trajectory_factory` 显式提供正的 8 轴上限，控制周期与配置频率一致。
+- 超时判定先于轨迹更新，截止时间到达即回 `IDLE`。stop、超时及控制/初始化异常
+  清除轨迹、积分和旧目标，尝试零电流与 Torque Disable；重试前由调用方重新使能。
+- 核心采用单调用者顺序执行；不接受外部完成/超时事件。异常时间不阻止显式 stop；
+  动作或控制计算失败后回 `IDLE` 并传播异常，避免留下可遥操的成功状态。
+- 验证：`python3 -m pytest -q test/test_sync_hold.py test/test_control_core.py
+  test/test_state_machine.py`，98 项通过；包含 fake hardware/dynamics/trajectory
+  和显式时钟测试，以及本机 Ruckig 0.19.4 的无硬件轨迹及速度/加速度/jerk 限制测试。
+  不在本任务中执行真机运动或标记任务 4.4 联动验收完成。
 
 ### 任务 4.4：测试状态与轨迹联动
 

@@ -174,7 +174,7 @@ completion (`SYNCED`), then request `switch_teleop`.
 This changes the timeout-to-`SYNCED` behavior described by the earlier plan.
 See the [migration notes](dev_docs/skye_factr_teleop_migration.md) for source
 limitations and caller changes. The pure Python state machine is implemented;
-trajectory cleanup and hold integration remain tasks 4.3/4.4.
+task 4.3 also integrates trajectory cleanup and hold in `ControlCore`.
 
 Construct `StateMachine(now=...)` and pass explicit events to
 `handle(event, now=...)`. Events accept `Event` members or the frozen string
@@ -210,6 +210,99 @@ python3 -m pytest -q test/test_state_machine.py
 
 All 44 state-machine tests pass with explicit test timestamps; the task 4.1
 expected-failure marker has been removed.
+
+## Stage 4.3 Ruckig synchronization and hold
+
+`ControlCore.handle()` executes state-machine actions synchronously.
+`step(now=...)` reads the leader once, advances the active trajectory at most
+once, computes current, and performs the normal current write. There is no
+internal loop, sleep, ROS call, or automatic Torque Enable. Serialize all core
+calls in one control loop. Call `step` at `controller.frequency` with timestamps
+in seconds from one monotonic clock; synchronization and hold require `now`.
+
+The real `RuckigTrajectory` adapter lazily imports the baseline Python package
+`ruckig==0.19.4`. It follows the official
+[online update example](https://docs.ruckig.com/md_pages_2example__01.html),
+including `pass_to_input` after each update. Fake trajectory tests need no
+Ruckig installation.
+
+The existing YAML does not define trajectory velocity, acceleration, or jerk
+limits. Supply explicit, positive eight-axis limits in rad/s, rad/s² and rad/s³
+through a factory; no hardware motion limits are inferred from PD gains:
+
+```python
+from skye_factr_teleop.control_core import ControlCore, RuckigTrajectory
+
+# config, hardware, dynamics, offsets, current_limit_ma and the three limit
+# vectors are supplied by the caller for the particular leader arm.
+def make_trajectory():
+    return RuckigTrajectory(
+        frequency=config.controller.frequency,
+        max_velocity=velocity_limits,
+        max_acceleration=acceleration_limits,
+        max_jerk=jerk_limits,
+    )
+
+core = ControlCore(
+    config, hardware, dynamics, offsets, current_limit_ma,
+    trajectory_factory=make_trajectory, now=t0,
+)
+core.handle(
+    "switch_sync", now=t0,
+    follower_position=follower_q, gripper_setpoint=gripper_q,
+)
+cycle = core.step(now=tick_time)  # Once per caller's control cycle.
+```
+
+Accepted sync captures the measured eight-axis logical leader position and
+velocity and copies the seven follower positions plus gripper setpoint.
+Coordinates must already be mapped to the logical leader frame. If omitted,
+the gripper target is `gripper_teleop.limit_setpoint`. Starting acceleration
+is zero because no acceleration measurement is available; target velocity and
+acceleration are zero. A fresh trajectory is created per sync. Repeated sync
+requests do not replace the target or restart the timeout.
+
+During synchronization, tracking torque is
+`ruckig_kp * (q_ref - q) + ruckig_kd * (dq_ref - dq)`.
+Ruckig completion enters hold on the captured final target. Hold torque is
+`hold_kp * error - hold_kd * dq + hold_ki * integral`.
+For each axis, integrate `error * dt` only when
+`abs(error) <= hold_i_thresh`; otherwise reset that axis's integral.
+`hold_i_max` bounds the accumulated error in rad·s, before multiplication by
+`hold_ki`. The first hold cycle starts with zero integral.
+
+The two phases use `ruckig_gravity_comp_gain` and `hold_gravity_comp_gain`
+respectively, replacing the normal gravity gain. The configured gravity mode
+and term switches still apply. Joint-limit protection and static friction
+remain available; null-space regulation is suppressed during sync/hold to
+avoid competing with their full joint targets. Final torque uses the existing
+servo direction conversion and current limits.
+
+At `elapsed >= teleop_sync_timeout`, timeout wins before a Ruckig update. Stop,
+timeout, and computation/setup failures clear the trajectory, integral, and
+target, return to `IDLE`, and attempt zero current and Torque Disable. An explicit
+`stop()` needs no timestamp; `handle("switch_stop", now=...)` also stops when
+the supplied time is invalid. Other failures propagate after cleanup. The
+caller must deliberately re-enable torque before retrying synchronization.
+External completion/timeout events are forbidden at the core API, so old
+asynchronous events cannot complete a new synchronization.
+
+Entering `TELEOP` clears automatic tracking/hold output. The normal compensation
+terms remain available; ROS publication belongs to stage 5. Observe `mode`,
+`last_transition`, and the copied `hold_integral`. `CycleResult` adds
+`tracking_torque`, `mode`, `target_position`, and `target_velocity`; target
+fields are `None` outside sync/hold. `wrote_current` describes the normal cycle
+write; a safety zero write during cleanup is separate.
+
+Run the task 4.3 checks and related regressions from the package directory:
+
+```bash
+python3 -m pytest -q test/test_sync_hold.py test/test_control_core.py test/test_state_machine.py
+```
+
+The 98 checks pass, including a real Ruckig 0.19.4 trajectory with limit checks
+and no hardware. That one test skips if Ruckig is absent. Hardware acceptance
+and the task 4.4 integration acceptance remain separate.
 
 ## License
 

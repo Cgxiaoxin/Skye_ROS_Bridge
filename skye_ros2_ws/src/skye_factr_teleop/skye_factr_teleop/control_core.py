@@ -5,12 +5,14 @@
 """ROS-free, non-blocking leader control core with explicit calibration."""
 
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Protocol
 
 import numpy as np
 
 from .config import ARM_JOINT_COUNT, MOTOR_COUNT, TeleopConfig
 from .dynamixel_driver import DynamixelIO, get_servo_spec, torque_nm_to_current_ma
+from .state_machine import Action, ControlMode, Event, StateMachine, TransitionResult
 
 
 class DynamicsIO(Protocol):
@@ -69,6 +71,86 @@ class CycleResult:
     logical_torque: np.ndarray
     physical_current_ma: np.ndarray
     wrote_current: bool
+    tracking_torque: np.ndarray
+    mode: ControlMode
+    target_position: np.ndarray | None
+    target_velocity: np.ndarray | None
+
+
+@dataclass(frozen=True)
+class TrajectorySample:
+    position: np.ndarray
+    velocity: np.ndarray
+    finished: bool
+
+
+class TrajectoryIO(Protocol):
+    """One synchronous trajectory per sync; no queued completion callbacks."""
+
+    def start(self, position: np.ndarray, velocity: np.ndarray, target: np.ndarray) -> None: ...
+    def update(self) -> TrajectorySample: ...
+
+
+class RuckigTrajectory:
+    """Eight-axis Ruckig adapter, imported only when explicitly constructed.
+
+    Limits are mandatory, in rad/s, rad/s² and rad/s³ in logical leader order.
+    No acceleration measurement is available, so initial acceleration is zero.
+    Target velocity/acceleration are zero. Each update advances one fixed cycle.
+    """
+
+    def __init__(
+        self, *, frequency: float, max_velocity: object,
+        max_acceleration: object, max_jerk: object,
+    ) -> None:
+        frequency = _scalar(frequency, "frequency")
+        if frequency <= 0:
+            raise ValueError("frequency must be positive")
+        limits = [
+            _vector(value, MOTOR_COUNT, name)
+            for value, name in (
+                (max_velocity, "max_velocity"),
+                (max_acceleration, "max_acceleration"), (max_jerk, "max_jerk"),
+            )
+        ]
+        if any(np.any(value <= 0) for value in limits):
+            raise ValueError("trajectory limits must be positive")
+        from ruckig import InputParameter, OutputParameter, Result, Ruckig
+
+        self._result_type = Result
+        self._otg = Ruckig(MOTOR_COUNT, 1.0 / frequency)
+        self._input = InputParameter(MOTOR_COUNT)
+        self._output = OutputParameter(MOTOR_COUNT)
+        self._input.max_velocity = limits[0].tolist()
+        self._input.max_acceleration = limits[1].tolist()
+        self._input.max_jerk = limits[2].tolist()
+        self._started = False
+
+    def start(self, position: np.ndarray, velocity: np.ndarray, target: np.ndarray) -> None:
+        self._started = False
+        self._otg.reset()
+        self._input.current_position = _vector(position, MOTOR_COUNT, "position").tolist()
+        self._input.current_velocity = _vector(velocity, MOTOR_COUNT, "velocity").tolist()
+        self._input.current_acceleration = [0.0] * MOTOR_COUNT
+        self._input.target_position = _vector(target, MOTOR_COUNT, "target").tolist()
+        self._input.target_velocity = [0.0] * MOTOR_COUNT
+        self._input.target_acceleration = [0.0] * MOTOR_COUNT
+        self._otg.validate_input(self._input, True, True)
+        self._started = True
+
+    def update(self) -> TrajectorySample:
+        if not self._started:
+            raise RuntimeError("trajectory has not been started")
+        result = self._otg.update(self._input, self._output)
+        if result not in (self._result_type.Working, self._result_type.Finished):
+            raise RuntimeError(f"Ruckig update failed: {result}")
+        sample = TrajectorySample(
+            _vector(self._output.new_position, MOTOR_COUNT, "trajectory position"),
+            _vector(self._output.new_velocity, MOTOR_COUNT, "trajectory velocity"),
+            result == self._result_type.Finished,
+        )
+        self._output.pass_to_input(self._input)
+        return sample
 
 
 def _vector(value: object, size: int, name: str) -> np.ndarray:
@@ -212,12 +294,19 @@ def nullspace_regulation(
 
 
 class ControlCore:
-    """Exactly one read / compute / optional write per call; never enables torque."""
+    """Single-caller control loop; never enables torque or publishes ROS data.
+
+    handle() and step() must be serialized by the caller. A factory creates a
+    fresh trajectory for every accepted sync. All targets use logical leader
+    coordinates; follower mapping/freshness checks belong to the ROS adapter.
+    """
 
     def __init__(
         self, config: TeleopConfig, hardware: DynamixelIO, dynamics: DynamicsIO,
         joint_offsets: object, current_limit_ma: object,
         terms: ControlTerms | None = None,
+        *, trajectory_factory: Callable[[], TrajectoryIO] | None = None,
+        now: float = 0.0,
     ) -> None:
         self.config, self.hardware, self.dynamics = config, hardware, dynamics
         self.joint_offsets = _vector(joint_offsets, MOTOR_COUNT, "joint_offsets")
@@ -242,19 +331,187 @@ class ControlCore:
             nullspace=config.controller.null_space_regulation.enable,
         )
         self._dither_positive = np.ones(ARM_JOINT_COUNT, dtype=bool)
+        self._now = _scalar(now, "now")
+        self._machine = StateMachine(now=self._now)
+        self._trajectory_factory = trajectory_factory
+        self._trajectory: TrajectoryIO | None = None
+        self._target: np.ndarray | None = None
+        self._hold_integral = np.zeros(MOTOR_COUNT)
+        self._last_step_at = self._now
+        self._last_transition: TransitionResult | None = None
 
-    def step(self) -> CycleResult:
+    @property
+    def mode(self) -> ControlMode:
+        return self._machine.state
+
+    @property
+    def last_transition(self) -> TransitionResult | None:
+        return self._last_transition
+
+    @property
+    def hold_integral(self) -> np.ndarray:
+        return self._hold_integral.copy()
+
+    def _time(self, now: float) -> float:
+        value = _scalar(now, "now")
+        if value < self._now:
+            raise ValueError("now must be nondecreasing")
+        self._now = value
+        return value
+
+    def _read_state(self) -> LeaderState:
+        position, velocity = self.hardware.read_state()
+        return transform_leader_state(position, velocity, self.joint_offsets, self.joint_signs)
+
+    def _clear_sync(self) -> None:
+        self._trajectory = None
+        self._target = None
+        self._hold_integral.fill(0.0)
+
+    def _zero_and_disable(self) -> None:
+        if self.hardware.torque_enabled:
+            try:
+                self.hardware.write_currents(np.zeros(MOTOR_COUNT))
+            finally:
+                self.hardware.set_torque_enabled(False)
+
+    def stop(self) -> TransitionResult:
+        """Stop even without a valid clock; clear state before hardware cleanup."""
+        result = self._machine.handle(Event.SWITCH_STOP, now=self._now)
+        self._last_transition = result
+        self._clear_sync()
+        self._zero_and_disable()
+        return result
+
+    def handle(
+        self, event: Event | str, *, now: float,
+        follower_position: object = None, gripper_setpoint: float | None = None,
+    ) -> TransitionResult:
+        """Handle user switches; completion/timeout come only from step().
+
+        Starting sync captures one fresh eight-axis hardware sample. On any
+        setup/action failure, stop and disable torque before propagating it.
+        Rejected/ignored requests do not read hardware or replace the target.
+        """
+        if event == Event.SWITCH_STOP:
+            try:
+                self._time(now)
+            except (TypeError, ValueError):
+                pass  # A bad timestamp must not prevent an explicit stop.
+            return self.stop()
+        try:
+            self._time(now)
+            if event in (Event.SYNC_COMPLETE, Event.SYNC_TIMEOUT):
+                raise ValueError("trajectory events are internal to step()")
+            result = self._machine.handle(event, now=self._now)
+            self._apply_actions(result, follower_position, gripper_setpoint)
+            self._last_transition = result
+            return result
+        except Exception:
+            self.stop()
+            raise
+
+    def _apply_actions(
+        self, result: TransitionResult, follower_position: object = None,
+        gripper_setpoint: float | None = None,
+    ) -> None:
+        for action in result.actions:
+            if action == Action.STOP_MOTION:
+                self._trajectory = None
+            elif action == Action.CLEAR_SYNC:
+                self._clear_sync()
+            elif action == Action.START_SYNC:
+                if not self.hardware.torque_enabled:
+                    raise RuntimeError("synchronization requires enabled torque")
+                if self._trajectory_factory is None:
+                    raise RuntimeError("synchronization requires a trajectory_factory with explicit limits")
+                arm = _vector(follower_position, ARM_JOINT_COUNT, "follower_position")
+                grip = _scalar(
+                    self.config.gripper_teleop.limit_setpoint
+                    if gripper_setpoint is None else gripper_setpoint, "gripper_setpoint",
+                )
+                self._target = np.append(arm, grip)
+                state = self._read_state()
+                self._trajectory = self._trajectory_factory()
+                self._trajectory.start(
+                    np.append(state.arm_position, state.gripper_position),
+                    np.append(state.arm_velocity, state.gripper_velocity),
+                    self._target.copy(),
+                )
+                self._last_step_at = self._now
+            elif action == Action.START_HOLD:
+                if self._target is None:
+                    raise RuntimeError("hold requires a synchronization target")
+                self._hold_integral.fill(0.0)
+            elif action == Action.START_TELEOP:
+                if not self.hardware.torque_enabled:
+                    raise RuntimeError("teleoperation requires enabled torque")
+                # Publication belongs to the future ROS adapter; the preceding
+                # actions have already removed leader automatic motion.
+
+    def _trajectory_event(self, event: Event) -> None:
+        result = self._machine.handle(event, now=self._now)
+        self._apply_actions(result)
+        self._last_transition = result
+
+    def _tracking(self, state: LeaderState, dt: float) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
+        if self.mode not in (ControlMode.TELEOP_SYNCING, ControlMode.SYNCED):
+            return np.zeros(MOTOR_COUNT), None, None
+        cfg = self.config.controller.hold_ruckig_control
+        position = np.append(state.arm_position, state.gripper_position)
+        velocity = np.append(state.arm_velocity, state.gripper_velocity)
+        if self.mode == ControlMode.TELEOP_SYNCING:
+            if self._trajectory is None:
+                raise RuntimeError("missing synchronization trajectory")
+            sample = self._trajectory.update()
+            target = _vector(sample.position, MOTOR_COUNT, "trajectory position")
+            target_velocity = _vector(sample.velocity, MOTOR_COUNT, "trajectory velocity")
+            if not sample.finished:
+                torque = np.asarray(cfg.ruckig_kp) * (target - position)
+                torque += np.asarray(cfg.ruckig_kd) * (target_velocity - velocity)
+                return torque, target, target_velocity
+            self._trajectory_event(Event.SYNC_COMPLETE)
+            dt = 0.0  # Do not integrate the interval spent in trajectory mode.
+        target = _vector(self._target, MOTOR_COUNT, "hold target")
+        error = target - position
+        # Integrate only near the target; reset each axis outside its threshold.
+        self._hold_integral = np.where(
+            np.abs(error) <= cfg.hold_i_thresh,
+            np.clip(self._hold_integral + error * dt,
+                    -np.asarray(cfg.hold_i_max), cfg.hold_i_max),
+            0.0,
+        )
+        torque = (np.asarray(cfg.hold_kp) * error - np.asarray(cfg.hold_kd) * velocity
+                  + np.asarray(cfg.hold_ki) * self._hold_integral)
+        return torque, target, np.zeros(MOTOR_COUNT)
+
+    def step(self, *, now: float | None = None) -> CycleResult:
         """Run one cycle; any fault attempts zero current and torque disable."""
         try:
-            raw_position, raw_velocity = self.hardware.read_state()
-            state = transform_leader_state(raw_position, raw_velocity, self.joint_offsets, self.joint_signs)
+            if now is None and self.mode in (ControlMode.TELEOP_SYNCING, ControlMode.SYNCED):
+                raise ValueError("now is required during synchronization and hold")
+            if now is not None:
+                self._time(now)
+            dt = self._now - self._last_step_at
+            self._last_step_at = self._now
+            if not self.hardware.torque_enabled and self.mode != ControlMode.IDLE:
+                self.stop()
+            if (self.mode == ControlMode.TELEOP_SYNCING
+                    and self._now - self._machine.entered_at >= self.config.controller.teleop_sync_timeout):
+                self._trajectory_event(Event.SYNC_TIMEOUT)
+                self._zero_and_disable()
+            state = self._read_state()
             limit = np.zeros(MOTOR_COUNT)
             gravity = np.zeros(MOTOR_COUNT)
             friction = np.zeros(MOTOR_COUNT)
             nullspace = np.zeros(MOTOR_COUNT)
+            tracking = np.zeros(MOTOR_COUNT)
+            target = target_velocity = None
             next_flags = self._dither_positive
             arm, ctrl = self.config.arm_teleop, self.config.controller
             if self.hardware.torque_enabled:
+                tracking, target, target_velocity = self._tracking(state, dt)
+                motion = self.mode in (ControlMode.TELEOP_SYNCING, ControlMode.SYNCED)
                 if self.terms.joint_limits:
                     limit = joint_limit_barrier(
                         state, arm.arm_joint_limits_min, arm.arm_joint_limits_max,
@@ -263,9 +520,14 @@ class ControlCore:
                         margin=arm.arm_joint_limits_safety_margin,
                     )
                 if self.terms.gravity or self.terms.static_friction:
+                    gain = ctrl.gravity_comp.gain
+                    if self.mode == ControlMode.TELEOP_SYNCING:
+                        gain = ctrl.hold_ruckig_control.ruckig_gravity_comp_gain
+                    elif self.mode == ControlMode.SYNCED:
+                        gain = ctrl.hold_ruckig_control.hold_gravity_comp_gain
                     compensation = gravity_compensation(
                         state.arm_position, state.arm_velocity,
-                        self.dynamics, ctrl.gravity_comp.gain,
+                        self.dynamics, gain,
                         mode=ctrl.gravity_comp.mode,
                     )
                     if self.terms.gravity:
@@ -276,13 +538,13 @@ class ControlCore:
                             ctrl.static_friction_comp.enable_speed,
                             ctrl.static_friction_comp.gain, self._dither_positive,
                         )
-                if self.terms.nullspace:
+                if self.terms.nullspace and not motion:
                     n = ctrl.null_space_regulation
                     nullspace[:ARM_JOINT_COUNT] = nullspace_regulation(
                         state.arm_position, state.arm_velocity, self.dynamics,
                         n.null_space_joint_target, n.kp, n.kd,
                     )
-            logical = limit + gravity + friction + nullspace
+            logical = limit + gravity + friction + nullspace + tracking
             _vector(logical, MOTOR_COUNT, "logical_torque")
             physical_torque = logical * self.joint_signs
             currents = np.array([
@@ -294,11 +556,10 @@ class ControlCore:
             if wrote:
                 self.hardware.write_currents(currents)
                 self._dither_positive = next_flags
-            return CycleResult(state, limit, gravity, friction, nullspace, logical, currents, wrote)
+            return CycleResult(
+                state, limit, gravity, friction, nullspace, logical, currents, wrote,
+                tracking, self.mode, target, target_velocity,
+            )
         except Exception:
-            if self.hardware.torque_enabled:
-                try:
-                    self.hardware.write_currents(np.zeros(MOTOR_COUNT))
-                finally:
-                    self.hardware.set_torque_enabled(False)
+            self.stop()
             raise
