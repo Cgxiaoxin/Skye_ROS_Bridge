@@ -24,8 +24,8 @@ arm_teleop:
   arm_limit_barrier_enable: True
   # Barrier window = teleop-mappable range (aligned to follower; J1/3/5=±180°).
   # safety_margin starts resistance before the hard edge.
-  arm_joint_limits_max: [3.1415926536, 2.0944, 3.1415926536, 1.0472, 3.1415926536, 1.0472, 1.5708]
-  arm_joint_limits_min: [-3.1415926536, -2.0944, -3.1415926536, -2.5307, -3.1415926536, -1.0472, -1.5708]
+  arm_joint_limits_max: [3.14, 2.09, 3.14, 1.05, 3.14, 1.05, 1.57]
+  arm_joint_limits_min: [-3.14, -2.09, -3.14, -2.53, -3.14, -1.05, -1.57]
   arm_joint_limits_safety_margin: 0.1
   initialization:
     # The expected leader arm joint position before launching the script
