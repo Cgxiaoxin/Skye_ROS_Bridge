@@ -9,6 +9,11 @@
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
+  <depend>rcl_interfaces</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>pinocchio</exec_depend>
   <depend>python3-numpy</depend>
   <depend>python3-yaml</depend>
   <exec_depend>dynamixel_sdk</exec_depend>

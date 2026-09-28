@@ -868,6 +868,33 @@ QoS 与 `skye_robot_driver` 对齐：
 - control：与驱动 BEST_EFFORT 订阅兼容，KEEP_LAST 1；
 - 状态文本可以使用 TRANSIENT_LOCAL，便于后启动观察者读取当前模式。
 
+完成记录（2026-09-28）：
+
+- [x] 5.1 已实现 `SkyeFactrTeleopNode` 和 executable：`--side left|right` 选择侧别，
+  默认节点名分别为 `skye_factr_teleop_left/right`，支持标准 ROS remap。
+- 启动参数只读；`config_path` 支持绝对路径或包 share 下路径。必须显式传入 8 轴
+  `joint_offsets`、正的 `current_limit_ma` 及 8 轴速度/加速度/jerk 上限，缺失或
+  无效时在打开串口前失败。实际动力学适配器从 description 包解析 leader URDF。
+- follower 与 `/joint_move` 校验 7 轴有限 position、可选的 7 轴 velocity/effort、
+  左右名称及顺序、非零 header stamp、新鲜度；显式开启 `allow_unnamed_joint_states`
+  后才接受无名称的固定顺序。默认 `state_timeout=0.25 s`，未来时间容差 `0.05 s`。
+- 发布 leader 当前/目标状态、7 轴 TELEOP 命令及状态文本；QoS 按上述契约实现。
+  阶段 0 将 target topic 写为订阅是方向笔误，已按本任务和架构说明更正为发布。
+- `/joint_move` 按用户确认的语义：仅从 `IDLE` 开始独立走位并保持，不获得 follower
+  遥操资格；即使核心完成后为 `SYNCED`，节点仍拒绝进入 TELEOP，须 stop 后重新
+  执行 follower sync。它不依赖 follower 反馈，也不替换活动中的目标。
+- 定时器使用 steady clock，控制核心使用 monotonic 时间；默认互斥回调组串行执行。
+  follower 同步、保持和遥操期间持续检查消息时间及接收时间，陈旧/无效反馈触发停止。
+- 新增 `PinocchioDynamics`，实现 7 轴 RNEA、局部雅可比及正运动学；左右模型通过
+  势能差分和位姿差分验证。补充 ROS 消息、ament index 和 Pinocchio 包依赖。
+- `DynamixelDriver.open` 新增可选 `enable_torque=False`，节点启动时不使能力矩；
+  旧调用默认行为不变。有效运动请求才使能；stop/超时关闭力矩，异常及 SIGINT
+  尝试零电流、Torque Disable、关闭串口，任一清理步骤失败仍继续关闭。
+- 验证：35 项 ROS 节点/回调测试（含真实 executor 定时器、假硬件）、2 项真实
+  Pinocchio 数值检查，加上驱动/控制核心/状态机/轨迹回归，共 211 项通过。
+  `colcon build --packages-select skye_factr_teleop --symlink-install` 通过。
+  未连接真机；本记录不代替任务 5.2/5.3 及阶段 7 的验收。
+
 ### 任务 5.2：实现基础 launch
 
 三个 launch：

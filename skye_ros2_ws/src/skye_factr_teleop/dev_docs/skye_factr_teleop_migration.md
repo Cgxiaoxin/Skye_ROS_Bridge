@@ -38,3 +38,17 @@
 完整规则与最小测试接口见
 [开发计划任务 4.1](skye_factr_teleop_development_plan.md#任务-41冻结状态转换规则)，
 参数化契约测试见 `../test/test_state_machine.py`。
+
+## 2026-09-28：任务 5.1 ROS 节点
+
+- executable 使用 `--side left|right`，配置 YAML 默认从包 share 查找；标定偏移、
+  电流上限及轨迹上限须通过只读 ROS 参数显式提供。节点启动保持 torque 关闭，
+  有效 sync 或独立走位请求才使能。
+- 输入须为单侧 7 轴 JointState，具有非零且新鲜的 ROS 时间戳；可选 velocity/effort
+  为空或长度 7。名称使用有序 `l_j1..l_j7` / `r_j1..r_j7`；无名称固定顺序输入需
+  显式设置 `allow_unnamed_joint_states=true`。
+- `/leader_arm/target_joint_state` 是发布接口；阶段 0 的方向笔误已更正。
+  外部走位使用 `/joint_move`，仅在 IDLE 接受，完成后保持。该路径的 `SYNCED`
+  仅表示外部目标完成，不能据此进入 TELEOP；需要 stop 后重新执行 follower sync。
+- follower 同步、保持和 TELEOP 期间反馈失效会停止；运动初始化或控制异常会关闭
+  串口并停用定时器，需要重启节点。一般 stop 或同步超时可在有效新请求时重新使能。

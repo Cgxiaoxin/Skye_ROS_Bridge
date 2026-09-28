@@ -160,8 +160,11 @@ QoS 缩写：
 | 发布 | `/gripper/ctrl` | `/left_teleop_gripper/ctrl` | `/right_teleop_gripper/ctrl` | `sensor_msgs/msg/JointState` | `command_qos` | `position` 长度 1、无量纲归一化 `[0,1]`；FACTR 扳机语义为 `1=开`、`0=闭`。 |
 | 订阅 | `/gripper/state` | `/left_gripper/state` | `/right_gripper/state` | `sensor_msgs/msg/JointState` | `state_qos` | `name=[gripper_joint]`；`position`、`velocity`、`effort` 长度各 1，均为驱动给出的归一化反馈；`position` 使用 FACTR 语义 `1=开`、`0=闭`。无硬件反馈时 `position` 是目标回显，`frame_id=no_feedback`。 |
 | 发布 | `/leader_arm/current_state` | `/left_leader_arm/current_state` | `/right_leader_arm/current_state` | `sensor_msgs/msg/JointState` | `state_qos` | leader 小臂 7 轴；`position` 为 7 个 rad，`velocity` 为 7 个 rad/s，夹爪不包含在内。 |
-| 订阅 | `/leader_arm/target_joint_state` | `/left_leader_arm/target_joint_state` | `/right_leader_arm/target_joint_state` | `sensor_msgs/msg/JointState` | `state_qos` | leader 小臂目标；`position` 恰为 7 个有限 rad 值，夹爪不包含在内。 |
+| 发布 | `/leader_arm/target_joint_state` | `/left_leader_arm/target_joint_state` | `/right_leader_arm/target_joint_state` | `sensor_msgs/msg/JointState` | `state_qos` | leader 小臂目标；`position` 恰为 7 个有限 rad 值，夹爪不包含在内。 |
 | 订阅 | `/joint_move` | `/left_joint_move` | `/right_joint_move` | `sensor_msgs/msg/JointState` | `state_qos` | 外部 leader 走位目标；`position` 恰为 7 个有限 rad 值。 |
+
+2026-09-28 更正：target topic 的方向按任务 5.1 和架构说明改为发布；旧表中的
+“订阅”为笔误，外部走位输入使用 `/joint_move`。
 
 `/joint_control` 和 `/gripper/ctrl` 采用驱动控制 QoS，避免旧指令排队；驱动的
 BEST_EFFORT 订阅也可兼容已有 RELIABLE FACTR 发布者。`/joint_state` 和

@@ -374,8 +374,10 @@ class DynamixelDriver(DynamixelIO):
     def latency_timer(self) -> int | None:
         return self._latency_timer
 
-    def open(self) -> None:
+    def open(self, *, enable_torque: bool = True) -> None:
         """Open and configure every expected servo in a safe order."""
+        if not isinstance(enable_torque, bool):
+            raise TypeError("enable_torque must be bool")
         with self._lock:
             if self._is_open:
                 if self._read_only:
@@ -395,7 +397,8 @@ class DynamixelDriver(DynamixelIO):
                 # Never enable current control with a Goal Current value left
                 # behind by an earlier process on an already-powered bus.
                 self._write_raw_currents_locked([0] * len(self._ids))
-                self._set_torque_enabled_locked(True)
+                if enable_torque:
+                    self._set_torque_enabled_locked(True)
                 self._read_only = False
                 self._device_info = ()
                 self._is_open = True

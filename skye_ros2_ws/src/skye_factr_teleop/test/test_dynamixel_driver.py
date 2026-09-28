@@ -339,6 +339,16 @@ def test_open_performs_safe_initialization_in_order(driver_factory, fake_sdk):
     assert driver.torque_enabled is True
 
 
+def test_open_can_leave_torque_disabled(driver_factory, fake_sdk):
+    driver = driver_factory()
+    driver.open(enable_torque=False)
+    assert driver.is_open
+    assert not driver.torque_enabled
+    for dxl_id in IDS:
+        assert ("write1", dxl_id, 64, 1) not in fake_sdk.events
+        assert ("write.addParam", dxl_id, [0, 0]) in fake_sdk.events
+
+
 def test_open_is_idempotent(driver_factory, fake_sdk):
     driver = driver_factory()
     driver.open()

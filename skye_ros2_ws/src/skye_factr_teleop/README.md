@@ -4,9 +4,9 @@ ROS 2 Humble `ament_python` package for Skye/M6 FACTR-style leader-arm
 teleoperation.
 
 The package includes validated YAML configuration, the production Dynamixel
-adapter, and a ROS-free single-cycle control core. The ROS node and launch
-integration are later tasks; the low-current hardware smoke check remains
-pending in development-plan stage 7.
+adapter, a ROS-free single-cycle control core, and the single-arm ROS driver.
+Launch integration remains task 5.2; the low-current hardware smoke check
+remains pending in development-plan stage 7.
 
 ## Configuration
 
@@ -34,11 +34,104 @@ The configured leader and follower URDF resources are provided by the
 ## Entry point
 
 ```bash
-ros2 run skye_factr_teleop skye_factr_teleop_driver
+ros2 run skye_factr_teleop skye_factr_teleop_driver --help
 ```
 
 The keyboard entry point is intentionally deferred until basic hardware
 acceptance is complete.
+
+## Task 5.1 ROS driver
+
+Select the arm with executable argument `--side left|right` (default `left`).
+Default node names are `skye_factr_teleop_left` and `skye_factr_teleop_right`;
+standard ROS node-name remapping is supported. Supply a ROS parameter file with
+the calibrated offsets and motion limits for that arm. Parameters are read-only
+after startup:
+
+| Parameter | Meaning/default |
+|---|---|
+| `config_path` | Absolute YAML path, or path relative to the package share; empty selects `config/grav_comp_m6_<side>.yaml` |
+| `joint_offsets` | Required: eight calibrated physical-servo offsets in rad, including gripper |
+| `current_limit_ma` | Required: positive current ceiling; also bounded by servo ratings |
+| `max_velocity`, `max_acceleration`, `max_jerk` | Required: eight positive limits each, in logical leader order, rad/s, rad/s², rad/s³ |
+| `state_timeout` | Maximum header age and time since receipt, seconds; default `0.25` |
+| `future_tolerance` | Allowed future header timestamp skew, seconds; default `0.05` |
+| `allow_unnamed_joint_states` | Default `false`; if true, empty names mean fixed J1..J7 order |
+
+The ROS parameter file wraps these values under the node's `ros__parameters`.
+It is separate from the control YAML selected by `config_path`. Missing offsets
+or limits fail startup before a serial device is opened. The node resolves its
+leader URDF through `skye_factr_description` and uses the Pinocchio adapter in
+`dynamics.py` for RNEA, the local joint Jacobian, and forward kinematics.
+Runtime Python dependencies include the baseline Pinocchio and Ruckig versions.
+
+After the stage-7 hardware gates, a left-arm invocation with an operator-supplied
+ROS parameter file has this form:
+
+```bash
+ros2 run skye_factr_teleop skye_factr_teleop_driver --side left --ros-args \
+  --params-file /path/to/left_runtime.yaml \
+  -r /joint_state:=/gento/left_joint_states \
+  -r /joint_control:=/gento/left_joint_control \
+  -r /joint_move:=/left_joint_move \
+  -r /leader_arm/current_state:=/left_leader_arm/current_state \
+  -r /leader_arm/target_joint_state:=/left_leader_arm/target_joint_state
+```
+
+Use `--side right`, the right parameter file, and right-side remaps for the
+other instance. Mode topics are shared globally. The node creates these base
+interfaces, with the QoS frozen in the phase-0 contract:
+
+| Direction | Topic | Type |
+|---|---|---|
+| Subscribe | `/joint_state`, `/joint_move` | `sensor_msgs/msg/JointState` |
+| Subscribe | `/mode/switch_sync`, `/mode/switch_teleop`, `/mode/switch_stop` | `std_msgs/msg/String` |
+| Publish | `/leader_arm/current_state`, `/leader_arm/target_joint_state` | `sensor_msgs/msg/JointState` |
+| Publish | `/joint_control` | `sensor_msgs/msg/JointState` |
+| Publish | `/teleop/state` | `std_msgs/msg/String` |
+
+State data uses RELIABLE/VOLATILE/KEEP_LAST(1); joint commands use
+BEST_EFFORT/VOLATILE/KEEP_LAST(1). Mode requests use RELIABLE/VOLATILE/depth 10;
+state text uses RELIABLE/TRANSIENT_LOCAL/depth 1.
+
+Incoming JointState messages require seven finite positions; velocity/effort
+must be empty or contain seven finite values. Names must be exactly
+`l_j1..l_j7` or `r_j1..r_j7` in order, unless empty names are explicitly allowed.
+Messages require nonzero, fresh timestamps in the node's ROS clock domain.
+The node never slices a combined 14-axis message. It also checks monotonic time
+since receipt, so a paused ROS clock cannot keep old feedback valid indefinitely.
+
+Startup opens/configures the bus with torque disabled, using
+`DynamixelDriver.open(enable_torque=False)`. A valid `switch_sync` request in
+`IDLE` requires fresh follower data before enabling torque. Successful sync
+enters hold; `switch_teleop` then allows seven-axis command publication.
+Invalid or stale follower feedback during follower sync, hold, or teleop stops
+motion and returns to `IDLE`.
+
+`/joint_move` is accepted only in `IDLE`: it independently moves the leader to
+the supplied seven-axis target and holds it, using the configured gripper
+setpoint. Its completion reports `SYNCED` for target completion, but the node
+does **not** grant follower-teleop permission. Stop, then perform follower sync
+before requesting teleop. Repeated motion requests cannot replace an active
+trajectory. Target-state publication describes the running reference/hold
+target; it is not an input topic.
+
+Callbacks are serialized in the default mutually-exclusive callback group.
+The timer uses a steady clock at the configured frequency; core timestamps use
+monotonic seconds. Stop disables torque and halts command publication. Control
+faults cancel the timer, attempt zero current/Torque Disable, and close the bus;
+a faulted node must be restarted. SIGINT and node destruction use the same
+idempotent cleanup, attempting close even if zeroing fails.
+
+The task-5.1 tests create real ROS nodes/executor with injected hardware and
+trajectories. They use a separate localhost ROS domain and do not open devices:
+
+```bash
+python3 -m pytest -q test/test_ros_driver.py test/test_dynamics.py test/test_dynamixel_driver.py test/test_control_core.py test/test_state_machine.py test/test_sync_hold.py test/test_state_trajectory_integration.py
+```
+
+Result: 211 passed. The node tests require ROS Humble; model tests require
+Pinocchio. Launch and cross-node message/remap acceptance remain tasks 5.2/5.3.
 
 ## Phase 2.5.1 read-only bus check
 
