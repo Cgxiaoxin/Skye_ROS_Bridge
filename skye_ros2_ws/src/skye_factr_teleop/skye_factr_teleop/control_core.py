@@ -16,8 +16,23 @@ from .dynamixel_driver import DynamixelIO, get_servo_spec, torque_nm_to_current_
 class DynamicsIO(Protocol):
     """Implemented by a runtime adapter; no Pinocchio dependency here."""
 
-    def gravity(self, q: np.ndarray) -> np.ndarray: ...
-    def jacobian(self, q: np.ndarray) -> np.ndarray: ...
+    def gravity(self, q: np.ndarray, dq: np.ndarray) -> np.ndarray:
+        """Return unscaled RNEA(q, dq, 0) torque in Nm, matching FACTR.
+
+        Inputs are seven logical arm joints in rad and rad/s, in LeaderState
+        order. Despite the upstream name, this includes velocity-dependent
+        torque C(q, dq) @ dq as well as gravity g(q). Apply gains in the core.
+        """
+        ...
+
+    def jacobian(self, q: np.ndarray) -> np.ndarray:
+        """Match pin.computeJointJacobian(model, data, q, num_arm_joints).
+
+        Return the last arm joint's 6-by-7 Jacobian with columns in LeaderState
+        order, using the same frame convention as that upstream call.
+        """
+        ...
+
     def forward_kinematics(self, q: np.ndarray) -> object: ...
 
 
@@ -142,10 +157,24 @@ def joint_limit_barrier(
     return result
 
 
-def gravity_compensation(q: object, dynamics: DynamicsIO, gain: object) -> np.ndarray:
+def gravity_compensation(
+    q: object, dq: object, dynamics: DynamicsIO, gain: object,
+    *, mode: str = "position_velocity",
+) -> np.ndarray:
+    """Scale RNEA(q, dq, 0), or RNEA(q, 0, 0) for position_only.
+
+    Zero only the model's velocity input; other control terms use measured dq.
+    """
     position = _vector(q, ARM_JOINT_COUNT, "arm_position")
+    velocity = _vector(dq, ARM_JOINT_COUNT, "arm_velocity")
     weights = _vector(gain, ARM_JOINT_COUNT, "gravity_gain")
-    return _vector(dynamics.gravity(position.copy()), ARM_JOINT_COUNT, "gravity") * weights
+    if mode == "position_only":
+        velocity = np.zeros_like(velocity)
+    elif mode != "position_velocity":
+        raise ValueError("gravity mode must be position_velocity or position_only")
+    return _vector(
+        dynamics.gravity(position.copy(), velocity.copy()), ARM_JOINT_COUNT, "gravity",
+    ) * weights
 
 
 def static_friction_compensation(
@@ -203,6 +232,9 @@ class ControlCore:
             limits,
             [get_servo_spec(model).current_limit_ma for model in config.dynamixel.servo_types],
         )
+        # 显式传入 terms 时，优先使用该对象，实现各控制项独立开关。
+        # 未传入时，按配置生成开关；静摩擦跟随重力开关，保持上游默认行为。
+        # 此处显式指定各字段，因此修改 ControlTerms 类的字段默认值不会影响此分支。
         self.terms = terms or ControlTerms(
             joint_limits=config.arm_teleop.arm_limit_barrier_enable,
             gravity=config.controller.gravity_comp.enable,
@@ -231,14 +263,16 @@ class ControlCore:
                         margin=arm.arm_joint_limits_safety_margin,
                     )
                 if self.terms.gravity or self.terms.static_friction:
-                    raw_gravity = _vector(
-                        self.dynamics.gravity(state.arm_position.copy()), ARM_JOINT_COUNT, "gravity",
+                    compensation = gravity_compensation(
+                        state.arm_position, state.arm_velocity,
+                        self.dynamics, ctrl.gravity_comp.gain,
+                        mode=ctrl.gravity_comp.mode,
                     )
                     if self.terms.gravity:
-                        gravity[:ARM_JOINT_COUNT] = raw_gravity * ctrl.gravity_comp.gain
+                        gravity[:ARM_JOINT_COUNT] = compensation
                     if self.terms.static_friction:
                         friction[:ARM_JOINT_COUNT], next_flags = static_friction_compensation(
-                            state.arm_velocity, raw_gravity * ctrl.gravity_comp.gain,
+                            state.arm_velocity, compensation,
                             ctrl.static_friction_comp.enable_speed,
                             ctrl.static_friction_comp.gain, self._dither_positive,
                         )

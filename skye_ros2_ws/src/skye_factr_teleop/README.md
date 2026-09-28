@@ -15,6 +15,19 @@ The verified default Thor M6 parameters are installed as
 validate either file with `skye_factr_teleop.config.load_config`. Returned nested
 dataclasses and numeric tuples are immutable.
 
+Set `controller.gravity_comp.mode` in the left/right YAML to choose compensation:
+
+| Mode | Model calculation |
+|---|---|
+| `position_velocity` (default, including when omitted) | `RNEA(q, dq, 0)`, matching FACTR |
+| `position_only` | `RNEA(q, 0, 0)`, gravity only |
+
+Reload the configuration and recreate the control core after changing the mode.
+Only the velocity passed to inverse dynamics is zeroed in `position_only` mode;
+limit damping, friction speed gating, and nullspace damping still use measured
+velocity. Static friction amplitude uses the gain-scaled compensation from the
+selected mode, including when gravity output is disabled via `ControlTerms`.
+
 The configured leader and follower URDF resources are provided by the
 `skye_factr_description` package; no model is loaded from `marvin_ws`.
 

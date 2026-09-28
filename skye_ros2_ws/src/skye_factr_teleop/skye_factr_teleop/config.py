@@ -80,6 +80,7 @@ class TorqueFeedbackConfig:
 class GravityCompConfig:
     enable: bool
     gain: tuple[float, ...]
+    mode: str = "position_velocity"
 
 
 @dataclass(frozen=True)
@@ -309,10 +310,14 @@ def _torque_feedback(value: Any) -> TorqueFeedbackConfig:
 def _gravity_comp(value: Any) -> GravityCompConfig:
     path = "controller.gravity_comp"
     data = _map(value, path)
-    _only(data, {"enable", "gain"}, path)
+    _only(data, {"enable", "gain", "mode"}, path)
+    mode = _str(data.get("mode", "position_velocity"), f"{path}.mode")
+    if mode not in ("position_velocity", "position_only"):
+        raise ConfigError(f"{path}.mode must be position_velocity or position_only")
     return GravityCompConfig(
         _bool(_req(data, "enable", path), f"{path}.enable"),
         _nonnegative_vec(_req(data, "gain", path), 7, f"{path}.gain"),
+        mode,
     )
 
 

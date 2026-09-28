@@ -56,6 +56,7 @@ controller:
     motor_scalar: [43.9, 43.9, 66, 66, 18, 18, 18]
   gravity_comp:
     enable: true
+    mode: position_velocity # position_velocity: RNEA(q,dq,0); position_only: RNEA(q,0,0)
     gain: [0.4, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]
   null_space_regulation:
     enable: false

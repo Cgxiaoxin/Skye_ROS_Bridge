@@ -39,6 +39,29 @@ def test_left_and_right_configs_load_and_preserve_differences():
     assert left.dynamixel.joint_signs != right.dynamixel.joint_signs
     assert left.arm_teleop.leader_urdf_package == "skye_factr_description"
     assert not Path(left.arm_teleop.leader_urdf).is_absolute()
+    assert left.controller.gravity_comp.mode == "position_velocity"
+    assert right.controller.gravity_comp.mode == "position_velocity"
+
+
+@pytest.mark.parametrize("mode", ["position_velocity", "position_only"])
+def test_gravity_modes_load_from_yaml(tmp_path, mode):
+    document = _document()
+    document["controller"]["gravity_comp"]["mode"] = mode
+    assert load_config(_write(tmp_path, document)).controller.gravity_comp.mode == mode
+
+
+def test_missing_gravity_mode_preserves_factr_default():
+    document = _document()
+    document["controller"]["gravity_comp"].pop("mode")
+    assert TeleopConfig.from_mapping(document).controller.gravity_comp.mode == "position_velocity"
+
+
+@pytest.mark.parametrize("mode", ["unknown", "", None, True, []])
+def test_invalid_gravity_mode_fails(mode):
+    document = _document()
+    document["controller"]["gravity_comp"]["mode"] = mode
+    with pytest.raises(ConfigError, match="gravity_comp.mode"):
+        TeleopConfig.from_mapping(document)
 
 
 def test_result_is_deeply_immutable():

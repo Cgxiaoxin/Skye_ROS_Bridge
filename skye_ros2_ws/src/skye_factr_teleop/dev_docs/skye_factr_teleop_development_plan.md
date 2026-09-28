@@ -626,13 +626,30 @@ Torque Disable 结果
 虽然保持精简目录，不新增 `dynamics.py`，但在 `control_core.py` 内建立小型动力学接口：
 
 ```python
-gravity(q) -> ndarray
+gravity(q, dq) -> ndarray
 jacobian(q) -> ndarray
 forward_kinematics(q) -> pose
 ```
 
+动力学语义以指定上游提交 `7a07ab3629af03a91c0198df7c44a0082dca77ab`
+为基准：`gravity(q, dq)` 返回未乘增益的 `RNEA(q, dq, 0)`，即包含
+`C(q, dq) @ dq + g(q)`，不是仅计算 `g(q)`。输入是按 `LeaderState` 顺序排列的
+7 个逻辑关节角度（rad）和速度（rad/s），输出单位为 N·m；逐关节增益由控制核心
+应用一次。静摩擦幅值使用同一份已乘增益的结果，每周期只计算一次动力学。
+`controller.gravity_comp.mode` 支持 `position_velocity`（默认，保持上游行为）和
+`position_only`（仅向动力学传入零速度，计算 `RNEA(q, 0, 0) = g(q)`）。旧配置省略
+该字段时使用默认模式，非法值在配置加载时拒绝。切换 YAML 后须重新加载配置并重建
+控制核心；不提供运行中热切换。模式不改变真实状态速度，限位阻尼、静摩擦低速判断、
+零空间阻尼仍使用实测速度。静摩擦参考幅值跟随所选模式，即使重力输出关闭也如此。
+`jacobian(q)` 应与上游 `pin.computeJointJacobian(model, data, q, num_arm_joints)`
+的关节对象、坐标约定一致，返回列顺序与逻辑关节一致的 6×7 矩阵。
+
 测试使用 fake dynamics；Pinocchio 只在运行适配器中出现。这样在主机尚未安装
 Pinocchio 时，纯控制测试仍可运行。
+
+2026-09-24 对齐说明：恢复重力补偿的速度输入，修正此前仅有 `gravity(q)` 的接口。
+fake 测试验证速度传递、增益和静摩擦参考值；真实 Pinocchio 适配器的 RNEA 计算
+及雅可比一致性仍须在接入时验证。
 
 ### 任务 3.4：实现单周期控制 API
 
