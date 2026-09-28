@@ -1,7 +1,9 @@
 # URDF 分类索引
 
-> 把 marvin_ws 内外散落的大臂 / 小臂 URDF 按"产品型号 + 单/双臂"分类，统一用 **symlink** 指向原文件。
-> 原文件不会被改动；如果 `install/` 被 colcon 重建，symlink 自动跟随。
+> 把 marvin_ws 内外散落的大臂 / 小臂 URDF 按"产品型号 + 单/双臂"分类归档。
+> 小臂 isomorphism URDF：本目录现为**实体文件**（可 git 跟踪关节限位等修改），并需同步到
+> `marvin_ws/install/share/m6_isomorphism_description/urdf/` 供运行时加载。
+> 大臂仍可为指向 install / 外部参考的 symlink。
 
 ## 目录结构
 
@@ -34,9 +36,9 @@ urdf_classification/
 
 | symlink 名 | 真实路径 | 关节命名 | 特征 |
 |-----------|---------|---------|------|
-| `双臂_m6_isomorphism.urdf` | `marvin_ws/install/share/m6_isomorphism_description/urdf/m6_isomorphism.urdf` | `joint1_left..7_left` + `joint1_right..7_right` | 17 link（双臂+torso），**无夹爪 link** |
-| `单臂_左_m6left_isomorphism.urdf` | `marvin_ws/install/share/m6_isomorphism_description/urdf/m6left_isomorphism.urdf` | `joint1_left..7_left` | 9 link，单臂 |
-| `单臂_右_m6right_isomorphism.urdf` | `marvin_ws/install/share/m6_isomorphism_description/urdf/m6right_isomorphism.urdf` | `joint1_right..7_right` | 9 link，单臂 |
+| `双臂_m6_isomorphism.urdf` | 本目录实体文件；同步至 `marvin_ws/install/share/m6_isomorphism_description/urdf/m6_isomorphism.urdf` | `joint1_left..7_left` + `joint1_right..7_right` | 17 link（双臂+torso），**无夹爪 link**；J1/3/5=±180° |
+| `单臂_左_m6left_isomorphism.urdf` | 同上 → `m6left_isomorphism.urdf` | `joint1_left..7_left` | 9 link，单臂；J1/3/5=±180° |
+| `单臂_右_m6right_isomorphism.urdf` | 同上 → `m6right_isomorphism.urdf` | `joint1_right..7_right` | 9 link，单臂；J1/3/5=±180° |
 
 **为何是小臂**：与上方参考大臂 URDF 对比，7 关节 origin **全部对不上**（小臂 Joint1 origin `0 0 0.039` vs 大臂 `0 0 0.1745`），尺寸约为大臂的 1/4；Link7 mesh 仅 842KB vs 大臂 2.5MB；Link7 质量 0.068 kg vs 大臂多 kg 级；不含夹爪 link。"isomorphism（同构）"命名含义即：**小臂运动学结构与大臂同构**，方便 FACTR 遥操同构主从映射。
 
