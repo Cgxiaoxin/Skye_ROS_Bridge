@@ -258,7 +258,8 @@ python3 -m pytest -q test/test_state_machine.py
 现有 YAML 没有定义轨迹的速度、加速度或加加速度上限。须通过工厂函数明确提供 8 轴正数上限，单位分别为 rad/s、rad/s² 和 rad/s³；不能从 PD 增益推断硬件运动上限：
 
 ```python
-from skye_factr_teleop.control_core import ControlCore, RuckigTrajectory
+from skye_factr_teleop.control_core import ControlCore
+from skye_factr_teleop.trajectory import RuckigTrajectory
 
 # 调用方针对具体主臂提供 config、hardware、dynamics、offsets、current_limit_ma，
 # 以及以下三个上限向量。

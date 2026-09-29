@@ -289,6 +289,33 @@ def read_ftdi_latency_timer(port: Path) -> int | None:
         ) from exc
 
 
+def _serial_port_candidate(port: str) -> Path:
+    if not isinstance(port, str) or not port.strip():
+        raise DynamixelPortError("serial port must be a non-empty path")
+    candidate = Path(port.strip())
+    if not candidate.is_absolute() and candidate.parent == Path("."):
+        candidate = SERIAL_BY_ID_DIRECTORY / candidate
+    return candidate
+
+
+def _validate_ids(ids: Sequence[int]) -> tuple[int, ...]:
+    try:
+        values = tuple(ids)
+    except TypeError as exc:
+        raise TypeError("ids must be a sequence of integers") from exc
+    if not values:
+        raise ValueError("ids must not be empty")
+    if any(isinstance(value, bool) or not isinstance(value, Integral) for value in values):
+        raise TypeError("each Dynamixel ID must be an integer")
+    result = tuple(int(value) for value in values)
+    if any(value < 0 or value > 252 for value in result):
+        raise ValueError("each Dynamixel ID must be in 0..252")
+    if len(set(result)) != len(result):
+        raise ValueError("Dynamixel IDs must be unique")
+    return result
+
+
+
 class DynamixelDriver(DynamixelIO):
     """Real ``dynamixel_sdk`` adapter with an explicit, safe lifecycle."""
 
@@ -577,6 +604,40 @@ class DynamixelDriver(DynamixelIO):
             if first_error is not None:
                 raise first_error
 
+    def _open_serial_locked(self) -> None:
+        self._port = resolve_serial_port(self._configured_port)
+        self._latency_timer = read_ftdi_latency_timer(self._port)
+        if self._latency_timer is not None and self._latency_timer != 1:
+            raise DynamixelPortError(
+                f"FTDI latency timer for {self._port} is "
+                f"{self._latency_timer}, expected 1"
+            )
+        if not self._port_handler.openPort():
+            raise DynamixelPortError(
+                f"failed to open serial port {self._port}"
+            )
+        self._port_open = True
+        if not self._port_handler.setBaudRate(self._baudrate):
+            raise DynamixelPortError(
+                f"failed to set baudrate {self._baudrate} on {self._port}"
+            )
+
+    def _ping_devices_locked(self) -> tuple[int, ...]:
+        model_numbers = []
+        for dxl_id in self._ids:
+            ping_result = self._packet_handler.ping(self._port_handler, dxl_id)
+            model_number, comm_result, device_error = ping_result
+            self._check_sdk_result("ping", dxl_id, comm_result, device_error)
+            model_numbers.append(model_number)
+        return tuple(model_numbers)
+
+    def _register_sync_read_locked(self) -> None:
+        for dxl_id in self._ids:
+            if not self._sync_read.addParam(dxl_id):
+                raise DynamixelSdkError(
+                    f"sync read addParam failed for device ID {dxl_id}"
+                )
+
     def _set_operating_mode_locked(self, mode: int) -> None:
         if isinstance(mode, bool) or not isinstance(mode, Integral):
             raise TypeError("operating mode must be an integer")
@@ -628,15 +689,6 @@ class DynamixelDriver(DynamixelIO):
             )
         self._torque_enabled = enabled
 
-    def _read_sync_value_locked(
-        self, dxl_id: int, address: int, length: int, operation: str
-    ) -> int:
-        if not self._sync_read.isAvailable(dxl_id, address, length):
-            raise DynamixelSdkError(
-                f"{operation} unavailable for device ID {dxl_id}"
-            )
-        return self._sync_read.getData(dxl_id, address, length)
-
     def _read_byte_locked(
         self, dxl_id: int, address: int, operation: str
     ) -> int:
@@ -646,39 +698,14 @@ class DynamixelDriver(DynamixelIO):
         self._check_sdk_result(operation, dxl_id, comm_result, device_error)
         return value
 
-    def _open_serial_locked(self) -> None:
-        self._port = resolve_serial_port(self._configured_port)
-        self._latency_timer = read_ftdi_latency_timer(self._port)
-        if self._latency_timer is not None and self._latency_timer != 1:
-            raise DynamixelPortError(
-                f"FTDI latency timer for {self._port} is "
-                f"{self._latency_timer}, expected 1"
+    def _read_sync_value_locked(
+        self, dxl_id: int, address: int, length: int, operation: str
+    ) -> int:
+        if not self._sync_read.isAvailable(dxl_id, address, length):
+            raise DynamixelSdkError(
+                f"{operation} unavailable for device ID {dxl_id}"
             )
-        if not self._port_handler.openPort():
-            raise DynamixelPortError(
-                f"failed to open serial port {self._port}"
-            )
-        self._port_open = True
-        if not self._port_handler.setBaudRate(self._baudrate):
-            raise DynamixelPortError(
-                f"failed to set baudrate {self._baudrate} on {self._port}"
-            )
-
-    def _ping_devices_locked(self) -> tuple[int, ...]:
-        model_numbers = []
-        for dxl_id in self._ids:
-            ping_result = self._packet_handler.ping(self._port_handler, dxl_id)
-            model_number, comm_result, device_error = ping_result
-            self._check_sdk_result("ping", dxl_id, comm_result, device_error)
-            model_numbers.append(model_number)
-        return tuple(model_numbers)
-
-    def _register_sync_read_locked(self) -> None:
-        for dxl_id in self._ids:
-            if not self._sync_read.addParam(dxl_id):
-                raise DynamixelSdkError(
-                    f"sync read addParam failed for device ID {dxl_id}"
-                )
+        return self._sync_read.getData(dxl_id, address, length)
 
     def _diagnose_sync_read_failure_locked(
         self, sync_detail: str
@@ -701,6 +728,22 @@ class DynamixelDriver(DynamixelIO):
             f"read_state sync read failed: {sync_detail}; {diagnosis}"
         )
 
+    def _validate_currents(self, currents_ma: Sequence[float]) -> list[int]:
+        if isinstance(currents_ma, (str, bytes)):
+            raise TypeError("currents_ma must be a numeric sequence")
+        try:
+            values = list(currents_ma)
+        except TypeError as exc:
+            raise TypeError("currents_ma must be a numeric sequence") from exc
+        if len(values) != len(self._ids):
+            raise ValueError(
+                f"currents_ma must contain {len(self._ids)} values, got {len(values)}"
+            )
+        return [
+            current_ma_to_raw(current, servo_type)
+            for current, servo_type in zip(values, self._servo_types)
+        ]
+
     def _write_raw_currents_locked(self, raw_currents: Sequence[int]) -> None:
         try:
             for dxl_id, raw_current in zip(self._ids, raw_currents):
@@ -718,22 +761,6 @@ class DynamixelDriver(DynamixelIO):
                 )
         finally:
             self._sync_write_current.clearParam()
-
-    def _validate_currents(self, currents_ma: Sequence[float]) -> list[int]:
-        if isinstance(currents_ma, (str, bytes)):
-            raise TypeError("currents_ma must be a numeric sequence")
-        try:
-            values = list(currents_ma)
-        except TypeError as exc:
-            raise TypeError("currents_ma must be a numeric sequence") from exc
-        if len(values) != len(self._ids):
-            raise ValueError(
-                f"currents_ma must contain {len(self._ids)} values, got {len(values)}"
-            )
-        return [
-            current_ma_to_raw(current, servo_type)
-            for current, servo_type in zip(values, self._servo_types)
-        ]
 
     def _check_sdk_result(
         self,
@@ -781,29 +808,3 @@ class DynamixelDriver(DynamixelIO):
         self._is_open = False
         self._read_only = False
         self._torque_enabled = False
-
-
-def _serial_port_candidate(port: str) -> Path:
-    if not isinstance(port, str) or not port.strip():
-        raise DynamixelPortError("serial port must be a non-empty path")
-    candidate = Path(port.strip())
-    if not candidate.is_absolute() and candidate.parent == Path("."):
-        candidate = SERIAL_BY_ID_DIRECTORY / candidate
-    return candidate
-
-
-def _validate_ids(ids: Sequence[int]) -> tuple[int, ...]:
-    try:
-        values = tuple(ids)
-    except TypeError as exc:
-        raise TypeError("ids must be a sequence of integers") from exc
-    if not values:
-        raise ValueError("ids must not be empty")
-    if any(isinstance(value, bool) or not isinstance(value, Integral) for value in values):
-        raise TypeError("each Dynamixel ID must be an integer")
-    result = tuple(int(value) for value in values)
-    if any(value < 0 or value > 252 for value in result):
-        raise ValueError("each Dynamixel ID must be in 0..252")
-    if len(set(result)) != len(result):
-        raise ValueError("Dynamixel IDs must be unique")
-    return result

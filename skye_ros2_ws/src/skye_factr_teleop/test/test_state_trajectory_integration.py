@@ -15,8 +15,9 @@ import pytest
 from conftest import FakeDynamixelIO
 from test_control_core import FakeDynamics
 from skye_factr_teleop.config import load_config
-from skye_factr_teleop.control_core import ControlCore, ControlTerms, RuckigTrajectory
+from skye_factr_teleop.control_core import ControlCore, ControlTerms
 from skye_factr_teleop.state_machine import ControlMode
+from skye_factr_teleop.trajectory import RuckigTrajectory
 
 
 @dataclass

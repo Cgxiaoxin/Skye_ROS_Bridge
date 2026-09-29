@@ -396,6 +396,12 @@ def _hold_ruckig(value: Any) -> HoldRuckigConfig:
     )
 
 
+def _map(value: Any, path: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ConfigError(f"{path} must be a mapping")
+    return value
+
+
 def _req(data: Mapping[str, Any], key: str, path: str) -> Any:
     if key not in data:
         raise ConfigError(f"{path}.{key} is required")
@@ -406,12 +412,6 @@ def _only(data: Mapping[str, Any], expected: set[str], path: str) -> None:
     unknown = sorted(set(data) - expected)
     if unknown:
         raise ConfigError(f"{path} contains unknown fields: {unknown}")
-
-
-def _map(value: Any, path: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise ConfigError(f"{path} must be a mapping")
-    return value
 
 
 def _seq(value: Any, path: str) -> Sequence[Any]:

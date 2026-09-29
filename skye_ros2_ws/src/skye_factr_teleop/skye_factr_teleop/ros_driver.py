@@ -22,10 +22,11 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
 from .config import load_config
-from .control_core import ControlCore, RuckigTrajectory
-from .dynamixel_driver import DynamixelDriver
-from .dynamics import PinocchioDynamics
 from .state_machine import ControlMode
+from .control_core import ControlCore
+from .dynamics import PinocchioDynamics
+from .trajectory import RuckigTrajectory
+from .dynamixel_driver import DynamixelDriver
 
 
 def state_qos():
@@ -113,7 +114,7 @@ def _hardware_factory(config):
     )
 
 
-def _dynamics_factory(config):
+def _make_pinocchio_dynamics(config):
     arm = config.arm_teleop
     path = Path(get_package_share_directory(arm.leader_urdf_package)) / arm.leader_urdf
     return PinocchioDynamics(path)
@@ -134,43 +135,21 @@ class SkyeFactrTeleopNode(Node):
         self._hardware = self.core = self._timer = None
         self._closed = False
         self._follower = None
-        self._follower_sync = False
+        # True from follower synchronization through teleop; joint_move does not set it.
+        self._follower_session_active = False
         self._published_state = None
         try:
             self._configure()
-            self._state_pub = self.create_publisher(String, "/teleop/state", latched_state_qos())
-            self._current_pub = self.create_publisher(JointState, "/leader_arm/current_state", state_qos())
-            self._target_pub = self.create_publisher(JointState, "/leader_arm/target_joint_state", state_qos())
-            self._command_pub = self.create_publisher(JointState, "/joint_control", command_qos())
-            self.create_subscription(JointState, "/joint_state", self._on_follower, state_qos())
-            self.create_subscription(JointState, "/joint_move", self._on_joint_move, state_qos())
-            self.create_subscription(String, "/mode/switch_sync", self._on_sync, event_qos())
-            self.create_subscription(String, "/mode/switch_teleop", self._on_teleop, event_qos())
-            self.create_subscription(String, "/mode/switch_stop", self._on_stop, event_qos())
-
-            dynamics = (dynamics_factory or _dynamics_factory)(self.config)
-            factory = trajectory_factory or self._make_trajectory
-            if trajectory_factory is None:
-                factory()  # Fail on missing Ruckig before hardware access.
-            self._hardware = (hardware_factory or _hardware_factory)(self.config)
-            self._hardware.open(enable_torque=False)
-            self.core = ControlCore(
-                self.config, self._hardware, dynamics, self._offsets,
-                self._current_limit, trajectory_factory=factory, now=self._monotonic(),
-            )
-            self._publish_state()
-            self._steady_clock = Clock(clock_type=ClockType.STEADY_TIME)
-            self._timer = self.create_timer(
-                1 / self.config.controller.frequency, self._tick, clock=self._steady_clock,
+            self._create_ros_interfaces()
+            self._start_control(
+                hardware_factory=hardware_factory,
+                dynamics_factory=dynamics_factory,
+                trajectory_factory=trajectory_factory,
             )
         except BaseException:
             self.shutdown_control()
             super().destroy_node()
             raise
-
-    def _parameter(self, name, default):
-        descriptor = ParameterDescriptor(read_only=True, dynamic_typing=True)
-        return self.declare_parameter(name, default, descriptor).value
 
     def _configure(self):
         config_path = self._parameter("config_path", "")
@@ -191,8 +170,55 @@ class SkyeFactrTeleopNode(Node):
         prefix = "l" if self.side == "left" else "r"
         self._names = [f"{prefix}_j{i}" for i in range(1, 8)]
 
-    def _make_trajectory(self):
+    def _parameter(self, name, default):
+        descriptor = ParameterDescriptor(read_only=True, dynamic_typing=True)
+        return self.declare_parameter(name, default, descriptor).value
+
+    def _create_ros_interfaces(self):
+        self._state_pub = self.create_publisher(String, "/teleop/state", latched_state_qos())
+        self._current_pub = self.create_publisher(JointState, "/leader_arm/current_state", state_qos())
+        self._target_pub = self.create_publisher(JointState, "/leader_arm/target_joint_state", state_qos())
+        self._command_pub = self.create_publisher(JointState, "/joint_control", command_qos())
+        self.create_subscription(JointState, "/joint_state", self._on_follower, state_qos())
+        self.create_subscription(JointState, "/joint_move", self._on_joint_move, state_qos())
+        self.create_subscription(String, "/mode/switch_sync", self._on_sync, event_qos())
+        self.create_subscription(String, "/mode/switch_teleop", self._on_teleop, event_qos())
+        self.create_subscription(String, "/mode/switch_stop", self._on_stop, event_qos())
+
+    def _start_control(self, *, hardware_factory, dynamics_factory, trajectory_factory):
+        dynamics = (dynamics_factory or _make_pinocchio_dynamics)(self.config)
+        make_trajectory = trajectory_factory or self._make_ruckig_trajectory
+        if trajectory_factory is None:
+            make_trajectory()  # Check Ruckig before opening the hardware.
+        self._hardware = (hardware_factory or _hardware_factory)(self.config)
+        self._hardware.open(enable_torque=False)
+        self.core = ControlCore(
+            self.config, self._hardware, dynamics, self._offsets,
+            self._current_limit, trajectory_factory=make_trajectory, now=self._monotonic(),
+        )
+        self._publish_state()
+        self._steady_clock = Clock(clock_type=ClockType.STEADY_TIME)
+        self._timer = self.create_timer(
+            1 / self.config.controller.frequency, self._tick, clock=self._steady_clock,
+        )
+
+    def _make_ruckig_trajectory(self):
         return RuckigTrajectory(frequency=self.config.controller.frequency, **self._limits)
+
+    def _tick(self):
+        if self._closed:
+            return
+        try:
+            if self._follower_session_active and not self._fresh_follower():
+                self.get_logger().warning("Follower state expired; stopping")
+                self._on_stop(None)
+                return
+            result = self.core.step(now=self._monotonic())
+            if result.mode == ControlMode.IDLE:
+                self._follower_session_active = False
+            self._publish_cycle(result)
+        except Exception as exc:
+            self._fault(exc)
 
     def _ros_now(self):
         return self.get_clock().now().nanoseconds * 1e-9
@@ -221,7 +247,7 @@ class SkyeFactrTeleopNode(Node):
         except (TypeError, ValueError) as exc:
             self._follower = None
             self.get_logger().warning(f"Rejected follower state: {exc}")
-            if self._follower_sync:
+            if self._follower_session_active:
                 self._on_stop(None)
 
     def _on_sync(self, message):
@@ -232,7 +258,7 @@ class SkyeFactrTeleopNode(Node):
         if not self._fresh_follower():
             self.get_logger().warning("Synchronization requires fresh follower state")
             return
-        self._start_motion(self._follower.position, follower_sync=True)
+        self._start_motion(self._follower.position, follower_session=True)
 
     def _on_joint_move(self, message):
         if self._closed:
@@ -245,13 +271,13 @@ class SkyeFactrTeleopNode(Node):
         if self.core.mode != ControlMode.IDLE:
             self.get_logger().warning("joint_move requires IDLE; stop before a new move")
             return
-        self._start_motion(target.position, follower_sync=False)
+        self._start_motion(target.position, follower_session=False)
 
-    def _start_motion(self, target, *, follower_sync):
+    def _start_motion(self, target, *, follower_session):
         try:
             self._hardware.set_torque_enabled(True)
             self.core.handle("switch_sync", now=self._monotonic(), follower_position=target)
-            self._follower_sync = follower_sync
+            self._follower_session_active = follower_session
             self._publish_state()
         except Exception as exc:
             self._fault(exc)
@@ -259,7 +285,7 @@ class SkyeFactrTeleopNode(Node):
     def _on_teleop(self, message):
         if self._closed or message.data != "switch_teleop":
             return
-        if self.core.mode != ControlMode.SYNCED or not self._follower_sync:
+        if self.core.mode != ControlMode.SYNCED or not self._follower_session_active:
             self.get_logger().warning("Teleoperation requires successful follower synchronization")
             return
         if not self._fresh_follower():
@@ -275,7 +301,7 @@ class SkyeFactrTeleopNode(Node):
         if self._closed:
             return
         try:
-            self._follower_sync = False
+            self._follower_session_active = False
             self.core.stop()
             self._publish_state()
         except Exception as exc:
@@ -296,29 +322,17 @@ class SkyeFactrTeleopNode(Node):
             self._state_pub.publish(String(data=state))
             self._published_state = state
 
-    def _tick(self):
-        if self._closed:
-            return
-        try:
-            if self._follower_sync and not self._fresh_follower():
-                self.get_logger().warning("Follower state expired; stopping")
-                self._on_stop(None)
-                return
-            result = self.core.step(now=self._monotonic())
-            if result.mode == ControlMode.IDLE:
-                self._follower_sync = False
-            self._current_pub.publish(self._joint_message(
-                result.state.arm_position, result.state.arm_velocity,
+    def _publish_cycle(self, result):
+        self._current_pub.publish(self._joint_message(
+            result.state.arm_position, result.state.arm_velocity,
+        ))
+        if result.target_position is not None:
+            self._target_pub.publish(self._joint_message(
+                result.target_position[:7], result.target_velocity[:7],
             ))
-            if result.target_position is not None:
-                self._target_pub.publish(self._joint_message(
-                    result.target_position[:7], result.target_velocity[:7],
-                ))
-            if result.mode == ControlMode.TELEOP:
-                self._command_pub.publish(self._joint_message(result.state.arm_position))
-            self._publish_state()
-        except Exception as exc:
-            self._fault(exc)
+        if result.mode == ControlMode.TELEOP:
+            self._command_pub.publish(self._joint_message(result.state.arm_position))
+        self._publish_state()
 
     def _fault(self, exc):
         self.get_logger().error(f"Teleoperation stopped after failure: {exc}")
@@ -329,7 +343,7 @@ class SkyeFactrTeleopNode(Node):
         if self._closed:
             return
         self._closed = True
-        self._follower_sync = False
+        self._follower_session_active = False
         if self._timer is not None:
             try:
                 self._timer.cancel()
@@ -353,7 +367,6 @@ class SkyeFactrTeleopNode(Node):
     def destroy_node(self):
         self.shutdown_control()
         return super().destroy_node()
-
 
 def main(args=None):
     parser = argparse.ArgumentParser(description="Skye FACTR single-arm teleoperation")

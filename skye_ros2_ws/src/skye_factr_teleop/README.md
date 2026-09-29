@@ -404,7 +404,8 @@ limits. Supply explicit, positive eight-axis limits in rad/s, rad/sÂ² and rad/sÂ
 through a factory; no hardware motion limits are inferred from PD gains:
 
 ```python
-from skye_factr_teleop.control_core import ControlCore, RuckigTrajectory
+from skye_factr_teleop.control_core import ControlCore
+from skye_factr_teleop.trajectory import RuckigTrajectory
 
 # config, hardware, dynamics, offsets, current_limit_ma and the three limit
 # vectors are supplied by the caller for the particular leader arm.

@@ -23,10 +23,10 @@ from rclpy.parameter import Parameter
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
-from skye_factr_teleop.control_core import RuckigTrajectory
 from skye_factr_teleop.dynamics import PinocchioDynamics
 from skye_factr_teleop.ros_driver import SkyeFactrTeleopNode, event_qos, state_qos
 from skye_factr_teleop.state_machine import ControlMode
+from skye_factr_teleop.trajectory import RuckigTrajectory
 
 
 class FakeHardware:
