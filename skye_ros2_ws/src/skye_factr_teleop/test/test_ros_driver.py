@@ -5,6 +5,7 @@
 
 from pathlib import Path
 from types import SimpleNamespace
+import time
 
 import numpy as np
 import pytest
@@ -69,7 +70,7 @@ def context(monkeypatch, tmp_path):
 def make_node(context, monkeypatch):
     nodes = []
 
-    def make(side="left", *, parameters=None, hardware=None, **kwargs):
+    def make(side="left", *, parameters=None, hardware=None, record_publishers=True, **kwargs):
         values = {
             "config_path": str(Path(__file__).parents[1] / "config" / f"grav_comp_m6_{side}.yaml"),
             "joint_offsets": [0.0] * 8, "current_limit_ma": 50.0,
@@ -96,8 +97,9 @@ def make_node(context, monkeypatch):
         nodes.append(node)
         monkeypatch.setattr(node, "_ros_now", lambda: clock.now)
         pubs = list(node.publishers)
-        for name in ("_state_pub", "_current_pub", "_target_pub", "_command_pub"):
-            setattr(node, name, Recorder())
+        if record_publishers:
+            for name in ("_state_pub", "_current_pub", "_target_pub", "_command_pub"):
+                setattr(node, name, Recorder())
         return SimpleNamespace(node=node, hardware=hardware, trajectories=trajectories,
                                clock=clock, publishers=pubs)
 
@@ -368,3 +370,121 @@ def test_config_path_resolution(monkeypatch, tmp_path):
     assert module.resolve_config_path("custom.yaml", "left") == tmp_path / "config/custom.yaml"
     absolute = tmp_path / "elsewhere.yaml"
     assert module.resolve_config_path(str(absolute), "left") == absolute
+
+
+def _spin_until(executor, predicate, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        executor.spin_once(timeout_sec=0.02)
+    assert predicate(), "ROS graph or message delivery did not reach the expected state"
+
+
+def test_dual_ros_graph_types_remaps_and_isolation(make_node, context):
+    """Exercise both remapped adapters through real DDS publishers/subscribers."""
+    from rclpy.executors import SingleThreadedExecutor
+
+    def remaps(side):
+        return ["--ros-args", "-r", f"/joint_state:=/gento/{side}_joint_states",
+                "-r", f"/joint_control:=/gento/{side}_joint_control",
+                "-r", f"/joint_move:=/{side}_joint_move",
+                "-r", f"/leader_arm/current_state:=/{side}_leader_arm/current_state",
+                "-r", f"/leader_arm/target_joint_state:=/{side}_leader_arm/target_joint_state"]
+
+    rigs = {side: make_node(side, record_publishers=False, cli_args=remaps(side))
+            for side in ("left", "right")}
+    probe = module.rclpy.create_node("ros_interface_probe", context=context,
+                                     use_global_arguments=False)
+    executor = SingleThreadedExecutor(context=context)
+    commands = {side: [] for side in rigs}
+    states = []
+    try:
+        for rig in rigs.values():
+            executor.add_node(rig.node)
+        executor.add_node(probe)
+        follower_pubs = {}
+        for side, rig in rigs.items():
+            node = rig.node
+            expected_pubs = {
+                "/teleop/state": "std_msgs/msg/String",
+                f"/{side}_leader_arm/current_state": "sensor_msgs/msg/JointState",
+                f"/{side}_leader_arm/target_joint_state": "sensor_msgs/msg/JointState",
+                f"/gento/{side}_joint_control": "sensor_msgs/msg/JointState",
+            }
+            expected_subs = {
+                f"/gento/{side}_joint_states": "sensor_msgs/msg/JointState",
+                f"/{side}_joint_move": "sensor_msgs/msg/JointState",
+                "/mode/switch_sync": "std_msgs/msg/String",
+                "/mode/switch_teleop": "std_msgs/msg/String",
+                "/mode/switch_stop": "std_msgs/msg/String",
+            }
+            assert {pub.topic_name for pub in node.publishers} - {"/parameter_events"} == set(expected_pubs)
+            assert {sub.topic_name for sub in node.subscriptions} == set(expected_subs)
+            for topic, msg_type in expected_pubs.items():
+                assert [info.topic_type for info in node.get_publishers_info_by_topic(topic)
+                        if info.node_name == node.get_name()] == [msg_type]
+            for topic, msg_type in expected_subs.items():
+                assert [info.topic_type for info in node.get_subscriptions_info_by_topic(topic)
+                        if info.node_name == node.get_name()] == [msg_type]
+            follower_pubs[side] = probe.create_publisher(
+                JointState, f"/gento/{side}_joint_states", module.state_qos())
+            probe.create_subscription(
+                JointState, f"/gento/{side}_joint_control",
+                lambda message, side=side: commands[side].append(message),
+                module.command_qos())
+        mode_pubs = {mode: probe.create_publisher(
+            String, f"/mode/switch_{mode}", module.event_qos())
+            for mode in ("sync", "teleop", "stop")}
+        probe.create_subscription(String, "/teleop/state",
+                                  lambda message: states.append(message.data),
+                                  module.latched_state_qos())
+        _spin_until(executor, lambda: all(
+            probe.count_subscribers(f"/gento/{side}_joint_states") == 1
+            and probe.count_publishers(f"/gento/{side}_joint_control") == 1
+            for side in rigs))
+        _spin_until(executor, lambda: "IDLE" in states)
+
+        follower_pubs["left"].publish(packet("left"))
+        _spin_until(executor, lambda: rigs["left"].node._follower is not None)
+        mode_pubs["sync"].publish(String(data="switch_sync"))
+        _spin_until(executor, lambda: rigs["left"].node.core.mode == ControlMode.TELEOP_SYNCING)
+        assert rigs["right"].node.core.mode == ControlMode.IDLE
+        assert rigs["right"].node._follower is None
+
+        follower_pubs["right"].publish(packet("right"))
+        _spin_until(executor, lambda: rigs["right"].node._follower is not None)
+        mode_pubs["sync"].publish(String(data="switch_sync"))
+        _spin_until(executor, lambda: rigs["right"].node.core.mode == ControlMode.TELEOP_SYNCING)
+        for rig in rigs.values():
+            rig.trajectories[0].finished = True
+        _spin_until(executor, lambda: all(
+            rig.node.core.mode == ControlMode.SYNCED for rig in rigs.values()))
+        mode_pubs["teleop"].publish(String(data="switch_teleop"))
+        _spin_until(executor, lambda: all(
+            rig.node.core.mode == ControlMode.TELEOP for rig in rigs.values()))
+        _spin_until(executor, lambda: all(commands[side] for side in rigs))
+        for side in rigs:
+            command = commands[side][-1]
+            assert command.name == packet(side).name
+            assert len(command.position) == 7
+            assert np.all(np.isfinite(command.position))
+            assert not command.velocity and not command.effort
+
+        mode_pubs["stop"].publish(String(data="switch_stop"))
+        _spin_until(executor, lambda: all(
+            rig.node.core.mode == ControlMode.IDLE for rig in rigs.values()))
+        _spin_until(executor, lambda: states and states[-1] == "IDLE")
+        counts = {side: len(messages) for side, messages in commands.items()}
+        for _ in range(10):
+            executor.spin_once(timeout_sec=0.01)
+        assert {side: len(messages) for side, messages in commands.items()} == counts
+        for state in ("TELEOP_SYNCING", "SYNCED", "TELEOP", "IDLE"):
+            assert state in states
+        assert all(not rig.hardware.torque_enabled for rig in rigs.values())
+    finally:
+        for rig in rigs.values():
+            executor.remove_node(rig.node)
+        executor.remove_node(probe)
+        executor.shutdown()
+        probe.destroy_node()

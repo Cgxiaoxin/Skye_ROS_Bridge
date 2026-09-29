@@ -958,6 +958,18 @@ colcon test --packages-select skye_factr_teleop
 colcon test-result --verbose
 ```
 
+完成记录（2026-09-29）：
+
+- [x] 5.3 使用注入的假 Dynamixel、动力学和轨迹构造左右真实 rclpy 节点，
+  通过 ROS 图查询检查 publisher/subscriber 的 remap 后名称和消息类型。
+- 通过实际 ROS 消息传递验证左右 follower 输入隔离、全局模式请求、每侧独立的
+  `/gento/<side>_joint_control` 输出、TELEOP 命令仅含 7 个有限 position，
+  以及 stop 后停止发布并关闭假硬件 torque；`/teleop/state` 覆盖模式转换。
+- `colcon build --packages-select skye_factr_teleop --symlink-install` 和
+  `colcon test --packages-select skye_factr_teleop` 通过；`colcon test-result --verbose`
+  为 288 项、零错误、零失败、零跳过。ROS 图测试需允许 DDS 创建本地网络套接字。
+  本任务未连接真机；阶段 6 的完整 ROS 图验收与硬件验收仍按后续任务执行。
+
 ## 11. 阶段 6：基础功能无硬件集成验证
 
 ### 任务 6.1：全包测试
