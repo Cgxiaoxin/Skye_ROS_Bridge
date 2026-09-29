@@ -1,0 +1,107 @@
+{
+  "timestamp_utc": "2026-09-29T01:43:10.154298+00:00",
+  "host": "lyy-ViTai",
+  "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.35",
+  "rmw_implementation": "default",
+  "fake_hardware": true,
+  "nodes": 2,
+  "executor": "single_threaded",
+  "target_hz": 500,
+  "measurement_seconds": 5.0,
+  "sides": {
+    "left": {
+      "timer_interval_ms": {
+        "count": 2500,
+        "mean": 2.0000492372000003,
+        "p50": 1.998783,
+        "p95": 2.1297248499999997,
+        "p99": 2.20481508,
+        "max": 2.559893
+      },
+      "tick_callback_us": {
+        "count": 2501,
+        "mean": 208.18665533786486,
+        "p50": 198.054,
+        "p95": 276.704,
+        "p99": 410.48,
+        "max": 586.048
+      },
+      "pinocchio_us": {
+        "count": 2501,
+        "mean": 3.4490715713714515,
+        "p50": 3.234,
+        "p95": 4.861,
+        "p99": 7.139,
+        "max": 33.425
+      },
+      "ruckig_us": {
+        "count": 2501,
+        "mean": 8.905607756897242,
+        "p50": 8.434,
+        "p95": 12.139,
+        "p99": 17.487,
+        "max": 28.094
+      },
+      "follower_callback_us": {
+        "count": 501,
+        "mean": 14.757175648702594,
+        "p50": 13.621,
+        "p95": 20.659,
+        "p99": 32.875,
+        "max": 50.679
+      },
+      "intervals_over_2ms": 1225,
+      "intervals_over_4ms": 0,
+      "estimated_missed_timer_slots": 0,
+      "fake_reads": 2509,
+      "fake_current_writes": 2502
+    },
+    "right": {
+      "timer_interval_ms": {
+        "count": 2500,
+        "mean": 1.9997129435999998,
+        "p50": 1.9990454999999998,
+        "p95": 2.13505625,
+        "p99": 2.193515729999999,
+        "max": 2.456568
+      },
+      "tick_callback_us": {
+        "count": 2501,
+        "mean": 227.2774430227909,
+        "p50": 208.823,
+        "p95": 327.205,
+        "p99": 429.848,
+        "max": 571.327
+      },
+      "pinocchio_us": {
+        "count": 2501,
+        "mean": 4.205421431427429,
+        "p50": 3.606,
+        "p95": 7.103,
+        "p99": 9.916,
+        "max": 33.373
+      },
+      "ruckig_us": {
+        "count": 2501,
+        "mean": 9.598128348660534,
+        "p50": 8.745,
+        "p95": 13.929,
+        "p99": 19.443,
+        "max": 38.494
+      },
+      "follower_callback_us": {
+        "count": 501,
+        "mean": 10.771626746506985,
+        "p50": 10.066,
+        "p95": 14.663,
+        "p99": 22.742,
+        "max": 30.175
+      },
+      "intervals_over_2ms": 1225,
+      "intervals_over_4ms": 0,
+      "estimated_missed_timer_slots": 0,
+      "fake_reads": 2507,
+      "fake_current_writes": 2502
+    }
+  }
+}

@@ -5,6 +5,8 @@
 
 from pathlib import Path
 from types import SimpleNamespace
+import os
+import subprocess
 import time
 
 import numpy as np
@@ -382,7 +384,7 @@ def _spin_until(executor, predicate, timeout=5.0):
 
 
 def test_dual_ros_graph_types_remaps_and_isolation(make_node, context):
-    """Exercise both remapped adapters through real DDS publishers/subscribers."""
+    """Exercise both remapped adapters and CLI modes through real DDS."""
     from rclpy.executors import SingleThreadedExecutor
 
     def remaps(side):
@@ -398,6 +400,8 @@ def test_dual_ros_graph_types_remaps_and_isolation(make_node, context):
                                      use_global_arguments=False)
     executor = SingleThreadedExecutor(context=context)
     commands = {side: [] for side in rigs}
+    current = {side: [] for side in rigs}
+    target = {side: [] for side in rigs}
     states = []
     try:
         for rig in rigs.values():
@@ -427,15 +431,38 @@ def test_dual_ros_graph_types_remaps_and_isolation(make_node, context):
             for topic, msg_type in expected_subs.items():
                 assert [info.topic_type for info in node.get_subscriptions_info_by_topic(topic)
                         if info.node_name == node.get_name()] == [msg_type]
+            command_info = node.get_publishers_info_by_topic(
+                f"/gento/{side}_joint_control")[0]
+            follower_info = node.get_subscriptions_info_by_topic(
+                f"/gento/{side}_joint_states")[0]
+            assert command_info.qos_profile.reliability == ReliabilityPolicy.BEST_EFFORT
+            assert follower_info.qos_profile.reliability == ReliabilityPolicy.RELIABLE
+            assert next(pub for pub in node.publishers if pub.topic_name ==
+                        f"/gento/{side}_joint_control").qos_profile.depth == 1
+            assert next(sub for sub in node.subscriptions if sub.topic_name ==
+                        f"/gento/{side}_joint_states").qos_profile.depth == 1
             follower_pubs[side] = probe.create_publisher(
                 JointState, f"/gento/{side}_joint_states", module.state_qos())
             probe.create_subscription(
                 JointState, f"/gento/{side}_joint_control",
                 lambda message, side=side: commands[side].append(message),
                 module.command_qos())
-        mode_pubs = {mode: probe.create_publisher(
-            String, f"/mode/switch_{mode}", module.event_qos())
-            for mode in ("sync", "teleop", "stop")}
+            probe.create_subscription(
+                JointState, f"/{side}_leader_arm/current_state",
+                lambda message, side=side: current[side].append(message),
+                module.state_qos())
+            probe.create_subscription(
+                JointState, f"/{side}_leader_arm/target_joint_state",
+                lambda message, side=side: target[side].append(message),
+                module.state_qos())
+        def publish_mode(mode):
+            environment = {**os.environ, "ROS_DOMAIN_ID": "193"}
+            subprocess.run(
+                ["ros2", "topic", "pub", "--once", f"/mode/switch_{mode}",
+                 "std_msgs/msg/String", f"{{data: switch_{mode}}}"],
+                check=True, timeout=20, capture_output=True, text=True,
+                env=environment,
+            )
         probe.create_subscription(String, "/teleop/state",
                                   lambda message: states.append(message.data),
                                   module.latched_state_qos())
@@ -444,23 +471,29 @@ def test_dual_ros_graph_types_remaps_and_isolation(make_node, context):
             and probe.count_publishers(f"/gento/{side}_joint_control") == 1
             for side in rigs))
         _spin_until(executor, lambda: "IDLE" in states)
+        _spin_until(executor, lambda: all(current[side] for side in rigs))
+        assert all(current[side][-1].name == packet(side).name for side in rigs)
+        assert all(probe.count_subscribers(f"/mode/switch_{mode}") == 2
+                   for mode in ("sync", "teleop", "stop"))
 
         follower_pubs["left"].publish(packet("left"))
         _spin_until(executor, lambda: rigs["left"].node._follower is not None)
-        mode_pubs["sync"].publish(String(data="switch_sync"))
+        publish_mode("sync")
         _spin_until(executor, lambda: rigs["left"].node.core.mode == ControlMode.TELEOP_SYNCING)
         assert rigs["right"].node.core.mode == ControlMode.IDLE
         assert rigs["right"].node._follower is None
 
         follower_pubs["right"].publish(packet("right"))
         _spin_until(executor, lambda: rigs["right"].node._follower is not None)
-        mode_pubs["sync"].publish(String(data="switch_sync"))
+        publish_mode("sync")
         _spin_until(executor, lambda: rigs["right"].node.core.mode == ControlMode.TELEOP_SYNCING)
         for rig in rigs.values():
             rig.trajectories[0].finished = True
         _spin_until(executor, lambda: all(
             rig.node.core.mode == ControlMode.SYNCED for rig in rigs.values()))
-        mode_pubs["teleop"].publish(String(data="switch_teleop"))
+        _spin_until(executor, lambda: all(target[side] for side in rigs))
+        assert all(target[side][-1].name == packet(side).name for side in rigs)
+        publish_mode("teleop")
         _spin_until(executor, lambda: all(
             rig.node.core.mode == ControlMode.TELEOP for rig in rigs.values()))
         _spin_until(executor, lambda: all(commands[side] for side in rigs))
@@ -471,7 +504,7 @@ def test_dual_ros_graph_types_remaps_and_isolation(make_node, context):
             assert np.all(np.isfinite(command.position))
             assert not command.velocity and not command.effort
 
-        mode_pubs["stop"].publish(String(data="switch_stop"))
+        publish_mode("stop")
         _spin_until(executor, lambda: all(
             rig.node.core.mode == ControlMode.IDLE for rig in rigs.values()))
         _spin_until(executor, lambda: states and states[-1] == "IDLE")
