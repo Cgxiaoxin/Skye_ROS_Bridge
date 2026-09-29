@@ -12,15 +12,17 @@ pending in development-plan stage 7.
 
 ## Configuration
 
-The verified default Thor M6 parameters are installed as
+The default Thor M6 parameters are installed as
 `config/grav_comp_m6_left.yaml` and `config/grav_comp_m6_right.yaml`. Load and
 validate either file with `skye_factr_teleop.config.load_config`. Returned nested
 dataclasses and numeric tuples are immutable.
 
-The Orin profile is installed under `config/orin/`, migrated from the existing
-repository Orin configurations. Its servo ports, directions, gains, and disabled
-arm-limit barrier are preserved; it has not undergone new-package hardware
-acceptance. These are leader hardware profiles, not follower joint-sign mappings.
+Thor uses leader device A; Orin uses leader device B, with its configuration
+installed under `config/orin/`. Their respective servo ports and physical
+directions are selected in these YAML files. The existing profile-specific gains
+and arm-limit barrier settings remain unchanged. Neither newly assigned pairing
+has undergone new-package hardware acceptance. These are leader hardware
+profiles, not follower joint-sign mappings.
 
 Set `controller.gravity_comp.mode` in the left/right YAML to choose compensation:
 

@@ -8,9 +8,9 @@
 
 ## 配置
 
-已验证的 Thor M6 默认参数安装在 `config/grav_comp_m6_left.yaml` 和 `config/grav_comp_m6_right.yaml`。可以用 `skye_factr_teleop.config.load_config` 加载并校验其中任一文件。返回的嵌套 dataclass 和数值元组不可修改。
+Thor M6 默认参数安装在 `config/grav_comp_m6_left.yaml` 和 `config/grav_comp_m6_right.yaml`。可以用 `skye_factr_teleop.config.load_config` 加载并校验其中任一文件。返回的嵌套 dataclass 和数值元组不可修改。
 
-Orin 配置安装在 `config/orin/` 下，由仓库已有的 Orin 配置迁移而来。舵机端口、方向、增益以及关闭的臂关节限位屏障均保持原值；新包尚未对它完成真机验收。这些配置描述主臂硬件，而不是从臂关节方向的语义映射。
+Thor 搭配遥操作设备 A，Orin 搭配遥操作设备 B；Orin 配置安装在 `config/orin/` 下。两套配置分别使用对应设备的舵机端口和物理方向，原有的各自增益与臂关节限位屏障设置保持不变。新包尚未对这两种配对完成真机验收。这些配置描述主臂硬件，而不是从臂关节方向的语义映射。
 
 在左右臂 YAML 中设置 `controller.gravity_comp.mode`，选择补偿计算方式：
 

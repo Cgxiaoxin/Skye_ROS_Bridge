@@ -148,12 +148,17 @@ def test_dual_checks_both_files_before_starting_either_arm(expand_launch):
     assert not expand_launch.captured
 
 
-def test_orin_configuration_preserves_hardware_and_gains():
+def test_profile_configuration_matches_leader_devices_and_preserves_gains():
+    thor_left, thor_right = [load_config(PACKAGE_ROOT / "config" / f"grav_comp_m6_{side}.yaml")
+                             for side in ("left", "right")]
     left, right = [load_config(PACKAGE_ROOT / "config/orin" / f"grav_comp_m6_{side}.yaml")
                    for side in ("left", "right")]
-    assert left.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0"
-    assert right.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0"
-    assert right.dynamixel.joint_signs == (1, -1, 1, -1, 1, -1, -1, -1)
+    assert thor_left.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0"
+    assert thor_right.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0"
+    assert thor_right.dynamixel.joint_signs == (1, -1, 1, -1, 1, -1, -1, 1)
+    assert left.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0"
+    assert right.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0"
+    assert right.dynamixel.joint_signs == (1, -1, 1, -1, 1, 1, 1, -1)
     assert left.controller.gravity_comp.gain == (0.25, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0)
     assert right.controller.gravity_comp.gain == (0.25, 0.2, 1.0, 1.0, 1.0, 0.8, 1.0)
     assert not left.arm_teleop.arm_limit_barrier_enable
