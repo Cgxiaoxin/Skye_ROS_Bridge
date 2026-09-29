@@ -1,7 +1,7 @@
 # Copyright (c) 2026 lyy
 # SPDX-License-Identifier: Apache-2.0
 # Orin: leader device B; hardware acceptance for this pairing is pending.
-name: grav_comp_m6_left
+name: grav_comp_m6_left # 主遥操未使用；仅辅助检查程序核对名称
 
 dynamixel:
   dynamixel_port: usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0 # 遥操设备B（Orin）
@@ -20,64 +20,50 @@ dynamixel:
 arm_teleop:
   leader_urdf_package: skye_factr_description
   leader_urdf: urdf/m6left_isomorphism.urdf
-  leader_name: m6_isomorphism
+  leader_name: m6_isomorphism # 当前未消费
   baudrate: 4000000
-  num_arm_joints: 7
-  use_suction_cup: false
+  num_arm_joints: 7 # 主遥操未使用；仅 config.py 校验
+  use_suction_cup: false # 当前未消费
   arm_limit_barrier_enable: false
   arm_joint_limits_max: [3.0, 2.0, 3.0, 1.0472, 3.0, 0.9, 0.8]
   arm_joint_limits_min: [-3.0, -2.0, -3.0, -2.5307, -3.0, -0.9, -0.8]
   arm_joint_limits_safety_margin: 0.1
   initialization:
-    calibration_joint_pos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    initial_match_joint_pos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  enable_follower_gravity_comp: true
-  follower_urdf_package: skye_factr_description
-  follower_urdf: urdf/skye_m6.urdf
-  follower_joint_offset: 0
-  follower_gravity_in_world: [0.0, 0.0, -9.81]
+    calibration_joint_pos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # 当前主遥操未消费；使用 ROS 参数 joint_offsets
+    initial_match_joint_pos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # 当前未消费
+  enable_follower_gravity_comp: true # 当前未消费
+  follower_urdf_package: skye_factr_description # 当前未消费
+  follower_urdf: urdf/skye_m6.urdf # 当前未消费
+  follower_joint_offset: 0 # 当前未消费
+  follower_gravity_in_world: [0.0, 0.0, -9.81] # 当前未消费
 
 gripper_teleop:
   limit_min: -0.0175
   limit_setpoint: 0.55
   limit_max: 0.52517
-  kp: 0.301658022
-  kd: 0.0315069084
+  kp: 0.301658022 # 当前未消费
+  kd: 0.0315069084 # 当前未消费
 
 controller:
   frequency: 500
-  teleop_sync_timeout: 10.0
-  torque_feedback:
-    enable: false
-    gain: [0.2, 0.2, 0.5, 0.5, 0.5, 0.5, 0.5]
-    damping: [0.04, 0.04, 0.02, 0.02, 0.02, 0.02, 0.02]
-    motor_scalar: [43.9, 43.9, 66, 66, 18, 18, 18]
-  gravity_comp:
-    enable: true
-    mode: position_velocity # position_velocity: RNEA(q,dq,0); position_only: RNEA(q,0,0)
-    gain: [0.25, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]
-  null_space_regulation:
-    enable: false
-    null_space_joint_target: [0.0, -0.8, 0.0, -1.3, 0.0, -0.5, 0.0]
-    kp: 0.1
-    kd: 0.01
-  static_friction_comp:
-    enable_speed: 0.05
-    gain: [0.15, 0.15, 0.15, 0.1, 0.1, 0.1, 0.2]
+
   joint_limit_barrier:
     kp: 0.603561658022
     kd: 0.04315069084
-  joint_position_control:
-    interpolation_step_size: 0.5
-    kp: 0.603561658022
-    kd: 0.06315069084
-  gripper_feedback:
+
+  gravity_comp:
     enable: true
-    gain: 20.0
-    ema_beta: 0.85
-    effort_threshold: -0.25
-    damping: 0.04
-    ema_fast_alpha: 0.6
+    # position_velocity: RNEA(q,dq,0); position_only: RNEA(q,0,0)
+    mode: position_velocity
+    gain: [0.25, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]
+  static_friction_comp:
+    enable_speed: 0.05
+    gain: [0.15, 0.15, 0.15, 0.1, 0.1, 0.1, 0.2]
+
+  joint_position_control:
+    interpolation_step_size: 0.5 # 当前未消费
+    kp: 0.603561658022 # 当前未消费
+    kd: 0.06315069084 # 当前未消费
   hold_ruckig_control:
     ruckig_kp: [0.35, 0.35, 0.38, 0.38, 0.35, 0.35, 0.35, 0.35]
     ruckig_kd: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
@@ -88,3 +74,23 @@ controller:
     hold_i_thresh: [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15]
     ruckig_gravity_comp_gain: [0.15, 0.15, 0.35, 0.35, 0.3, 0.3, 0.3]
     hold_gravity_comp_gain: [0.15, 0.15, 0.35, 0.35, 0.3, 0.3, 0.3]
+  teleop_sync_timeout: 10.0
+
+  null_space_regulation:
+    enable: false
+    null_space_joint_target: [0.0, -0.8, 0.0, -1.3, 0.0, -0.5, 0.0] # enable=false 时不生效
+    kp: 0.1 # enable=false 时不生效
+    kd: 0.01 # enable=false 时不生效
+
+  torque_feedback:
+    enable: false # 当前未消费
+    gain: [0.2, 0.2, 0.5, 0.5, 0.5, 0.5, 0.5] # 当前未消费
+    damping: [0.04, 0.04, 0.02, 0.02, 0.02, 0.02, 0.02] # 当前未消费
+    motor_scalar: [43.9, 43.9, 66, 66, 18, 18, 18] # 当前未消费
+  gripper_feedback:
+    enable: true # 当前未消费
+    gain: 20.0 # 当前未消费
+    ema_beta: 0.85 # 当前未消费
+    effort_threshold: -0.25 # 当前未消费
+    damping: 0.04 # 当前未消费
+    ema_fast_alpha: 0.6 # 当前未消费
