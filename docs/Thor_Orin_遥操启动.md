@@ -37,16 +37,16 @@
 ## 两台差异
 
 
-|                      | Thor                      | Orin                               |
-| -------------------- | ------------------------- | ---------------------------------- |
-| 启动名                  | `thor`                    | `orin`                             |
-| 控制器 IP               | `6.6.7.191`               | `6.6.7.190`                        |
-| 夹爪                   | DM4310（末端 CAN）            | Robotiq Hand-E（RS485）              |
-| 大臂 `joint_signs`     | 左右全 `+1`                  | 左全 `+1`，右 J6/J7 = `-1`             |
-| Robotiq 接线           | —                         | 左 ARM0 / 右 ARM1，均 `485A`，slave=`9` |
-| Robotiq 闭合开度         | —                         | 左 `2.0` mm / 右 `13.0` mm           |
-| 小臂标定目录               | `marvin_ws/configs/thor/` | `marvin_ws/configs/orin/`          |
-| 右小臂 J8 `joint_signs` | `+1`（与左同）                 | **`-1`**（右扳机张开朝负角度；`+1` 时 sync 跟 state≈1 会打成闭合） |
+|                      | Thor                      | Orin                                        |
+| -------------------- | ------------------------- | ------------------------------------------- |
+| 启动名                  | `thor`                    | `orin`                                      |
+| 控制器 IP               | `6.6.7.191`               | `6.6.7.190`                                 |
+| 夹爪                   | DM4310（末端 CAN）            | Robotiq Hand-E（RS485）                       |
+| 大臂 `joint_signs`     | 左右全 `+1`                  | 左全 `+1`，右 J6/J7 = `-1`                      |
+| Robotiq 接线           | —                         | 左 ARM0 / 右 ARM1，均 `485A`，slave=`9`          |
+| Robotiq 闭合开度         | —                         | 左 `2.0` mm / 右 `13.0` mm                    |
+| 小臂标定目录               | `marvin_ws/configs/thor/` | `marvin_ws/configs/orin/`                   |
+| 右小臂 J8 `joint_signs` | `+1`（与左同）                 | `-1`（右扳机张开朝负角度；`+1` 时 sync 跟 state≈1 会打成闭合） |
 
 
 Profile 参数文件：
@@ -63,8 +63,8 @@ Profile 参数文件：
 在仓库根目录 `Skye_ROS_Bridge/` 下操作。
 
 1. 控制器上电，网线通（按机台 ping）：
-   - Thor：`ping -c 2 6.6.7.191`
-   - Orin：`ping -c 2 6.6.7.190`
+  - Thor：`ping -c 2 6.6.7.191`
+  - Orin：`ping -c 2 6.6.7.190`
 2. 小臂对齐蓝线/红标后再上电；两路 FTDI 已插入
 3. 确认没有第二个 SDK 客户端：
 
@@ -80,6 +80,8 @@ pkill -f gento_robot_driver || true
 
 
 ## Thor 启动
+
+
 
 ### 终端 A — 大臂驱动
 
@@ -112,6 +114,8 @@ ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_k
 
 
 ## Orin 启动
+
+
 
 ### 终端 A — 大臂驱动
 
