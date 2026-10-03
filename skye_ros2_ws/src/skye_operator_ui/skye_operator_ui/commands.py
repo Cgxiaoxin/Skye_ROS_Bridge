@@ -19,6 +19,19 @@ ALLOWED_OPS: frozenset[str] = frozenset(
         "emergency_stop",
         "hold_current",
         "stop_motion",
+        "leader_left_off",
+        "leader_left_on",
+        "leader_right_off",
+        "leader_right_on",
+    }
+)
+
+_LEADER_GATE_OPS = frozenset(
+    {
+        "leader_left_off",
+        "leader_left_on",
+        "leader_right_off",
+        "leader_right_on",
     }
 )
 
@@ -29,6 +42,10 @@ _TELEOP_OPS = frozenset(
         "switch_stop",
         "align_start",
         "align_cancel",
+        "leader_left_off",
+        "leader_left_on",
+        "leader_right_off",
+        "leader_right_on",
     }
 )
 
@@ -65,6 +82,8 @@ def command_allowed(
     teleop_state: str | None,
     hitl_mode: str | None,
     align_status: str | None,
+    leader_arms: dict[str, bool] | None = None,
+    leader_arm_gate_enabled: bool = True,
 ) -> tuple[bool, str]:
     if not validate_op(op):
         return False, "未知命令，已拒绝"
@@ -84,6 +103,16 @@ def command_allowed(
     mode = session.mode()
     if mode is None:
         return False, "会话模式未知"
+
+    if op in _LEADER_GATE_OPS:
+        if not leader_arm_gate_enabled:
+            return False, "单臂开关未启用"
+        if mode != UiMode.teleop_record:
+            return False, "当前为 DAgger 模式，无法开关小臂"
+        arms = leader_arms or {}
+        if arms.get("locked"):
+            return False, "已进入同步/遥操，无法开关小臂"
+        return True, ""
 
     if op in _TELEOP_OPS:
         if mode != UiMode.teleop_record:
@@ -117,6 +146,11 @@ def command_allowed(
         return True, ""
 
     if op == "align_start":
+        arms = leader_arms or {}
+        if leader_arm_gate_enabled and not (
+            arms.get("left_enabled", True) or arms.get("right_enabled", True)
+        ):
+            return False, "两侧小臂已关闭，无法对齐"
         if align_status == "ALIGNING":
             return False, "对齐正在进行中"
         if teleop_state != "SYNCED":
@@ -129,6 +163,11 @@ def command_allowed(
         return True, ""
 
     if op == "switch_sync":
+        arms = leader_arms or {}
+        if leader_arm_gate_enabled and not (
+            arms.get("left_enabled", True) or arms.get("right_enabled", True)
+        ):
+            return False, "两侧小臂已关闭，无法同步"
         if teleop_state in ("TELEOP_SYNCING", "SYNCED", "TELEOP"):
             return False, "遥操状态不允许再次同步"
         return True, ""

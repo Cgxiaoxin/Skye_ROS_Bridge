@@ -20,7 +20,6 @@ _STRING_OPS: dict[str, tuple[str, str]] = {
     "switch_sync": ("/mode/switch_sync", "switch_sync"),
     "switch_teleop": ("/mode/switch_teleop", "switch_teleop"),
     "switch_stop": ("/mode/switch_stop", "switch_stop"),
-    "align_start": ("/mode/align_follower", "align_follower"),
     "align_cancel": ("/mode/align_cancel", "align_cancel"),
     "takeover": ("/skye/intervention_cmd", "takeover"),
     "enter_teleop": ("/skye/intervention_cmd", "enter_teleop"),
@@ -31,6 +30,13 @@ _TRIGGER_OPS: dict[str, str] = {
     "emergency_stop": "/gento/emergency_stop",
     "hold_current": "/gento/hold_current",
     "stop_motion": "/gento/stop_motion",
+}
+
+_LEADER_SCRIPT_OPS: dict[str, tuple[str, str]] = {
+    "leader_left_off": ("left", "off"),
+    "leader_left_on": ("left", "on"),
+    "leader_right_off": ("right", "off"),
+    "leader_right_on": ("right", "on"),
 }
 
 _RECORDER_SERVICES: dict[UiMode, dict[str, str]] = {
@@ -45,8 +51,18 @@ _RECORDER_SERVICES: dict[UiMode, dict[str, str]] = {
 }
 
 
-def dispatch_plan(op: str, ui_mode: UiMode | None) -> tuple[str, str, str] | None:
-    """Pure dispatch mapping: (kind, target, payload). kind is string|trigger."""
+def dispatch_plan(
+    op: str,
+    ui_mode: UiMode | None,
+    *,
+    align_payload: str | None = None,
+) -> tuple[str, str, str] | None:
+    """Pure dispatch mapping: (kind, target, payload). kind is string|trigger|script."""
+    if op == "align_start":
+        return ("string", "/mode/align_follower", align_payload or "align_follower")
+    if op in _LEADER_SCRIPT_OPS:
+        side, action = _LEADER_SCRIPT_OPS[op]
+        return ("script", side, action)
     if op in _STRING_OPS:
         topic, payload = _STRING_OPS[op]
         return ("string", topic, payload)

@@ -18,6 +18,10 @@ def test_allowed_ops_exact_set():
             "emergency_stop",
             "hold_current",
             "stop_motion",
+            "leader_left_off",
+            "leader_left_on",
+            "leader_right_off",
+            "leader_right_on",
         }
     )
 
@@ -222,3 +226,38 @@ def test_recorder_start_rejected_in_degraded_recorder_stop_allowed():
     )
     assert ok
     assert reason == ""
+
+
+def test_switch_sync_blocked_when_both_leaders_off():
+    session = SessionLogic()
+    session.begin_start("thor", UiMode.teleop_record)
+    session.precheck_ok()
+    session.mark_ready()
+    allowed, reason = command_allowed(
+        op="switch_sync",
+        session=session,
+        teleop_state="IDLE",
+        hitl_mode=None,
+        align_status=None,
+        leader_arms={"left_enabled": False, "right_enabled": False, "locked": False},
+        leader_arm_gate_enabled=True,
+    )
+    assert not allowed
+    assert "两侧" in reason or "关闭" in reason
+
+
+def test_leader_off_blocked_when_locked():
+    session = SessionLogic()
+    session.begin_start("thor", UiMode.teleop_record)
+    session.precheck_ok()
+    session.mark_ready()
+    allowed, _ = command_allowed(
+        op="leader_left_off",
+        session=session,
+        teleop_state="SYNCED",
+        hitl_mode=None,
+        align_status=None,
+        leader_arms={"left_enabled": True, "right_enabled": True, "locked": True},
+        leader_arm_gate_enabled=True,
+    )
+    assert not allowed

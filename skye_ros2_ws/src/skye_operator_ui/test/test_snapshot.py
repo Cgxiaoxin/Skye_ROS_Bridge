@@ -62,6 +62,27 @@ def test_dispatch_plan_mode_and_recorder_routing():
     assert dispatch_plan("joint_control", UiMode.teleop_record) is None
 
 
+def test_dispatch_plan_align_right():
+    from skye_operator_ui.ros_bridge import dispatch_plan
+    from skye_operator_ui.session_state import UiMode
+
+    plan = dispatch_plan(
+        "align_start", UiMode.teleop_record, align_payload="align_follower_right"
+    )
+    assert plan == ("string", "/mode/align_follower", "align_follower_right")
+
+
+def test_dispatch_plan_leader_script():
+    from skye_operator_ui.ros_bridge import dispatch_plan
+    from skye_operator_ui.session_state import UiMode
+
+    assert dispatch_plan("leader_left_off", UiMode.teleop_record) == (
+        "script",
+        "left",
+        "off",
+    )
+
+
 def test_robot_state_cached_in_mailbox():
     from skye_operator_ui.ros_bridge import RosBridge
 
