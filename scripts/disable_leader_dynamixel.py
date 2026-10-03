@@ -7,14 +7,31 @@ environment (ROBOT_LEADER_DYNAMIXEL_PORT_LEFT / _RIGHT).
 Hold the leaders before running — arms will drop when torque is off.
 
 Usage (host, outside Docker):
-  python3 scripts/disable_leader_dynamixel.py
+  python3 scripts/disable_leader_dynamixel.py [--side left|right|both]
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from pathlib import Path
+
+_SIDE_ENV_KEYS: dict[str, str] = {
+    "left": "ROBOT_LEADER_DYNAMIXEL_PORT_LEFT",
+    "right": "ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT",
+}
+
+
+def sides_for_arg(side: str) -> tuple[str, ...]:
+    key = side.strip().lower()
+    if key == "left":
+        return ("left",)
+    if key == "right":
+        return ("right",)
+    if key == "both":
+        return ("left", "right")
+    raise ValueError(f"invalid side: {side}")
 
 
 def _repo_root() -> Path:
@@ -77,6 +94,15 @@ def _disable_side(label: str, env_key: str) -> None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--side",
+        default="both",
+        choices=("left", "right", "both"),
+        help="which leader arm chain to disable (default: both)",
+    )
+    args = parser.parse_args()
+
     marvin_ws = Path(os.environ.get("MARVIN_WS") or (_repo_root() / "marvin_ws"))
     _load_binding_env(marvin_ws)
 
@@ -91,10 +117,8 @@ def main() -> int:
         return 2
 
     errors = 0
-    for label, key in (
-        ("left", "ROBOT_LEADER_DYNAMIXEL_PORT_LEFT"),
-        ("right", "ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT"),
-    ):
+    for label in sides_for_arg(args.side):
+        key = _SIDE_ENV_KEYS[label]
         try:
             _disable_side(label, key)
         except Exception as exc:  # noqa: BLE001 - report both sides
