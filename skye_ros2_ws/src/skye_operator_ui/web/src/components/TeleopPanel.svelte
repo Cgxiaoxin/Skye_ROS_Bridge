@@ -14,8 +14,16 @@
   $: recording = snapshot?.recording?.active;
   $: leftEnabled = snapshot?.leader_arms?.left_enabled !== false;
   $: rightEnabled = snapshot?.leader_arms?.right_enabled !== false;
-  $: gateLeft = check(`leader_left_${leftEnabled ? 'off' : 'on'}`);
-  $: gateRight = check(`leader_right_${rightEnabled ? 'off' : 'on'}`);
+  // Pass snapshot into the expression so Svelte re-runs when WS snapshot updates
+  // (leftEnabled alone stays true null→READY and would leave buttons stuck disabled).
+  $: gateLeft = commandAllowed(
+    `leader_left_${leftEnabled ? 'off' : 'on'}`,
+    snapshot,
+  );
+  $: gateRight = commandAllowed(
+    `leader_right_${rightEnabled ? 'off' : 'on'}`,
+    snapshot,
+  );
   $: leaderGateUi = snapshot?.features?.leader_arm_gate !== false;
   $: pendingOp = snapshot?.pending_op;
   $: commandBusy = !!busyOp || !!pendingOp;
@@ -93,7 +101,7 @@
         <div class="leader-gate-row">
           <button
             type="button"
-            class="btn action-btn"
+            class="btn btn-neutral action-btn"
             class:btn-amber={!leftEnabled}
             disabled={!gateLeft.allowed || !!snapshot?.leader_arms?.locked || commandBusy}
             title={gateLeft.reason || '关左臂'}
@@ -103,7 +111,7 @@
           </button>
           <button
             type="button"
-            class="btn action-btn"
+            class="btn btn-neutral action-btn"
             class:btn-amber={!rightEnabled}
             disabled={!gateRight.allowed || !!snapshot?.leader_arms?.locked || commandBusy}
             title={gateRight.reason || '关右臂'}
