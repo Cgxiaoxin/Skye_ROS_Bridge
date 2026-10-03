@@ -90,14 +90,19 @@ def run_leader_arm_gate(
     script = Path(repo_root) / "scripts" / "leader_arm_gate.sh"
     env = os.environ.copy()
     env["MARVIN_CONTAINER_NAME"] = container
-    result = subprocess.run(
-        [str(script), side, action],
-        capture_output=True,
-        text=True,
-        timeout=timeout_s,
-        env=env,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [str(script), side, action],
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            env=env,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"leader_arm_gate timed out after {timeout_s}s"
+    except FileNotFoundError:
+        return False, f"leader_arm_gate script not found: {script}"
     if result.returncode != 0:
         return False, (result.stderr or result.stdout or "leader_arm_gate failed").strip()
     return True, ""

@@ -61,3 +61,28 @@ git commit -m "feat(operator_ui): wire LeaderArmGate into backend"
 ## Notes / Concerns
 - Task 2's `leader_arm_gate.sh on` still exits after 0.5s without verifying the ROS node is alive. Task 5 keeps that contract; `RosBridge` only treats a zero script exit as success.
 - Frontend UI and follower align node changes were intentionally left out for Tasks 7 and 6.
+
+---
+
+## Review Fix (Important)
+
+**Status:** Complete
+
+### Change
+- `run_leader_arm_gate`: catch `subprocess.TimeoutExpired` and `FileNotFoundError`; return `(False, msg)` so `dispatch` does not flip `LeaderArmGate` on timeout or missing script.
+
+### Tests added (`test_ros_bridge.py`)
+- `test_run_leader_arm_gate_timeout_returns_false`
+- `test_run_leader_arm_gate_missing_script_returns_false`
+
+### Test run
+```bash
+cd skye_ros2_ws && PYTHONPATH=src/skye_operator_ui PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+  python3 -m pytest src/skye_operator_ui/test/ -k 'leader or gate or script' -v
+# 22 passed, 1 warning
+```
+
+### Commit
+```
+fix(operator_ui): handle leader_arm_gate script timeout
+```

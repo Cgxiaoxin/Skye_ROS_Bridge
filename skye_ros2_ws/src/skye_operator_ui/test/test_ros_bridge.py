@@ -84,6 +84,41 @@ def test_run_leader_arm_gate_returns_error_message(monkeypatch):
     assert reason == "bad"
 
 
+def test_run_leader_arm_gate_timeout_returns_false(monkeypatch):
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs["timeout"])
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    ok, reason = run_leader_arm_gate(
+        "/repo",
+        "left",
+        "on",
+        container="marvin",
+        timeout_s=1.5,
+    )
+
+    assert ok is False
+    assert "timed out" in reason
+
+
+def test_run_leader_arm_gate_missing_script_returns_false(monkeypatch):
+    def fake_run(*args, **kwargs):
+        raise FileNotFoundError(2, "No such file or directory", args[0][0])
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    ok, reason = run_leader_arm_gate(
+        "/repo",
+        "right",
+        "off",
+        container="marvin",
+    )
+
+    assert ok is False
+    assert "not found" in reason
+
+
 def test_await_future_returns_true_when_future_completes():
     future = FakeFuture(done_after=0.02)
     assert RosBridge._await_future(future, 1.0) is True
