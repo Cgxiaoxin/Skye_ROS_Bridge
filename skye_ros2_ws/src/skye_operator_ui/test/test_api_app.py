@@ -140,6 +140,38 @@ def test_pending_op_not_set_when_dispatch_fails(fake_stack):
     assert client.get("/api/snapshot").json()["pending_op"] is None
 
 
+def test_command_allowed_receives_leader_arm_snapshot(fake_stack):
+    supervisor, bridge, builder = fake_stack
+    _ready_session(supervisor)
+    bridge.state["leader_arms"] = {
+        "left_enabled": False,
+        "right_enabled": False,
+        "locked": False,
+    }
+    app = create_app(supervisor, bridge, builder)
+    client = TestClient(app)
+
+    response = client.post("/api/command", json={"op": "align_start"})
+
+    assert response.status_code == 400
+    assert "两侧小臂已关闭" in response.json()["reason"]
+    assert bridge.dispatched == []
+
+
+def test_leader_arm_gate_feature_flag_disables_leader_commands(fake_stack):
+    supervisor, bridge, builder = fake_stack
+    supervisor.cfg = {"features": {"leader_arm_gate": False}}
+    _ready_session(supervisor)
+    app = create_app(supervisor, bridge, builder)
+    client = TestClient(app)
+
+    response = client.post("/api/command", json={"op": "leader_left_off"})
+
+    assert response.status_code == 400
+    assert "单臂开关未启用" in response.json()["reason"]
+    assert bridge.dispatched == []
+
+
 def test_session_stop_clears_pending(fake_stack):
     supervisor, bridge, builder = fake_stack
     _ready_session(supervisor)

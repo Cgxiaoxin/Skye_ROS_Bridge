@@ -247,12 +247,16 @@ def create_app(
                     content={"ok": False, "reason": "机器人连接不可用，无法急停"},
                 )
         else:
+            cfg = getattr(supervisor, "cfg", {}) or {}
+            features = cfg.get("features") or {}
             allowed, reason = command_allowed(
                 op=op,
                 session=supervisor.logic,
                 teleop_state=mailbox.get("teleop_state"),
                 hitl_mode=mailbox.get("hitl_mode"),
                 align_status=mailbox.get("align_status"),
+                leader_arms=mailbox.get("leader_arms"),
+                leader_arm_gate_enabled=bool(features.get("leader_arm_gate", True)),
             )
             if not allowed:
                 return JSONResponse(

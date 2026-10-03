@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 import time
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable
 
 from skye_operator_ui.commands import validate_op
+from skye_operator_ui.leader_arms import LeaderArmGate
 from skye_operator_ui.session_state import UiMode
 
 if TYPE_CHECKING:
@@ -15,6 +19,8 @@ FRESHNESS_S = 1.0
 ALIGN_FRESHNESS_S = 2.0
 TRIGGER_TIMEOUT_S = 2.0
 TRIGGER_POLL_S = 0.01
+LEADER_GATE_TIMEOUT_S = 15.0
+DEFAULT_MARVIN_CONTAINER = "skye_marvin_m6"
 
 _STRING_OPS: dict[str, tuple[str, str]] = {
     "switch_sync": ("/mode/switch_sync", "switch_sync"),
@@ -73,10 +79,42 @@ def dispatch_plan(
     return None
 
 
+def run_leader_arm_gate(
+    repo_root: str,
+    side: str,
+    action: str,
+    *,
+    container: str,
+    timeout_s: float = LEADER_GATE_TIMEOUT_S,
+) -> tuple[bool, str]:
+    script = Path(repo_root) / "scripts" / "leader_arm_gate.sh"
+    env = os.environ.copy()
+    env["MARVIN_CONTAINER_NAME"] = container
+    result = subprocess.run(
+        [str(script), side, action],
+        capture_output=True,
+        text=True,
+        timeout=timeout_s,
+        env=env,
+        check=False,
+    )
+    if result.returncode != 0:
+        return False, (result.stderr or result.stdout or "leader_arm_gate failed").strip()
+    return True, ""
+
+
 class RosBridge:
     """Composable ROS bridge: subscribe to state, dispatch whitelisted ops."""
 
-    def __init__(self, node: Node) -> None:
+    def __init__(
+        self,
+        node: Node,
+        *,
+        repo_root: str = "",
+        cfg: dict[str, Any] | None = None,
+        leader_gate: LeaderArmGate | None = None,
+        script_runner: Callable[..., tuple[bool, str]] = run_leader_arm_gate,
+    ) -> None:
         from rclpy.callback_groups import ReentrantCallbackGroup
         from rclpy.qos import (
             DurabilityPolicy,
@@ -95,6 +133,14 @@ class RosBridge:
         self._node = node
         self._ui_mode: UiMode | None = None
         self._cb_group = ReentrantCallbackGroup()
+        self._repo_root = repo_root
+        self._leader_gate = leader_gate or LeaderArmGate()
+        teardown_cfg = (cfg or {}).get("teardown") or {}
+        self._leader_gate_container = str(
+            teardown_cfg.get("marvin_container_name", DEFAULT_MARVIN_CONTAINER)
+        )
+        self._leader_gate_timeout_s = LEADER_GATE_TIMEOUT_S
+        self._script_runner = script_runner
 
         self._joint_states_stamp: float | None = None
         self._align_stamp: float | None = None
@@ -221,6 +267,7 @@ class RosBridge:
             "robot_state": list(self._robot_state) if self._robot_state is not None else None,
             "health": self._health_map(),
             "recording_active": self._recording_active,
+            "leader_arms": self._leader_gate.snapshot(),
         }
 
     def health(self, key: str) -> bool:
@@ -244,15 +291,37 @@ class RosBridge:
         if not validate_op(op):
             return False, "未知命令，已拒绝"
 
-        plan = dispatch_plan(op, self._ui_mode)
+        align_payload = None
+        if op == "align_start":
+            align_payload = self._leader_gate.align_payload()
+            if align_payload is None:
+                return False, "两侧小臂已关闭，无法对齐"
+
+        plan = dispatch_plan(op, self._ui_mode, align_payload=align_payload)
         if plan is None:
             return False, "命令当前不可用"
 
         kind, target, payload = plan
         if kind == "string":
-            return self._publish_string(target, payload)
+            ok, reason = self._publish_string(target, payload)
+            if ok and op == "switch_sync":
+                self._leader_gate.note_sync_dispatched()
+            return ok, reason
         if kind == "trigger":
             return self._call_trigger(target, op)
+        if kind == "script":
+            ok, reason = self._script_runner(
+                self._repo_root,
+                target,
+                payload,
+                container=self._leader_gate_container,
+                timeout_s=self._leader_gate_timeout_s,
+            )
+            if not ok:
+                return False, reason
+            if not self._leader_gate.set_enabled(target, payload == "on"):
+                return False, "已锁定，无法开关小臂"
+            return True, ""
         return False, "内部错误：未知派发类型"
 
     def _health_map(self) -> dict[str, bool]:
@@ -309,6 +378,7 @@ class RosBridge:
 
     def _teleop_state_callback(self, msg: Any) -> None:
         self._teleop_state = msg.data
+        self._leader_gate.note_teleop_state(msg.data)
 
     def _align_status_callback(self, msg: Any) -> None:
         self._align_status = msg.data

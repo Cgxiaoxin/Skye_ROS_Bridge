@@ -1,8 +1,12 @@
 """RosBridge unit tests that do not need a live ROS graph."""
 
+import subprocess
 import time
+from types import SimpleNamespace
 
-from skye_operator_ui.ros_bridge import RosBridge
+from skye_operator_ui.leader_arms import LeaderArmGate
+from skye_operator_ui.ros_bridge import RosBridge, run_leader_arm_gate
+from skye_operator_ui.session_state import UiMode
 
 
 class FakeFuture:
@@ -27,7 +31,57 @@ def _bare_bridge() -> RosBridge:
     bridge._align_stamp = time.monotonic()
     bridge._control_mode_stamp = time.monotonic()
     bridge._recording_active = True
+    bridge._leader_gate = LeaderArmGate()
+    bridge._repo_root = "/repo"
+    bridge._leader_gate_container = "skye_marvin_m6"
+    bridge._leader_gate_timeout_s = 15.0
+    bridge._script_runner = lambda *args, **kwargs: (True, "")
     return bridge
+
+
+def test_run_leader_arm_gate_invokes_script_with_container_env(monkeypatch):
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    ok, reason = run_leader_arm_gate(
+        "/repo",
+        "left",
+        "off",
+        container="marvin",
+        timeout_s=3.0,
+    )
+
+    assert ok is True
+    assert reason == ""
+    argv, kwargs = calls[0]
+    assert argv == ["/repo/scripts/leader_arm_gate.sh", "left", "off"]
+    assert kwargs["timeout"] == 3.0
+    assert kwargs["env"]["MARVIN_CONTAINER_NAME"] == "marvin"
+
+
+def test_run_leader_arm_gate_returns_error_message(monkeypatch):
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 2, stdout="out", stderr="bad"
+        ),
+    )
+
+    ok, reason = run_leader_arm_gate(
+        "/repo",
+        "right",
+        "on",
+        container="marvin",
+    )
+
+    assert ok is False
+    assert reason == "bad"
 
 
 def test_await_future_returns_true_when_future_completes():
@@ -92,3 +146,64 @@ def test_stop_recorder_if_active_swallows_errors():
     ok, reason = bridge.stop_recorder_if_active()
     assert ok is False
     assert "no service" in reason
+
+
+def test_dispatch_leader_script_flips_gate_only_on_success():
+    bridge = _bare_bridge()
+    bridge._ui_mode = UiMode.teleop_record
+    calls = []
+
+    def runner(repo_root, side, action, *, container, timeout_s):
+        calls.append((repo_root, side, action, container, timeout_s))
+        return True, ""
+
+    bridge._script_runner = runner
+
+    ok, reason = bridge.dispatch("leader_left_off")
+
+    assert ok is True
+    assert reason == ""
+    assert calls == [("/repo", "left", "off", "skye_marvin_m6", 15.0)]
+    assert bridge._leader_gate.snapshot()["left_enabled"] is False
+
+
+def test_dispatch_leader_script_failure_does_not_flip_gate():
+    bridge = _bare_bridge()
+    bridge._ui_mode = UiMode.teleop_record
+    bridge._script_runner = lambda *args, **kwargs: (False, "script failed")
+
+    ok, reason = bridge.dispatch("leader_right_off")
+
+    assert ok is False
+    assert reason == "script failed"
+    assert bridge._leader_gate.snapshot()["right_enabled"] is True
+
+
+def test_dispatch_align_start_uses_gate_payload_and_rejects_none():
+    bridge = _bare_bridge()
+    bridge._ui_mode = UiMode.teleop_record
+    published = []
+    bridge._publish_string = lambda topic, data: published.append((topic, data)) or (True, "")
+
+    bridge._leader_gate.set_enabled("right", False)
+    assert bridge.dispatch("align_start") == (True, "")
+    assert published == [("/mode/align_follower", "align_follower_left")]
+
+    bridge._leader_gate.set_enabled("left", False)
+    ok, reason = bridge.dispatch("align_start")
+    assert ok is False
+    assert "两侧小臂已关闭" in reason
+    assert published == [("/mode/align_follower", "align_follower_left")]
+
+
+def test_dispatch_switch_sync_and_teleop_callback_lock_gate():
+    bridge = _bare_bridge()
+    bridge._ui_mode = UiMode.teleop_record
+    bridge._publish_string = lambda topic, data: (True, "")
+
+    assert bridge.dispatch("switch_sync") == (True, "")
+    assert bridge._leader_gate.snapshot()["locked"] is True
+
+    bridge._leader_gate.reset()
+    bridge._teleop_state_callback(SimpleNamespace(data="SYNCED"))
+    assert bridge._leader_gate.snapshot()["locked"] is True

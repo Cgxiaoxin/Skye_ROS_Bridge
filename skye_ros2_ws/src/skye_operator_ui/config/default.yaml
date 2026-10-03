@@ -7,6 +7,9 @@ log_ring_size: 2000
 # buttons again (pending also clears early once the state confirms the command).
 pending_timeout_s: 8.0
 
+features:
+  leader_arm_gate: true
+
 # Per-profile Gento/Skye controller IP used by session-start precheck ping.
 controller_ips:
   thor: "6.6.7.191"

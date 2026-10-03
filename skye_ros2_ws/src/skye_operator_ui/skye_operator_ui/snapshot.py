@@ -38,6 +38,8 @@ class SnapshotBuilder:
         hitl_mode = mailbox.get("hitl_mode")
         hitl_source = mailbox.get("hitl_source")
         health_map = mailbox.get("health") or {}
+        cfg = getattr(supervisor, "cfg", {}) or {}
+        features = cfg.get("features") or {}
 
         hint = next_hint(
             session=logic,
@@ -59,6 +61,11 @@ class SnapshotBuilder:
             "grippers": {
                 "left": mailbox.get("left_gripper"),
                 "right": mailbox.get("right_gripper"),
+            },
+            "leader_arms": mailbox.get("leader_arms")
+            or {"left_enabled": True, "right_enabled": True, "locked": False},
+            "features": {
+                "leader_arm_gate": bool(features.get("leader_arm_gate", True)),
             },
             "health": [
                 {"key": key, "ok": bool(ok)} for key, ok in sorted(health_map.items())

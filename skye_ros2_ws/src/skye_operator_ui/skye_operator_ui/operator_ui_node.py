@@ -13,6 +13,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from skye_operator_ui.api_app import create_app
+from skye_operator_ui.leader_arms import LeaderArmGate
 from skye_operator_ui.ros_bridge import RosBridge
 from skye_operator_ui.snapshot import SnapshotBuilder
 from skye_operator_ui.supervisor import SessionSupervisor
@@ -64,7 +65,8 @@ def main(args=None) -> None:
     repo_root = str(repo_root_param).strip() or _detect_repo_root()
     cfg = _load_config(node)
 
-    bridge = RosBridge(node)
+    leader_gate = LeaderArmGate()
+    bridge = RosBridge(node, repo_root=repo_root, cfg=cfg, leader_gate=leader_gate)
 
     def health_fn(key: str) -> bool:
         return bridge.health(key)
@@ -79,6 +81,7 @@ def main(args=None) -> None:
         except Exception:  # noqa: BLE001 - teardown continues
             node.get_logger().warning("switch_stop during teardown failed")
         bridge.set_session_mode(None)
+        leader_gate.reset()
 
     def on_degraded() -> None:
         # tick() runs on the asyncio loop; the service call can block for seconds.
@@ -117,6 +120,7 @@ def main(args=None) -> None:
         uvicorn.run(app, host=bind_host, port=port, log_level="info")
     finally:
         supervisor.stop()
+        leader_gate.reset()
         executor.shutdown()
         node.destroy_node()
         if rclpy.ok():

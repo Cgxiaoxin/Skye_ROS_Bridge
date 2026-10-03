@@ -1,38 +1,63 @@
-# Task 5 Report: RosBridge + SnapshotBuilder
+# Task 5 Report: Wire LeaderArmGate into bridge, API, snapshot, node
 
 ## Status
-**Complete** — TDD cycle finished; 38 passed, 1 skipped.
+Implemented and verified.
 
-## Deliverables
-| File | Action |
-|------|--------|
-| `skye_operator_ui/ros_bridge.py` | Created |
-| `skye_operator_ui/snapshot.py` | Created |
-| `test/test_snapshot.py` | Created |
+## Changes
+- `ros_bridge.py`
+  - Added `run_leader_arm_gate(repo_root, side, action, container=..., timeout_s=15.0)` around `scripts/leader_arm_gate.sh`.
+  - `RosBridge` now owns/injects a `LeaderArmGate`, container config, repo root, and script runner.
+  - `dispatch("leader_*")` runs the script and flips gate state only after script success.
+  - `align_start` derives `align_payload` from `gate.align_payload()` and rejects before publish when both arms are off.
+  - Successful `switch_sync` string publish locks the gate via `note_sync_dispatched()`.
+  - `/teleop/state` updates feed `gate.note_teleop_state(...)`.
+  - `mailbox()` includes `leader_arms`.
+- `snapshot.py`
+  - Snapshot now exposes `leader_arms`.
+  - Snapshot now exposes `features.leader_arm_gate`, defaulting to `true`.
+- `api_app.py`
+  - `/api/command` passes `leader_arms` from mailbox and `leader_arm_gate_enabled` from supervisor cfg into `command_allowed`.
+- `operator_ui_node.py`
+  - Constructs one `LeaderArmGate` for the process and injects it into `RosBridge`.
+  - Resets the gate on `on_before_stop` and process shutdown.
+- `config/default.yaml`
+  - Added `features.leader_arm_gate: true`.
 
-## TDD
-1. Wrote `test_snapshot_contains_hint_and_session` — failed `ModuleNotFoundError`.
-2. Implemented `SnapshotBuilder` + `RosBridge` — tests pass.
-3. Added `test_dispatch_plan_mode_and_recorder_routing` for pure dispatch mapping.
+## Tests Added
+- `test_ros_bridge.py`
+  - Script runner invokes `leader_arm_gate.sh` with `MARVIN_CONTAINER_NAME`.
+  - Script failure returns an error and does not flip gate state.
+  - Script success flips gate state.
+  - `align_start` publishes side-specific payload and rejects when no arms are enabled.
+  - `switch_sync` and teleop state lock the gate.
+- `test_snapshot.py`
+  - Snapshot includes `leader_arms`.
+  - Snapshot includes `features.leader_arm_gate` and defaults it to enabled.
+- `test_api_app.py`
+  - API command authorization receives leader arm snapshot.
+  - Feature flag disables leader arm toggle commands.
 
-## APIs
-- **RosBridge**: subscribes `/gento/joint_states`, `/gento/robot_state`, grippers, `/teleop/state`, `/align/status`, `/skye/control_mode`; `mailbox()`, `health(key)`, `dispatch(op)`, `set_session_mode(mode)`; no joint_control publishers.
-- **dispatch_plan** (pure): mode String topics, recorder services by `UiMode`, intervention + e-stop Trigger.
-- **SnapshotBuilder.build**: spec §5.4 fields + `next_hint` via `hints.next_hint` + amber/red `banner`.
+## Verification
+```bash
+cd skye_ros2_ws && PYTHONPATH=src/skye_operator_ui PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+  python3 -m pytest src/skye_operator_ui/test/test_snapshot.py \
+  src/skye_operator_ui/test/test_api_app.py \
+  src/skye_operator_ui/test/test_ros_bridge.py -v
+# 41 passed, 1 warning
+
+cd skye_ros2_ws && PYTHONPATH=src/skye_operator_ui PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+  python3 -m pytest src/skye_operator_ui/test/ -v
+# 100 passed, 1 skipped, 1 warning
+```
+
+IDE lints: no errors found for edited Python files/tests.
 
 ## Commit
+Commit message:
+```bash
+git commit -m "feat(operator_ui): wire LeaderArmGate into backend"
 ```
-feat(operator_ui): add RosBridge and snapshot builder
-```
 
-## Notes
-- Brief `FakeSup.logic = logic` in class body → `FakeSup.logic = logic` after class (Python scoping).
-- `health`: driver/align/arbiter freshness; marvin/recorder/policy probes for playbook keys.
-
-## Out of Scope (Task 6+)
-- `ApiApp`, `operator_ui_node`, WebSocket, FastAPI.
-
-## Follow-up: cache `/gento/robot_state`
-- **Status**: Complete — `RosBridge._robot_state_callback` stores latest `Int16MultiArray.data`; `mailbox()` exposes `robot_state` (copy or `None`).
-- **Test**: `test_robot_state_cached_in_mailbox` in `test/test_snapshot.py` (`object.__new__` + mock msg, no rclpy).
-- **Commit**: `fix(operator_ui): cache robot_state in RosBridge mailbox`
+## Notes / Concerns
+- Task 2's `leader_arm_gate.sh on` still exits after 0.5s without verifying the ROS node is alive. Task 5 keeps that contract; `RosBridge` only treats a zero script exit as success.
+- Frontend UI and follower align node changes were intentionally left out for Tasks 7 and 6.

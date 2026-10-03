@@ -40,6 +40,78 @@ def test_snapshot_contains_hint_and_session(monkeypatch):
     assert snap["teleop"]["state"] == "SYNCED"
 
 
+def test_snapshot_exposes_leader_arms_and_feature_flag():
+    from skye_operator_ui.snapshot import SnapshotBuilder
+    from skye_operator_ui.session_state import SessionLogic, UiMode
+
+    logic = SessionLogic()
+    logic.begin_start("thor", UiMode.teleop_record)
+    logic.precheck_ok()
+    logic.mark_ready()
+
+    class FakeSup:
+        cfg = {"features": {"leader_arm_gate": False}}
+
+        def snapshot_fields(self):
+            return {
+                "state": logic.state().name,
+                "profile": "thor",
+                "mode": "teleop_record",
+                "step": None,
+            }
+
+    class BridgeWithGate(FakeBridge):
+        def mailbox(self):
+            data = super().mailbox()
+            data["leader_arms"] = {
+                "left_enabled": False,
+                "right_enabled": True,
+                "locked": True,
+            }
+            return data
+
+    FakeSup.logic = logic
+    snap = SnapshotBuilder().build(FakeSup(), BridgeWithGate(), pending_op=None)
+
+    assert snap["leader_arms"] == {
+        "left_enabled": False,
+        "right_enabled": True,
+        "locked": True,
+    }
+    assert snap["features"]["leader_arm_gate"] is False
+
+
+def test_snapshot_defaults_leader_gate_on_when_missing_from_mailbox_and_cfg():
+    from skye_operator_ui.snapshot import SnapshotBuilder
+    from skye_operator_ui.session_state import SessionLogic, UiMode
+
+    logic = SessionLogic()
+    logic.begin_start("thor", UiMode.teleop_record)
+    logic.precheck_ok()
+    logic.mark_ready()
+
+    class FakeSup:
+        cfg = {}
+
+        def snapshot_fields(self):
+            return {
+                "state": logic.state().name,
+                "profile": "thor",
+                "mode": "teleop_record",
+                "step": None,
+            }
+
+    FakeSup.logic = logic
+    snap = SnapshotBuilder().build(FakeSup(), FakeBridge(), pending_op=None)
+
+    assert snap["leader_arms"] == {
+        "left_enabled": True,
+        "right_enabled": True,
+        "locked": False,
+    }
+    assert snap["features"]["leader_arm_gate"] is True
+
+
 def test_dispatch_plan_mode_and_recorder_routing():
     from skye_operator_ui.ros_bridge import dispatch_plan
     from skye_operator_ui.session_state import UiMode
@@ -84,6 +156,7 @@ def test_dispatch_plan_leader_script():
 
 
 def test_robot_state_cached_in_mailbox():
+    from skye_operator_ui.leader_arms import LeaderArmGate
     from skye_operator_ui.ros_bridge import RosBridge
 
     bridge = object.__new__(RosBridge)
@@ -101,6 +174,7 @@ def test_robot_state_cached_in_mailbox():
     bridge._align_stamp = None
     bridge._control_mode_stamp = None
     bridge._ui_mode = None
+    bridge._leader_gate = LeaderArmGate()
 
     class FakeMsg:
         data = [1, 2]
