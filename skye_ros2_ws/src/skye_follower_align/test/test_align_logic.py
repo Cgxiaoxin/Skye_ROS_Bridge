@@ -1,10 +1,12 @@
 from skye_follower_align.align_logic import (
     AlignPhase,
     AlignSession,
+    combine_active_phases,
     combine_phase,
     leader_positions_for_abs_command,
     map_leader_to_follower,
 )
+from skye_follower_align.align_keys import parse_align_sides
 from skye_follower_align.align_keys import map_key
 
 
@@ -57,6 +59,27 @@ def test_combine_phase_priority():
     assert combine_phase(AlignPhase.ALIGNED, AlignPhase.TIMEOUT_WARN) == AlignPhase.TIMEOUT_WARN
     assert combine_phase(AlignPhase.ALIGNED, AlignPhase.ALIGNED) == AlignPhase.ALIGNED
     assert combine_phase(AlignPhase.IDLE, AlignPhase.IDLE) == AlignPhase.IDLE
+
+
+def test_combine_active_phases_single_aligned():
+    assert combine_active_phases([AlignPhase.ALIGNED]) == AlignPhase.ALIGNED
+
+
+def test_combine_active_phases_ignores_idle_inactive():
+    assert combine_active_phases(
+        [AlignPhase.ALIGNED, AlignPhase.ALIGNING]
+    ) == AlignPhase.ALIGNING
+
+
+def test_combine_active_phases_empty_is_idle():
+    assert combine_active_phases([]) == AlignPhase.IDLE
+
+
+def test_parse_align_sides():
+    assert parse_align_sides("align_follower") == (True, True)
+    assert parse_align_sides("align_follower_left") == (True, False)
+    assert parse_align_sides("align_follower_right") == (False, True)
+    assert parse_align_sides("align_cancel") is None
 
 
 def test_map_key_align_actions():

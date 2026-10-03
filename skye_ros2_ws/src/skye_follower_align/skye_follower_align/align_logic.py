@@ -38,6 +38,16 @@ def combine_phase(left: AlignPhase, right: AlignPhase) -> AlignPhase:
     return AlignPhase.IDLE
 
 
+def combine_active_phases(phases: list[AlignPhase]) -> AlignPhase:
+    """Merge phases for arms currently in this align session (inactive arms omitted)."""
+    if not phases:
+        return AlignPhase.IDLE
+    combined = phases[0]
+    for phase in phases[1:]:
+        combined = combine_phase(combined, phase)
+    return combined
+
+
 def max_abs_err(cmd: Sequence[float], measured: Sequence[float]) -> float:
     return max(abs(float(cmd[i]) - float(measured[i])) for i in range(DOF))
 

@@ -1,40 +1,27 @@
-# Task 6 Report: FastAPI + WebSocket + ROS entrypoint
+# Task 6 Report: Single-side `follower_align`
 
 ## Status
-**Complete** — TDD cycle finished; 46 passed, 1 skipped; colcon build OK.
+**Complete** — `/mode/align_follower` accepts `align_follower`, `align_follower_left`, and `align_follower_right`.
 
-## Deliverables
-| File | Action |
-|------|--------|
-| `skye_operator_ui/api_app.py` | Created — spec §5.1 HTTP + `/ws/state` |
-| `skye_operator_ui/operator_ui_node.py` | Created — rclpy spin thread + uvicorn |
-| `scripts/operator_ui` | Created |
-| `launch/operator_ui.launch.py` | Created |
-| `test/conftest.py`, `test/test_api_app.py` | Created — Fake stack + TestClient |
-| `setup.py` | Updated — entry_points + config/launch/web data_files |
-| `ros_bridge.py` | Updated — `available()` for e-stop gate |
+## Changes
+- **`align_logic.py`**: Added `combine_active_phases()` (folds active session phases via existing `combine_phase` rules).
+- **`align_keys.py`**: Added `parse_align_sides()` (no ROS deps; unit-tested).
+- **`follower_align_node.py`**: Parses all three payloads; tracks `_align_active_left/right`; starts sessions, leader freshness, abs publish, `on_tick`, and phase combine only for active arms; per-side align motion rates on inactive arms stay at restore values.
+- **`test_align_logic.py`**: Tests for `combine_active_phases`, `parse_align_sides`, and empty-list idle.
 
-## TDD
-1. Wrote 7 API tests with `fake_stack` fixture — failed `ModuleNotFoundError`.
-2. Implemented `create_app` + node entrypoint — all pass.
-3. Full suite: 46 passed, 1 skipped.
+## Tests
+```
+cd skye_ros2_ws && PYTHONPATH=src/skye_follower_align:src/skye_operator_ui PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+  python3 -m pytest src/skye_follower_align/test/ -v
+```
+**12 passed** (2026-10-03).
 
-## APIs (§5.1)
-- `GET /api/snapshot`, `POST /api/session/{start,stop,retry_step,cleanup_stale}`, `POST /api/command`, `GET /api/logs/{step}`, `WS /ws/state` (~10 Hz).
-- Commands: `validate_op` + `command_allowed` before `bridge.dispatch`; `emergency_stop` bypasses session gate when `bridge.available()`.
-- Bind `127.0.0.1` via `config/default.yaml`; SIGINT → `supervisor.stop()`.
+## `/align/status`
+Unchanged string set: `IDLE`, `ALIGNING`, `ALIGNED`, `TIMEOUT_WARN`.
+
+## Notes
+- `parse_align_sides` lives in `align_keys.py` (not inlined in the node) so pytest runs without `rclpy`.
+- No ROS integration test for single-arm timer path in this task; manual verify on hardware recommended.
 
 ## Commit
-```
-feat(operator_ui): add FastAPI WebSocket server and ROS entrypoint
-```
-
-## Out of Scope (Task 7+)
-- Svelte frontend, `start_operator_ui.sh`, usage docs.
-
-## Follow-up: align `command_allowed` emergency_stop with API
-
-- **Status**: Complete — `command_allowed("emergency_stop")` always returns `(True, "")`; bridge availability gate remains in `api_app.py`.
-- **Change**: Removed `_session_active` check and helper; updated `test_emergency_stop_allowed_even_in_idle`.
-- **Tests**: `test_commands.py` + `test_api_app.py` — 16 passed (`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`).
-- **Commit**: `fix(operator_ui): allow emergency_stop in IDLE via command_allowed`
+`feat(align): support align_follower_left/right single-arm align`

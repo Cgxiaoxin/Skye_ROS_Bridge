@@ -22,10 +22,11 @@ from skye_robot_driver.srv import SetMotionRates
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
+from skye_follower_align.align_keys import parse_align_sides
 from skye_follower_align.align_logic import (
     AlignPhase,
     AlignSession,
-    combine_phase,
+    combine_active_phases,
     leader_positions_for_abs_command,
 )
 
@@ -91,6 +92,8 @@ class FollowerAlignNode(Node):
         self._right_session = AlignSession(threshold, hold_frames, timeout_s)
         self._status: Optional[str] = None
         self._streaming = False
+        self._align_active_left = False
+        self._align_active_right = False
 
         self._left_leader: Optional[list[float]] = None
         self._right_leader: Optional[list[float]] = None
@@ -172,34 +175,54 @@ class FollowerAlignNode(Node):
             return False
         return (time.monotonic() - received_at) < max_age_s
 
-    def _relative_cmds_active(self) -> bool:
+    def _relative_cmds_active(self, left: bool = True, right: bool = True) -> bool:
         """True if FACTR (or other) is still streaming relative joint_control."""
-        return (
-            self._is_fresh(self._rel_left_at, self._relative_cmd_block_s)
-            or self._is_fresh(self._rel_right_at, self._relative_cmd_block_s))
+        active = False
+        if left and self._is_fresh(self._rel_left_at, self._relative_cmd_block_s):
+            active = True
+        if right and self._is_fresh(self._rel_right_at, self._relative_cmd_block_s):
+            active = True
+        return active
 
     def _align_callback(self, msg: String) -> None:
-        if msg.data != "align_follower":
+        sides = parse_align_sides(msg.data)
+        if sides is None:
             return
-        if self._relative_cmds_active():
+        left_on, right_on = sides
+        if self._streaming:
+            self.get_logger().info("align ignored: already aligning")
+            return
+        if self._relative_cmds_active(left_on, right_on):
             # Driver ignores relative while abs is active (scheme B); SYNC may stay on.
             self.get_logger().warn(
                 "relative /gento/*_joint_control still streaming — driver will "
                 "ignore it during abs align (Docker may stay on SYNC/1)")
-        if not self._left_session.start():
+        if left_on and not self._left_session.start():
             self.get_logger().info("align ignored: already aligning")
             return
-        self._right_session.start()
+        if right_on and not self._right_session.start():
+            self.get_logger().info("align ignored: already aligning")
+            if left_on:
+                self._left_session.cancel()
+            return
+        restore = self._restore_rates
+        left_vel = self._align_vel if left_on else restore[0]
+        left_acc = self._align_acc if left_on else restore[1]
+        right_vel = self._align_vel if right_on else restore[2]
+        right_acc = self._align_acc if right_on else restore[3]
         if not self._call_set_motion_rates(
-                self._align_vel, self._align_acc,
-                self._align_vel, self._align_acc):
+                left_vel, left_acc, right_vel, right_acc):
             self.get_logger().error("failed to set align motion rates")
             if not self._call_set_motion_rates(*self._restore_rates):
                 self.get_logger().error(
                     "failed to restore motion rates after align rate failure")
-            self._left_session.cancel()
-            self._right_session.cancel()
+            if left_on:
+                self._left_session.cancel()
+            if right_on:
+                self._right_session.cancel()
             return
+        self._align_active_left = left_on
+        self._align_active_right = right_on
         self._streaming = True
         self._publish_status("ALIGNING")
 
@@ -246,46 +269,67 @@ class FollowerAlignNode(Node):
         self._rel_right_at = time.monotonic()
 
     def _phase(self) -> AlignPhase:
-        return combine_phase(self._left_session.phase, self._right_session.phase)
+        active: list[AlignPhase] = []
+        if self._align_active_left:
+            active.append(self._left_session.phase)
+        if self._align_active_right:
+            active.append(self._right_session.phase)
+        if not active:
+            return combine_active_phases(
+                [self._left_session.phase, self._right_session.phase])
+        return combine_active_phases(active)
 
     def _timer_callback(self) -> None:
         if self._phase() != AlignPhase.ALIGNING or not self._streaming:
             return
 
-        if self._relative_cmds_active():
+        if self._relative_cmds_active(
+                self._align_active_left, self._align_active_right):
             self.get_logger().warn(
                 "relative /gento/*_joint_control still streaming during align; "
                 "driver should be ignoring it while abs is active",
                 throttle_duration_sec=2.0)
             # Do not abort — scheme B: abs owns the arm until align ends.
 
-        leaders_ok = (
-            self._is_fresh(self._left_leader_at, self._leader_freshness_s)
-            and self._is_fresh(self._right_leader_at, self._leader_freshness_s))
+        leaders_ok = True
+        if self._align_active_left:
+            leaders_ok = self._is_fresh(
+                self._left_leader_at, self._leader_freshness_s)
+        if leaders_ok and self._align_active_right:
+            leaders_ok = self._is_fresh(
+                self._right_leader_at, self._leader_freshness_s)
         if not leaders_ok:
             self._abort_align("leader feedback stale or missing")
             return
 
-        if (self._left_leader is None or self._right_leader is None
-                or self._big_left is None or self._big_right is None):
+        if self._big_left is None or self._big_right is None:
+            return
+        if self._align_active_left and self._left_leader is None:
+            return
+        if self._align_active_right and self._right_leader is None:
             return
 
         big_fresh = self._is_fresh(self._big_at, self._big_freshness_s)
         if big_fresh:
             # skye_robot_driver applies joint signs on *_joint_control_abs.
-            self._publish_abs(
-                self._left_cmd_pub,
-                leader_positions_for_abs_command(self._left_leader))
-            self._publish_abs(
-                self._right_cmd_pub,
-                leader_positions_for_abs_command(self._right_leader))
+            if self._align_active_left:
+                self._publish_abs(
+                    self._left_cmd_pub,
+                    leader_positions_for_abs_command(self._left_leader))
+            if self._align_active_right:
+                self._publish_abs(
+                    self._right_cmd_pub,
+                    leader_positions_for_abs_command(self._right_leader))
 
         # Keep advancing sessions (timeout) even when big feedback is stale.
-        left_phase = self._left_session.on_tick(
-            self._left_leader, self._big_left, self._left_signs)
-        right_phase = self._right_session.on_tick(
-            self._right_leader, self._big_right, self._right_signs)
-        phase = combine_phase(left_phase, right_phase)
+        active_phases: list[AlignPhase] = []
+        if self._align_active_left:
+            active_phases.append(self._left_session.on_tick(
+                self._left_leader, self._big_left, self._left_signs))
+        if self._align_active_right:
+            active_phases.append(self._right_session.on_tick(
+                self._right_leader, self._big_right, self._right_signs))
+        phase = combine_active_phases(active_phases)
 
         if phase in (AlignPhase.ALIGNED, AlignPhase.TIMEOUT_WARN):
             self._finish_align(phase)
@@ -298,6 +342,8 @@ class FollowerAlignNode(Node):
 
     def _finish_align(self, phase: AlignPhase) -> None:
         self._streaming = False
+        self._align_active_left = False
+        self._align_active_right = False
         self._call_hold()
         if not self._call_set_motion_rates(*self._restore_rates):
             self.get_logger().error(
@@ -309,6 +355,8 @@ class FollowerAlignNode(Node):
     def _abort_align(self, reason: str) -> None:
         self.get_logger().error(f"align aborted: {reason}")
         self._streaming = False
+        self._align_active_left = False
+        self._align_active_right = False
         self._left_session.cancel()
         self._right_session.cancel()
         self._call_hold()

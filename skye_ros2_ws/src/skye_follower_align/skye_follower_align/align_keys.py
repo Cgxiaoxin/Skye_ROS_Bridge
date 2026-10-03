@@ -17,3 +17,14 @@ def map_key(key: str) -> Optional[str]:
     if not normalized:
         return None
     return KEY_TO_ACTION.get(normalized)
+
+
+def parse_align_sides(data: str) -> Optional[tuple[bool, bool]]:
+    """Map /mode/align_follower payload to (left_active, right_active)."""
+    if data == "align_follower":
+        return True, True
+    if data == "align_follower_left":
+        return True, False
+    if data == "align_follower_right":
+        return False, True
+    return None
