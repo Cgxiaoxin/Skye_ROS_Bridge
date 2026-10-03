@@ -35,6 +35,7 @@ def _bare_bridge() -> RosBridge:
     bridge._leader_gate = LeaderArmGate()
     bridge._repo_root = "/repo"
     bridge._leader_gate_container = "skye_marvin_m6"
+    bridge._leader_gate_image = "marvin-m6-ros2:e5a9d8fd"
     bridge._leader_gate_timeout_s = 15.0
     bridge._script_runner = lambda *args, **kwargs: (True, "")
     bridge._dispatch_lock = threading.Lock()
@@ -56,6 +57,7 @@ def test_run_leader_arm_gate_invokes_script_with_container_env(monkeypatch):
         "off",
         container="marvin",
         timeout_s=3.0,
+        image="marvin-m6-ros2:test",
     )
 
     assert ok is True
@@ -64,6 +66,7 @@ def test_run_leader_arm_gate_invokes_script_with_container_env(monkeypatch):
     assert argv == ["/repo/scripts/leader_arm_gate.sh", "left", "off"]
     assert kwargs["timeout"] == 3.0
     assert kwargs["env"]["MARVIN_CONTAINER_NAME"] == "marvin"
+    assert kwargs["env"]["MARVIN_IMAGE"] == "marvin-m6-ros2:test"
 
 
 def test_run_leader_arm_gate_returns_error_message(monkeypatch):
@@ -86,6 +89,29 @@ def test_run_leader_arm_gate_returns_error_message(monkeypatch):
     assert reason == "bad"
 
 
+def test_run_leader_arm_gate_translates_missing_container(monkeypatch):
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0],
+            1,
+            stdout="",
+            stderr="Error response from daemon: No such container: skye_marvin_m6",
+        ),
+    )
+
+    ok, reason = run_leader_arm_gate(
+        "/repo",
+        "left",
+        "off",
+        container="skye_marvin_m6",
+    )
+
+    assert ok is False
+    assert "未运行" in reason
+
+
 def test_run_leader_arm_gate_timeout_returns_false(monkeypatch):
     def fake_run(*args, **kwargs):
         raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs["timeout"])
@@ -101,7 +127,7 @@ def test_run_leader_arm_gate_timeout_returns_false(monkeypatch):
     )
 
     assert ok is False
-    assert "timed out" in reason
+    assert "超时" in reason
 
 
 def test_run_leader_arm_gate_missing_script_returns_false(monkeypatch):
@@ -118,7 +144,7 @@ def test_run_leader_arm_gate_missing_script_returns_false(monkeypatch):
     )
 
     assert ok is False
-    assert "not found" in reason
+    assert "找不到" in reason
 
 
 def test_await_future_returns_true_when_future_completes():
@@ -190,8 +216,8 @@ def test_dispatch_leader_script_flips_gate_only_on_success():
     bridge._ui_mode = UiMode.teleop_record
     calls = []
 
-    def runner(repo_root, side, action, *, container, timeout_s):
-        calls.append((repo_root, side, action, container, timeout_s))
+    def runner(repo_root, side, action, *, container, timeout_s, image=None):
+        calls.append((repo_root, side, action, container, timeout_s, image))
         return True, ""
 
     bridge._script_runner = runner
@@ -200,7 +226,9 @@ def test_dispatch_leader_script_flips_gate_only_on_success():
 
     assert ok is True
     assert reason == ""
-    assert calls == [("/repo", "left", "off", "skye_marvin_m6", 15.0)]
+    assert calls == [
+        ("/repo", "left", "off", "skye_marvin_m6", 15.0, "marvin-m6-ros2:e5a9d8fd")
+    ]
     assert bridge._leader_gate.snapshot()["left_enabled"] is False
 
 

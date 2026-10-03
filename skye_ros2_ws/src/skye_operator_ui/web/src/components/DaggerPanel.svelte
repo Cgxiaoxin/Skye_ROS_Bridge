@@ -21,13 +21,17 @@
     return 'hitl-unknown';
   }
 
-  function check(op) {
-    return commandAllowed(op, snapshot);
-  }
+  // Bind these in markup (not via check()) so Svelte tracks snapshot updates.
+  $: gateTakeover = commandAllowed('takeover', snapshot);
+  $: gateEnter = commandAllowed('enter_teleop', snapshot);
+  $: gateReturn = commandAllowed('return', snapshot);
+  $: gateRecStart = commandAllowed('recorder_start', snapshot);
+  $: gateRecStop = commandAllowed('recorder_stop', snapshot);
+  $: pendingOp = snapshot?.pending_op;
 
   async function run(op) {
-    const { allowed } = check(op);
-    if (!allowed) return;
+    const gate = commandAllowed(op, snapshot);
+    if (!gate.allowed) return;
 
     busyOp = op;
     try {
@@ -51,8 +55,8 @@
   <button
     type="button"
     class="btn btn-primary action-btn action-btn-large"
-    disabled={!check('takeover').allowed || busyOp === 'takeover' || !!snapshot?.pending_op}
-    title={check('takeover').reason || '同步：策略 hold + 小臂跟大臂'}
+    disabled={!gateTakeover.allowed || busyOp === 'takeover' || !!pendingOp}
+    title={gateTakeover.reason || '同步：策略 hold + 小臂跟大臂'}
     on:click={() => run('takeover')}
   >
     同步
@@ -60,8 +64,8 @@
   <button
     type="button"
     class="btn btn-primary action-btn action-btn-large"
-    disabled={!check('enter_teleop').allowed || busyOp === 'enter_teleop' || !!snapshot?.pending_op}
-    title={check('enter_teleop').reason || '确认对齐后再进入遥操（HUMAN）'}
+    disabled={!gateEnter.allowed || busyOp === 'enter_teleop' || !!pendingOp}
+    title={gateEnter.reason || '确认对齐后再进入遥操（HUMAN）'}
     on:click={() => run('enter_teleop')}
   >
     进入遥操
@@ -69,8 +73,8 @@
   <button
     type="button"
     class="btn btn-amber action-btn action-btn-large"
-    disabled={!check('return').allowed || busyOp === 'return' || !!snapshot?.pending_op}
-    title={check('return').reason || '交还控制权'}
+    disabled={!gateReturn.allowed || busyOp === 'return' || !!pendingOp}
+    title={gateReturn.reason || '交还控制权'}
     on:click={() => run('return')}
   >
     交还
@@ -84,8 +88,8 @@
   <button
     type="button"
     class="btn btn-primary action-btn"
-    disabled={!check('recorder_start').allowed || busyOp === 'recorder_start' || !!snapshot?.pending_op}
-    title={check('recorder_start').reason || '开始录制'}
+    disabled={!gateRecStart.allowed || busyOp === 'recorder_start' || !!pendingOp}
+    title={gateRecStart.reason || '开始录制'}
     on:click={() => run('recorder_start')}
   >
     开始录制
@@ -93,8 +97,8 @@
   <button
     type="button"
     class="btn btn-amber action-btn"
-    disabled={!check('recorder_stop').allowed || busyOp === 'recorder_stop' || !!snapshot?.pending_op}
-    title={check('recorder_stop').reason || '停止录制'}
+    disabled={!gateRecStop.allowed || busyOp === 'recorder_stop' || !!pendingOp}
+    title={gateRecStop.reason || '停止录制'}
     on:click={() => run('recorder_stop')}
   >
     停止录制

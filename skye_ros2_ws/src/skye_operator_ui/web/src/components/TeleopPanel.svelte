@@ -38,14 +38,18 @@
     { op: 'recorder_stop', label: '停止录制', class: 'btn-amber' },
   ];
 
-  function check(op) {
-    return commandAllowed(op, snapshot);
-  }
+  // IMPORTANT: read buttonGates[*] directly in the template (not via a helper).
+  // Svelte only invalidates `disabled` for dirty deps it sees in the markup;
+  // wrapping in check() made updates depend on commandBusy alone, so after
+  // SYNCED the buttons stayed stuck in their IDLE allow/deny state.
+  $: buttonGates = Object.fromEntries(
+    BUTTONS.map((btn) => [btn.op, commandAllowed(btn.op, snapshot)]),
+  );
 
   async function run(op) {
     if (commandBusy) return;
-    const { allowed } = check(op);
-    if (!allowed) return;
+    const gate = buttonGates[op] ?? commandAllowed(op, snapshot);
+    if (!gate.allowed) return;
 
     busyOp = op;
     try {
@@ -61,15 +65,18 @@
     if (commandBusy) return;
     const enabled = snapshot?.leader_arms?.[`${side}_enabled`] !== false;
     const op = enabled ? `leader_${side}_off` : `leader_${side}_on`;
-    const { allowed } = check(op);
-    if (!allowed) return;
+    const gate = commandAllowed(op, snapshot);
+    if (!gate.allowed) return;
     if (enabled && !confirm('请托住该侧小臂，去使能后会下落。确认关闭？')) return;
 
     busyOp = op;
     try {
       await postCommand(op);
     } catch (err) {
-      dispatch('error', err.message);
+      const msg = err?.message || String(err);
+      // Gate failures are easy to miss in the footer toast — mirror confirm with alert.
+      alert(msg);
+      dispatch('error', msg);
     } finally {
       busyOp = '';
     }
@@ -85,13 +92,12 @@
 </dl>
 
 <div class="action-grid">
-  {#each BUTTONS as btn}
-    {@const gate = check(btn.op)}
+  {#each BUTTONS as btn (btn.op)}
     <button
       type="button"
       class="btn {btn.class} action-btn"
-      disabled={!gate.allowed || commandBusy}
-      title={gate.reason || btn.label}
+      disabled={!buttonGates[btn.op]?.allowed || commandBusy}
+      title={buttonGates[btn.op]?.reason || btn.label}
       on:click={() => run(btn.op)}
     >
       {btn.label}
@@ -104,20 +110,20 @@
             class="btn btn-neutral action-btn"
             class:btn-amber={!leftEnabled}
             disabled={!gateLeft.allowed || !!snapshot?.leader_arms?.locked || commandBusy}
-            title={gateLeft.reason || '关左臂'}
+            title={gateLeft.reason || (leftEnabled ? '关左臂' : '开左臂')}
             on:click={() => toggleSide('left')}
           >
-            关左臂
+            {leftEnabled ? '关左臂' : '开左臂'}
           </button>
           <button
             type="button"
             class="btn btn-neutral action-btn"
             class:btn-amber={!rightEnabled}
             disabled={!gateRight.allowed || !!snapshot?.leader_arms?.locked || commandBusy}
-            title={gateRight.reason || '关右臂'}
+            title={gateRight.reason || (rightEnabled ? '关右臂' : '开右臂')}
             on:click={() => toggleSide('right')}
           >
-            关右臂
+            {rightEnabled ? '关右臂' : '开右臂'}
           </button>
         </div>
         <p class="mono leader-gate-status">

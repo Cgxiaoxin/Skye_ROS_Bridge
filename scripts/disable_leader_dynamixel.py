@@ -110,8 +110,9 @@ def main() -> int:
         import dynamixel_sdk  # noqa: F401
     except ImportError:
         print(
-            "ERROR: dynamixel_sdk not installed on host Python. "
-            "Install it or run disable from an environment that has it.",
+            "ERROR: dynamixel_sdk not importable in this Python "
+            f"({sys.executable}). Prefer leader_arm_gate.sh / docker "
+            "(PYTHONPATH=/marvin_ws/install/local/lib/python3.10/dist-packages).",
             file=sys.stderr,
         )
         return 2

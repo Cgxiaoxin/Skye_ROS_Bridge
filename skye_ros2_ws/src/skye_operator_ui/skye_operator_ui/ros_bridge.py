@@ -87,10 +87,13 @@ def run_leader_arm_gate(
     *,
     container: str,
     timeout_s: float = LEADER_GATE_TIMEOUT_S,
+    image: str | None = None,
 ) -> tuple[bool, str]:
     script = Path(repo_root) / "scripts" / "leader_arm_gate.sh"
     env = os.environ.copy()
     env["MARVIN_CONTAINER_NAME"] = container
+    if image:
+        env["MARVIN_IMAGE"] = image
     try:
         result = subprocess.run(
             [str(script), side, action],
@@ -101,11 +104,17 @@ def run_leader_arm_gate(
             check=False,
         )
     except subprocess.TimeoutExpired:
-        return False, f"leader_arm_gate timed out after {timeout_s}s"
+        return False, f"小臂开关超时（{timeout_s}s）"
     except FileNotFoundError:
-        return False, f"leader_arm_gate script not found: {script}"
+        return False, f"找不到小臂开关脚本: {script}"
     if result.returncode != 0:
-        return False, (result.stderr or result.stdout or "leader_arm_gate failed").strip()
+        detail = (result.stderr or result.stdout or "leader_arm_gate failed").strip()
+        if "No such container" in detail:
+            return (
+                False,
+                f"Marvin 容器 {container} 未运行，无法开关小臂。请确认会话已启动且 marvin 正常。",
+            )
+        return False, detail
     return True, ""
 
 
@@ -144,6 +153,9 @@ class RosBridge:
         teardown_cfg = (cfg or {}).get("teardown") or {}
         self._leader_gate_container = str(
             teardown_cfg.get("marvin_container_name", DEFAULT_MARVIN_CONTAINER)
+        )
+        self._leader_gate_image = str(
+            teardown_cfg.get("marvin_image") or "marvin-m6-ros2:e5a9d8fd"
         )
         self._leader_gate_timeout_s = LEADER_GATE_TIMEOUT_S
         self._script_runner = script_runner
@@ -326,6 +338,7 @@ class RosBridge:
                     payload,
                     container=self._leader_gate_container,
                     timeout_s=self._leader_gate_timeout_s,
+                    image=self._leader_gate_image,
                 )
                 if not ok:
                     return False, reason
@@ -389,8 +402,10 @@ class RosBridge:
                 self._right_gripper = float(msg.position[0])
 
     def _teleop_state_callback(self, msg: Any) -> None:
-        self._teleop_state = msg.data
-        self._leader_gate.note_teleop_state(msg.data)
+        raw = msg.data if isinstance(msg.data, str) else str(msg.data)
+        state = raw.strip()
+        self._teleop_state = state or None
+        self._leader_gate.note_teleop_state(self._teleop_state)
 
     def _align_status_callback(self, msg: Any) -> None:
         self._align_status = msg.data

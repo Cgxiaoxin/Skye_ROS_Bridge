@@ -259,6 +259,7 @@ def create_app(
                 leader_arm_gate_enabled=bool(features.get("leader_arm_gate", True)),
             )
             if not allowed:
+                logger.warning("command rejected op=%s reason=%s", op, reason)
                 return JSONResponse(
                     status_code=400,
                     content={"ok": False, "reason": reason},
@@ -267,6 +268,7 @@ def create_app(
         ok, reason = bridge.dispatch(op)
         if not ok:
             pending.clear()
+            logger.warning("command failed op=%s reason=%s", op, reason or "命令派发失败")
             return JSONResponse(
                 status_code=400,
                 content={"ok": False, "reason": reason or "命令派发失败"},
