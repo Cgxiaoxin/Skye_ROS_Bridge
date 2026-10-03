@@ -45,6 +45,19 @@ export function commandAllowed(op, snapshot) {
     return { allowed: false, reason: '会话模式未知' };
   }
 
+  if (op.startsWith('leader_')) {
+    if (snapshot.features?.leader_arm_gate === false) {
+      return { allowed: false, reason: '单臂开关未启用' };
+    }
+    if (mode !== 'teleop_record') {
+      return { allowed: false, reason: '当前为 DAgger 模式，无法开关小臂' };
+    }
+    if (snapshot.leader_arms?.locked) {
+      return { allowed: false, reason: '已进入同步/遥操，无法开关小臂' };
+    }
+    return { allowed: true, reason: '' };
+  }
+
   if (TELEOP_OPS.includes(op) && mode !== 'teleop_record') {
     return { allowed: false, reason: '当前为 DAgger 模式，无法执行遥操命令' };
   }
@@ -86,6 +99,14 @@ export function commandAllowed(op, snapshot) {
   }
 
   if (op === 'align_start') {
+    if (snapshot.features?.leader_arm_gate !== false) {
+      const arms = snapshot.leader_arms;
+      const anyEnabled =
+        arms?.left_enabled !== false || arms?.right_enabled !== false;
+      if (arms && !anyEnabled) {
+        return { allowed: false, reason: '两侧小臂已关闭，无法对齐' };
+      }
+    }
     if (alignStatus === 'ALIGNING') {
       return { allowed: false, reason: '对齐正在进行中' };
     }
@@ -103,6 +124,14 @@ export function commandAllowed(op, snapshot) {
   }
 
   if (op === 'switch_sync') {
+    if (snapshot.features?.leader_arm_gate !== false) {
+      const arms = snapshot.leader_arms;
+      const anyEnabled =
+        arms?.left_enabled !== false || arms?.right_enabled !== false;
+      if (arms && !anyEnabled) {
+        return { allowed: false, reason: '两侧小臂已关闭，无法同步' };
+      }
+    }
     if (['TELEOP_SYNCING', 'SYNCED', 'TELEOP'].includes(teleopState)) {
       return { allowed: false, reason: '遥操状态不允许再次同步' };
     }
