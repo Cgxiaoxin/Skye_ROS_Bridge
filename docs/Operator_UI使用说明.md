@@ -9,6 +9,8 @@
 - [ ] 急停不拆会话；结束会话无 SDK 残留
 - [ ] 常开 UI 约 1h，观察 driver `/gento/joint_states` hz 无明显下降
 - [ ] Orin 至少遥操路径一次（profile 锁）
+- [ ] Thor 单臂路径一次（同步前「关左臂」或「关右臂」→ sync → 对齐 → 遥操 → 短录）
+- [ ] Orin 单臂路径一次（同上；确认 sync 后关臂按钮灰掉、两侧都关时「同步」不可点）
 
 完成后请在本节勾选并补记日期/操作员。
 
@@ -18,7 +20,7 @@
 
 Operator UI 是本机浏览器控制台，封装现有 `scripts/*.sh` 与会话状态机，支持：
 
-- **遥操数采**（`teleop_record`）：driver → Docker 小臂 → follower_align → `skye_data_recorder`
+- **遥操数采**（`teleop_record`）：driver → Docker 小臂 → follower_align → `skye_data_recorder`（可选：同步前关单侧小臂，见下节）
 - **HITL DAgger**（`dagger`）：driver → Docker HITL launch → `start_hitl_host.sh`（arbiter）。接管拆成「同步」→ 确认后「进入遥操」
 
 设计细节见 `[docs/superpowers/specs/2026-09-15-skye-operator-ui-design.md](superpowers/specs/2026-09-15-skye-operator-ui-design.md)`。
@@ -66,6 +68,33 @@ google-chrome --app=http://127.0.0.1:8765
 急停不受「尚未就绪」等向导门禁拦截。结束会话退场顺序：停录 → `switch_stop` → 倒序 SIGTERM 进程组 → `docker rm -f skye_marvin_m6` → 用 Marvin 镜像一次性容器跑 `scripts/disable_leader_dynamixel.py`（主机无 `dynamixel_sdk` 时也能去使能）。可用 `teardown.disable_leader: false` 关闭去使能。
 
 历史上未命名的残留容器（例如随机名）不会被自动清掉，需一次性：`docker ps` 后 `docker rm -f <id>`。
+
+## 同步前关单侧小臂（遥操数采）
+
+仅 **遥操数采** 面板、会话 **READY/RUNNING** 且向导允许操作时出现。DAgger 面板无此控件。会话启动仍按 playbook **双臂上电**；关臂只停该侧容器内 `factr_teleop_*` 并对该侧 Dynamixel 去使能（`scripts/leader_arm_gate.sh`），不改编排。
+
+在 **「同步」** 按钮正下方：
+
+| 控件 | 作用 |
+| --- | --- |
+| **关左臂** / **关右臂** | 切换该侧小臂 off/on；已关闭时按钮高亮（琥珀色），状态行显示 `小臂：左开/关 · 右开/关` |
+| **同步** | 至少一侧仍开启时可点；两侧都关时灰掉 |
+| **开始对齐** | 仍要求已 SYNCED；后端只对仍开启的一侧（或两侧）发 `align_follower` / `align_follower_left` / `align_follower_right` |
+
+**操作顺序（可选）**：开始会话 →（可选）关一侧或两侧 → **同步** → **开始对齐** → **开启遥操** → 录制等。
+
+- 点 **关左臂/关右臂** 关闭一侧前，浏览器会确认：**请托住该侧小臂，去使能后会下落**。同步前可再点同一按钮复能该侧。
+- **同步后锁定**：本会话已成功 **同步**，或遥操状态进入 `TELEOP_SYNCING` / `SYNCED` / `TELEOP` 后，关臂按钮灰掉不可再改；**结束会话** 后 `leader_arms` 恢复双开、未锁定。
+- 关/复能脚本失败时 API 报错，UI 不翻转「开/关」状态。
+
+关闭功能（隐藏按钮并拒绝 `leader_*_off/on`）可在 `skye_operator_ui/config/default.yaml` 设：
+
+```yaml
+features:
+  leader_arm_gate: false   # 默认 true；与改 yaml 前双臂流程一致
+```
+
+设计细节：`[docs/superpowers/specs/2026-10-03-leader-arm-gate-ui-design.md](superpowers/specs/2026-10-03-leader-arm-gate-ui-design.md)`。
 
 ## 退出机制
 
@@ -116,5 +145,6 @@ cd skye_ros2_ws && colcon test --packages-select skye_operator_ui && colcon test
 - 设计 spec：`[docs/superpowers/specs/2026-09-15-skye-operator-ui-design.md](superpowers/specs/2026-09-15-skye-operator-ui-design.md)`
 - ROS 接口索引：`[docs/ros_interfaces.md](ros_interfaces.md)`（文末 Operator UI 小节）
 - Thor/Orin 遥操：`[docs/Thor_Orin_遥操启动.md](Thor_Orin_遥操启动.md)`
+- Leader arm gate：`[docs/superpowers/specs/2026-10-03-leader-arm-gate-ui-design.md](superpowers/specs/2026-10-03-leader-arm-gate-ui-design.md)`
 - HITL DAgger：`[docs/Hint_Dagger启动使用说明.md](Hint_Dagger启动使用说明.md)`
 

@@ -1,58 +1,21 @@
-# Task 8 Report: Teleop + DAgger operator panels
+# Task 8 Report: Docs (leader arm gate UI)
 
-## Status
-**Complete** — Task 7 review fix (A) and full panels (B) implemented; `npm run build` OK; two commits on `feat/skye-operator-ui`.
+**Status:** Complete  
+**Branch:** `feat/leader-arm-gate-ui`
 
-## A) Task 7 review fix — clear snapshot on WS disconnect
+## Changes
 
-| Change | Detail |
-|--------|--------|
-| `App.svelte` | `displaySnapshot` only when `wsStatus === 'connected'`; `snapshot = null` on disconnect/reconnecting |
-| `ws.js` | `onclose` emits `reconnecting` (vs `disconnected` when stream closed) |
-| UI | Amber disconnect banner; TopBar/session badges no longer show stale state while reconnecting |
+- **`docs/Operator_UI使用说明.md`**: New section「同步前关单侧小臂」— 关左/关右按钮位置、托住小臂确认、同步后锁定、双关禁 sync、对齐侧选择、`features.leader_arm_gate`；真机冒烟清单增加 Thor/Orin 单臂路径项；相关文档链接。
+- **`docs/Thor_Orin_遥操启动.md`**: 开篇一句指向 Operator UI 同步前关单侧小臂（键盘流程不变）。
 
-**Commit:** `5314799` — `fix(operator_ui): clear snapshot while websocket reconnecting`
+## Verification
 
-## B) Task 8 — full panels
+- Manual review against `docs/superpowers/specs/2026-10-03-leader-arm-gate-ui-design.md` §2、§4、§5、§11.
 
-| Component | Role |
-|-----------|------|
-| `StepRail.svelte` | Mode-specific step list (teleop / dagger); status markers; health list; click log-capable steps |
-| `LogDrawer.svelte` | Slide-in drawer; `GET /api/logs/{step}` |
-| `TeleopPanel.svelte` | `switch_sync`, `align_start/cancel`, `switch_teleop/stop`, `recorder_start/stop` |
-| `DaggerPanel.svelte` | Large HITL mode; `takeover` / `return`; HITL recorder; `HANDOVER_SYNC` disables both |
-| `ArmStrip.svelte` | 14 joint bars (7+7) + gripper values; fixed ±π scale (v1, no `near_limit`) |
-| `lib/commands.js` | Mirrors backend `command_allowed` for button disable + tooltips |
-| `lib/steps.js` | Step definitions + `stepStatus()` for rail highlighting |
-| `lib/api.js` | Added `fetchStepLogs(stepId)` |
-| `App.svelte` | Wired panels into 3-column layout; LogDrawer overlay |
-| `styles.css` | Step rail, action grids, arm bars, log drawer |
+## Commit
 
-**Commit:** `b96121b` — `feat(operator_ui): add teleop and DAgger operator panels`
+`docs: document leader arm gate UI for Thor/Orin`
 
-## Build
-```bash
-cd skye_ros2_ws/src/skye_operator_ui/web && npm run build
-```
-**Result:** OK — `dist/assets/index-B_qac40_.js` (39.7 kB), `index-BUJecxqk.css` (8.7 kB)
+## Notes
 
-## Manual checklist (PR / smoke)
-- [ ] Start teleop session → StepRail shows playbook steps; current step highlights during STARTING
-- [ ] Click `driver` / `marvin` step → LogDrawer loads tail lines
-- [ ] Teleop: sync → align → teleop → record buttons enable/disable per snapshot state
-- [ ] DAgger: takeover (AUTONOMOUS) / return (HUMAN); both disabled during HANDOVER_SYNC
-- [ ] `recorder_start` disabled in DEGRADED; `recorder_stop` still allowed
-- [ ] ArmStrip shows joint/gripper values when `/gento/joint_states` flowing
-- [ ] Kill WS / restart UI process → disconnect banner; badges reset to IDLE until reconnect
-
-## Concerns
-1. **Step rail runtime steps** (sync / teleop / control) use heuristic status from snapshot fields, not supervisor playbook index — sufficient for v1 but may drift from backend step IDs.
-2. **`near_limit` omitted** per brief v1; joint bars use fixed ±π rad scale only.
-3. **No browser E2E tests** — button gating logic duplicated in `commands.js`; backend `test_commands.py` is source of truth; drift risk if rules change.
-4. **Unrelated local edits** (`marvin_ws/configs/thor/grav_comp_m6_*.yaml`) left unstaged.
-
-## SHAs
-| Commit | Message |
-|--------|---------|
-| `5314799` | `fix(operator_ui): clear snapshot while websocket reconnecting` |
-| `b96121b` | `feat(operator_ui): add teleop and DAgger operator panels` |
+- Spec §11 checklist satisfied; optional 真机单臂 checklist folded into existing「真机状态」节。
