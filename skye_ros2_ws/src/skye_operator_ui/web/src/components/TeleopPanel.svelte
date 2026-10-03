@@ -17,6 +17,8 @@
   $: gateLeft = check(`leader_left_${leftEnabled ? 'off' : 'on'}`);
   $: gateRight = check(`leader_right_${rightEnabled ? 'off' : 'on'}`);
   $: leaderGateUi = snapshot?.features?.leader_arm_gate !== false;
+  $: pendingOp = snapshot?.pending_op;
+  $: commandBusy = !!busyOp || !!pendingOp;
 
   const BUTTONS = [
     { op: 'switch_sync', label: '同步', class: 'btn-primary' },
@@ -33,7 +35,8 @@
   }
 
   async function run(op) {
-    const { allowed, reason } = check(op);
+    if (commandBusy) return;
+    const { allowed } = check(op);
     if (!allowed) return;
 
     busyOp = op;
@@ -47,7 +50,8 @@
   }
 
   async function toggleSide(side) {
-    const enabled = snapshot.leader_arms?.[`${side}_enabled`] !== false;
+    if (commandBusy) return;
+    const enabled = snapshot?.leader_arms?.[`${side}_enabled`] !== false;
     const op = enabled ? `leader_${side}_off` : `leader_${side}_on`;
     const { allowed } = check(op);
     if (!allowed) return;
@@ -78,7 +82,7 @@
     <button
       type="button"
       class="btn {btn.class} action-btn"
-      disabled={!gate.allowed || busyOp === btn.op || !!snapshot?.pending_op}
+      disabled={!gate.allowed || commandBusy}
       title={gate.reason || btn.label}
       on:click={() => run(btn.op)}
     >
@@ -91,7 +95,7 @@
             type="button"
             class="btn action-btn"
             class:btn-amber={!leftEnabled}
-            disabled={!gateLeft.allowed || !!snapshot?.leader_arms?.locked || !!busyOp}
+            disabled={!gateLeft.allowed || !!snapshot?.leader_arms?.locked || commandBusy}
             title={gateLeft.reason || '关左臂'}
             on:click={() => toggleSide('left')}
           >
@@ -101,7 +105,7 @@
             type="button"
             class="btn action-btn"
             class:btn-amber={!rightEnabled}
-            disabled={!gateRight.allowed || !!snapshot?.leader_arms?.locked || !!busyOp}
+            disabled={!gateRight.allowed || !!snapshot?.leader_arms?.locked || commandBusy}
             title={gateRight.reason || '关右臂'}
             on:click={() => toggleSide('right')}
           >

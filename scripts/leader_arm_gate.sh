@@ -54,5 +54,13 @@ nohup ros2 run factr_teleop factr_teleop_robot_driver.py --ros-args \
   -r "/gripper/ctrl:=/${SIDE}_teleop_gripper/ctrl" \
   -r "/gripper/state:=/${SIDE}_gripper/state" \
   >"/tmp/${NODE}.log" 2>&1 &
-sleep 0.5
+
+deadline=$((SECONDS + 5))
+until ros2 node list 2>/dev/null | grep -qx "/${NODE}"; do
+  if (( SECONDS >= deadline )); then
+    echo "failed to start /${NODE}; check /tmp/${NODE}.log in the Marvin container" >&2
+    exit 1
+  fi
+  sleep 0.2
+done
 '

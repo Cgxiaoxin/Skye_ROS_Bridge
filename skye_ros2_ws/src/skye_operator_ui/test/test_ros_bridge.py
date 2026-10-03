@@ -1,6 +1,7 @@
 """RosBridge unit tests that do not need a live ROS graph."""
 
 import subprocess
+import threading
 import time
 from types import SimpleNamespace
 
@@ -36,6 +37,7 @@ def _bare_bridge() -> RosBridge:
     bridge._leader_gate_container = "skye_marvin_m6"
     bridge._leader_gate_timeout_s = 15.0
     bridge._script_runner = lambda *args, **kwargs: (True, "")
+    bridge._dispatch_lock = threading.Lock()
     return bridge
 
 
@@ -212,6 +214,26 @@ def test_dispatch_leader_script_failure_does_not_flip_gate():
     assert ok is False
     assert reason == "script failed"
     assert bridge._leader_gate.snapshot()["right_enabled"] is True
+
+
+def test_dispatch_rejects_nested_command_while_script_in_flight():
+    bridge = _bare_bridge()
+    bridge._ui_mode = UiMode.teleop_record
+    nested_result = None
+    bridge._publish_string = lambda topic, data: (True, "")
+
+    def runner(*args, **kwargs):
+        nonlocal nested_result
+        nested_result = bridge.dispatch("switch_stop")
+        return True, ""
+
+    bridge._script_runner = runner
+
+    ok, reason = bridge.dispatch("leader_left_off")
+
+    assert ok is True
+    assert reason == ""
+    assert nested_result == (False, "命令正在执行，请稍候")
 
 
 def test_dispatch_align_start_uses_gate_payload_and_rejects_none():

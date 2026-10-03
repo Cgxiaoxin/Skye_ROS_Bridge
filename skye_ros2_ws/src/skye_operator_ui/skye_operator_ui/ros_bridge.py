@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
@@ -146,6 +147,7 @@ class RosBridge:
         )
         self._leader_gate_timeout_s = LEADER_GATE_TIMEOUT_S
         self._script_runner = script_runner
+        self._dispatch_lock = threading.Lock()
 
         self._joint_states_stamp: float | None = None
         self._align_stamp: float | None = None
@@ -296,38 +298,43 @@ class RosBridge:
         if not validate_op(op):
             return False, "未知命令，已拒绝"
 
-        align_payload = None
-        if op == "align_start":
-            align_payload = self._leader_gate.align_payload()
-            if align_payload is None:
-                return False, "两侧小臂已关闭，无法对齐"
+        if not self._dispatch_lock.acquire(blocking=False):
+            return False, "命令正在执行，请稍候"
+        try:
+            align_payload = None
+            if op == "align_start":
+                align_payload = self._leader_gate.align_payload()
+                if align_payload is None:
+                    return False, "两侧小臂已关闭，无法对齐"
 
-        plan = dispatch_plan(op, self._ui_mode, align_payload=align_payload)
-        if plan is None:
-            return False, "命令当前不可用"
+            plan = dispatch_plan(op, self._ui_mode, align_payload=align_payload)
+            if plan is None:
+                return False, "命令当前不可用"
 
-        kind, target, payload = plan
-        if kind == "string":
-            ok, reason = self._publish_string(target, payload)
-            if ok and op == "switch_sync":
-                self._leader_gate.note_sync_dispatched()
-            return ok, reason
-        if kind == "trigger":
-            return self._call_trigger(target, op)
-        if kind == "script":
-            ok, reason = self._script_runner(
-                self._repo_root,
-                target,
-                payload,
-                container=self._leader_gate_container,
-                timeout_s=self._leader_gate_timeout_s,
-            )
-            if not ok:
-                return False, reason
-            if not self._leader_gate.set_enabled(target, payload == "on"):
-                return False, "已锁定，无法开关小臂"
-            return True, ""
-        return False, "内部错误：未知派发类型"
+            kind, target, payload = plan
+            if kind == "string":
+                ok, reason = self._publish_string(target, payload)
+                if ok and op == "switch_sync":
+                    self._leader_gate.note_sync_dispatched()
+                return ok, reason
+            if kind == "trigger":
+                return self._call_trigger(target, op)
+            if kind == "script":
+                ok, reason = self._script_runner(
+                    self._repo_root,
+                    target,
+                    payload,
+                    container=self._leader_gate_container,
+                    timeout_s=self._leader_gate_timeout_s,
+                )
+                if not ok:
+                    return False, reason
+                if not self._leader_gate.set_enabled(target, payload == "on"):
+                    return False, "已锁定，无法开关小臂"
+                return True, ""
+            return False, "内部错误：未知派发类型"
+        finally:
+            self._dispatch_lock.release()
 
     def _health_map(self) -> dict[str, bool]:
         return {
