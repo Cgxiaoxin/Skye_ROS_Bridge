@@ -10,6 +10,7 @@
 #   sudo ./scripts/setup_host_tuning.sh          # write sysctl.d + apply now
 #   ./scripts/setup_host_tuning.sh --check       # print current values (no root)
 #   sudo ./scripts/setup_host_tuning.sh --dry-run # show what would be written
+# UDP 内核缓冲区修改，由原来的208KB 改为8MB （16MB）
 
 set -euo pipefail
 
