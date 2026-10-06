@@ -322,6 +322,7 @@ ros2 topic echo /gento/right_joint_states --once # 7 轴，应对右大臂
 | 同时开 `gento_robot_driver`       | SDK 互抢             |
 | 主机与 Docker `ROS_DOMAIN_ID` 不一致 | 互相看不见              |
 | 漏设 FastDDS 关 SHM xml           | Docker 侧可能看不到驱动节点  |
+| 未调大主机 UDP 缓冲（默认 ~208KB） | 关 SHM 后易丢包掉帧；见 `docs/Q_log.md`，执行 `sudo ./scripts/setup_host_tuning.sh` |
 
 
 ---
@@ -339,7 +340,9 @@ ros2 topic echo /gento/right_joint_states --once # 7 轴，应对右大臂
 | `scripts/sync_marvin_overlay.sh`     | 按 profile 同步 launch/config     |
 | `scripts/lib/robot_profile.sh`       | 机器名解析 / 校验                     |
 | `scripts/bind_leader_arms.py`        | 绑定左右主臂 FTDI                    |
+| `scripts/setup_host_tuning.sh`       | 主机 UDP 缓冲 sysctl（DDS no-SHM） |
 | `config/profiles/{thor,orin}.yaml`   | 大臂 / 夹爪机台参数                    |
 | `marvin_ws/configs/{thor,orin}/`     | 小臂 FACTR `grav_comp`           |
+| `docs/Q_log.md`                      | UDP 丢包掉帧排查与修复记录                |
 
 

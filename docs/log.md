@@ -101,3 +101,14 @@
 - 备注:仓库无标定脚本,需自写或用 dynamixel_wizard2。
 
 > ⚠️ 更正(2026-08-26 16:xx):**不是零点偏移**。摆到标记位读数 ≈0(右 J3=-1.5°/J4=-1.9°),零点正确。此前 37°/-38° 是小臂真实物理下垂(重力补偿不足挂不住肘/腕)。右臂 J3/J4 gain 已调至 1.0,稍好但仍 J4 对不齐 → 追踪见 `docs/问题追踪_右臂J4对不齐_20260826.md`。
+
+---
+
+## 2026-10-06 — DDS UDP 缓冲：掉帧 / sequence size exceeds remaining buffer
+
+详见 **`docs/Q_log.md`**。概要：关 SHM 后全走 UDP，内核默认 ~208KB 缓冲在 churn 时打满丢包。
+
+仓库改动：
+- `marvin_ws/fastrtps_no_shm.xml`：UDP `receiveBufferSize` / `sendBufferSize` = 8MB
+- `scripts/setup_host_tuning.sh`：写 `/etc/sysctl.d/60-ros2-dds-udp.conf`（rmem/wmem 16MB）
+- `skye_operator_ui`：`cleanup_stale_commands` 增加 follower_align / host_keyboard_align / skye_data_recorder；会话启动始终清理残留

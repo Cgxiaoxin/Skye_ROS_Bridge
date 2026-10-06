@@ -280,24 +280,41 @@ class SessionSupervisor:
         if not os.path.isfile(xml_path):
             return False, f"缺少 FastDDS 配置: {xml_path}"
 
+        mode = self.logic.mode()
+        allow = bool(self.cfg.get("allow_existing_driver", False))
+        first_is_driver = False
+        if profile is not None and mode is not None:
+            steps = playbook_for(mode, self.repo_root, profile, self.cfg)
+            first_is_driver = bool(steps) and steps[0].get("id") == "driver"
+
         count = self._count_skye_robot_driver()
-        if count > 0:
-            mode = self.logic.mode()
-            allow = bool(self.cfg.get("allow_existing_driver", False))
-            first_is_driver = False
-            if profile is not None and mode is not None:
-                steps = playbook_for(mode, self.repo_root, profile, self.cfg)
-                first_is_driver = bool(steps) and steps[0].get("id") == "driver"
-            if not (allow and first_is_driver):
-                commands = self.cfg.get("cleanup_stale_commands") or list(
-                    _DEFAULT_DRIVER_CLEANUP
-                )
-                ok, reason = self._run_cleanup_commands(commands)
-                if not ok:
-                    return False, f"残留 skye_robot_driver 自动清理失败: {reason}"
-                time.sleep(0.3)
-                if self._count_skye_robot_driver() > 0:
-                    return False, "检测到残留 skye_robot_driver，自动清理后仍存在"
-                logger.warning("已自动清理残留 driver")
+        keep_driver = allow and first_is_driver and count > 0
+
+        raw_commands = self.cfg.get("cleanup_stale_commands")
+        if raw_commands is None:
+            commands = list(_DEFAULT_DRIVER_CLEANUP)
+        else:
+            commands = list(raw_commands)
+        if keep_driver:
+            # Reuse existing driver/marvin: still clear align/recorder orphans.
+            skip_tokens = ("skye_robot_driver", "factr_teleop", "skye_marvin_m6")
+            commands = [
+                argv
+                for argv in commands
+                if not any(tok in " ".join(str(p) for p in argv) for tok in skip_tokens)
+            ]
+
+        if commands:
+            ok, reason = self._run_cleanup_commands(commands)
+            if not ok:
+                return False, f"启动前清理失败: {reason}"
+            time.sleep(0.3)
+
+        if self._count_skye_robot_driver() > 0 and not keep_driver:
+            return False, "检测到残留 skye_robot_driver，自动清理后仍存在"
+        if count > 0 and not keep_driver:
+            logger.warning("已自动清理残留进程（含 driver）")
+        elif commands:
+            logger.info("启动前已执行残留进程清理")
 
         return True, "ok"
