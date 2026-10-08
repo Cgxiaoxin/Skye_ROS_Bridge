@@ -12,7 +12,7 @@ pending in development-plan stage 7.
 
 ## Configuration
 
-The default Thor M6 parameters are installed as
+The uncalibrated Thor M6 control templates are installed as
 `config/grav_comp_m6_left.yaml` and `config/grav_comp_m6_right.yaml`. Load and
 validate either file with `skye_factr_teleop.config.load_config`. Returned nested
 dataclasses and numeric tuples are immutable.
@@ -53,33 +53,47 @@ acceptance is complete.
 
 Select the arm with executable argument `--side left|right` (default `left`).
 Default node names are `skye_factr_teleop_left` and `skye_factr_teleop_right`;
-standard ROS node-name remapping is supported. Supply a ROS parameter file with
-the calibrated offsets and motion limits for that arm. Parameters are read-only
-after startup:
+standard ROS node-name remapping is supported. Supply one YAML file with
+the calibrated offsets and motion limits for that arm. The only ROS parameter
+is the read-only `config_path`; the selected YAML holds the complete per-arm
+configuration:
 
 | Parameter | Meaning/default |
 |---|---|
 | `config_path` | Absolute YAML path, or path relative to the package share; empty selects `config/grav_comp_m6_<side>.yaml` |
-| `joint_offsets` | Required: eight calibrated physical-servo offsets in rad, including gripper |
-| `current_limit_ma` | Required: positive current ceiling; also bounded by servo ratings |
-| `max_velocity`, `max_acceleration`, `max_jerk` | Required: eight positive limits each, in logical leader order, rad/s, rad/s², rad/s³ |
-| `state_timeout` | Maximum header age and time since receipt, seconds; default `0.25` |
-| `future_tolerance` | Allowed future header timestamp skew, seconds; default `0.05` |
-| `allow_unnamed_joint_states` | Default `false`; if true, empty names mean fixed J1..J7 order |
+| `runtime.joint_offsets` | Required: eight calibrated physical-servo offsets in rad, including gripper |
+| `runtime.current_limit_ma` | Required: positive current ceiling; also bounded by servo ratings |
+| `runtime.max_velocity`, `runtime.max_acceleration`, `runtime.max_jerk` | Required: eight positive limits each, in logical leader order, rad/s, rad/s², rad/s³ |
+| `runtime.state_timeout` | Maximum header age and time since receipt, seconds; default `0.25` |
+| `runtime.future_tolerance` | Allowed future header timestamp skew, seconds; default `0.05` |
+| `runtime.allow_unnamed_joint_states` | Default `false`; if true, empty names mean fixed J1..J7 order |
 
-The ROS parameter file wraps these values under the node's `ros__parameters`.
-It is separate from the control YAML selected by `config_path`. Missing offsets
-or limits fail startup before a serial device is opened. The node resolves its
+Copy the matching Thor or Orin YAML to a per-device file and add a top-level
+`runtime` mapping with measured values. The packaged YAML files intentionally
+omit this mapping and cannot start teleoperation. For example, the required
+shape is:
+
+```yaml
+runtime:
+  joint_offsets: [<8 measured radians>]
+  current_limit_ma: <measured safe ceiling in mA>
+  max_velocity: [<8 positive rad/s limits>]
+  max_acceleration: [<8 positive rad/s² limits>]
+  max_jerk: [<8 positive rad/s³ limits>]
+```
+
+Replace each bracketed placeholder with actual YAML numbers before launch.
+Missing or invalid values fail startup before a serial device is opened. The node resolves its
 leader URDF through `skye_factr_description` and uses the Pinocchio adapter in
 `dynamics.py` for RNEA, the local joint Jacobian, and forward kinematics.
 Runtime Python dependencies include the baseline Pinocchio and Ruckig versions.
 
 After the stage-7 hardware gates, a left-arm invocation with an operator-supplied
-ROS parameter file has this form:
+unified YAML has this form:
 
 ```bash
 ros2 run skye_factr_teleop skye_factr_teleop_driver --side left --ros-args \
-  --params-file /path/to/left_runtime.yaml \
+  -p config_path:=/path/to/left_calibrated.yaml \
   -r /joint_state:=/gento/left_joint_states \
   -r /joint_control:=/gento/left_joint_control \
   -r /joint_move:=/left_joint_move \
@@ -87,7 +101,7 @@ ros2 run skye_factr_teleop skye_factr_teleop_driver --side left --ros-args \
   -r /leader_arm/target_joint_state:=/left_leader_arm/target_joint_state
 ```
 
-Use `--side right`, the right parameter file, and right-side remaps for the
+Use `--side right`, the right calibrated YAML, and right-side remaps for the
 other instance. Mode topics are shared globally. The node creates these base
 interfaces, with the QoS frozen in the phase-0 contract:
 
@@ -155,30 +169,27 @@ directory. No environment or Python module search paths are changed.
 | Argument | Meaning |
 |---|---|
 | `robot_profile` | `thor`: `config/grav_comp_m6_<side>.yaml`; `orin`: `config/orin/grav_comp_m6_<side>.yaml` |
-| `left_params_file`, `right_params_file` | Required for each launched arm: ROS parameter YAML containing its calibrated offsets, current ceiling, and trajectory limits described above |
-| `left_config`, `right_config` | Optional control YAML override for each launched arm; empty selects the profile default |
+| `left_config`, `right_config` | Per-arm unified YAML path; empty selects the profile template, which lacks calibration and fails teleop startup |
 
-Both file arguments accept absolute paths or paths relative to the package
-share. The selected control YAML takes precedence over any `config_path` in the
-ROS parameter file. A single-arm launch declares only that arm's arguments.
-In a dual-arm launch, both sets of file paths are checked before starting nodes.
-The parameter files should use node keys `skye_factr_teleop_left` and
-`skye_factr_teleop_right`, respectively, or `/**` with separate files per arm.
-Launch does not supply invented calibration offsets or motion/current limits.
+Each config path accepts an absolute path or a path relative to the package
+share. A single-arm launch declares only that arm's config. In a dual-arm
+launch, both files and their required runtime values are validated before
+starting either node. Launch does not supply invented calibration offsets or
+motion/current limits.
 
-After hardware acceptance, use operator-supplied runtime parameter files:
+After hardware acceptance, use operator-supplied calibrated YAML files:
 
 ```bash
 ros2 launch skye_factr_teleop start_teleop_m6_left.launch.py \
-  robot_profile:=thor left_params_file:=/path/to/left_runtime.yaml
+  robot_profile:=thor left_config:=/path/to/left_calibrated.yaml
 
 ros2 launch skye_factr_teleop start_teleop_m6_right.launch.py \
-  robot_profile:=orin right_params_file:=/path/to/right_runtime.yaml
+  robot_profile:=orin right_config:=/path/to/right_calibrated.yaml
 
 ros2 launch skye_factr_teleop start_teleop_m6_dual.launch.py \
   robot_profile:=thor \
-  left_params_file:=/path/to/left_runtime.yaml \
-  right_params_file:=/path/to/right_runtime.yaml
+  left_config:=/path/to/left_calibrated.yaml \
+  right_config:=/path/to/right_calibrated.yaml
 ```
 
 Each side is remapped independently:

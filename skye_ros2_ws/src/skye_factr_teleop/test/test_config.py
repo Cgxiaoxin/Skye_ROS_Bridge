@@ -27,6 +27,51 @@ def _write(tmp_path, document):
     return path
 
 
+def _calibrated_document():
+    document = _document()
+    document["runtime"] = {
+        "joint_offsets": [0.0] * 8,
+        "current_limit_ma": 50.0,
+        "max_velocity": [0.5] * 8,
+        "max_acceleration": [1.0] * 8,
+        "max_jerk": [4.0] * 8,
+    }
+    return document
+
+
+def test_teleop_requires_complete_runtime_but_readonly_tools_can_load_template(tmp_path):
+    assert load_config(LEFT_CONFIG).runtime is None
+    with pytest.raises(ConfigError, match="runtime is required"):
+        load_config(LEFT_CONFIG, require_runtime=True)
+    runtime = load_config(_write(tmp_path, _calibrated_document()), require_runtime=True).runtime
+    assert runtime.current_limit_ma == 50.0
+    assert runtime.state_timeout == 0.25
+
+
+@pytest.mark.parametrize("field", [
+    "joint_offsets", "current_limit_ma", "max_velocity", "max_acceleration", "max_jerk",
+])
+def test_missing_runtime_field_fails_startup_validation(tmp_path, field):
+    document = _calibrated_document()
+    document["runtime"].pop(field)
+    with pytest.raises(ConfigError, match=f"runtime.{field} is required"):
+        load_config(_write(tmp_path, document), require_runtime=True)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("joint_offsets", [0.0] * 7),
+    ("current_limit_ma", 0.0),
+    ("max_velocity", [0.5] * 7),
+    ("max_acceleration", [1.0] * 7),
+    ("max_jerk", [0.0] * 8),
+])
+def test_invalid_runtime_field_fails_startup_validation(tmp_path, field, value):
+    document = _calibrated_document()
+    document["runtime"][field] = value
+    with pytest.raises(ConfigError, match=f"runtime.{field}"):
+        load_config(_write(tmp_path, document), require_runtime=True)
+
+
 def test_left_and_right_configs_load_and_preserve_differences():
     left = load_config(LEFT_CONFIG)
     right = load_config(RIGHT_CONFIG)

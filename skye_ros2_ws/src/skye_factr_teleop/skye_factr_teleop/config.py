@@ -152,27 +152,41 @@ class ControllerConfig:
 
 
 @dataclass(frozen=True)
+class RuntimeConfig:
+    joint_offsets: tuple[float, ...]
+    current_limit_ma: float
+    max_velocity: tuple[float, ...]
+    max_acceleration: tuple[float, ...]
+    max_jerk: tuple[float, ...]
+    state_timeout: float
+    future_tolerance: float
+    allow_unnamed_joint_states: bool
+
+
+@dataclass(frozen=True)
 class TeleopConfig:
     name: str
     dynamixel: DynamixelConfig
     arm_teleop: ArmTeleopConfig
     gripper_teleop: GripperTeleopConfig
     controller: ControllerConfig
+    runtime: RuntimeConfig | None
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "TeleopConfig":
         data = _map(value, "config")
-        _only(data, {"name", "dynamixel", "arm_teleop", "gripper_teleop", "controller"}, "config")
+        _only(data, {"name", "dynamixel", "arm_teleop", "gripper_teleop", "controller", "runtime"}, "config")
         return cls(
             _str(_req(data, "name", "config"), "name"),
             _dynamixel(_req(data, "dynamixel", "config")),
             _arm(_req(data, "arm_teleop", "config")),
             _gripper(_req(data, "gripper_teleop", "config")),
             _controller(_req(data, "controller", "config")),
+            _runtime(data["runtime"]) if "runtime" in data else None,
         )
 
 
-def load_config(path: Union[str, Path]) -> TeleopConfig:
+def load_config(path: Union[str, Path], *, require_runtime: bool = False) -> TeleopConfig:
     """Safely load *path*, validate it, and return frozen dataclasses."""
     config_path = Path(path)
     try:
@@ -183,7 +197,10 @@ def load_config(path: Union[str, Path]) -> TeleopConfig:
     if document is None:
         raise ConfigError(f"{config_path}: configuration is empty")
     try:
-        return TeleopConfig.from_mapping(document)
+        config = TeleopConfig.from_mapping(document)
+        if require_runtime and config.runtime is None:
+            raise ConfigError("config.runtime is required for teleop startup; supply measured calibration and limits")
+        return config
     except ConfigError as exc:
         raise ConfigError(f"{config_path}: {exc}") from exc
 
@@ -296,6 +313,25 @@ def _controller(value: Any) -> ControllerConfig:
         _joint_position(_req(data, "joint_position_control", path)),
         _gripper_feedback(_req(data, "gripper_feedback", path)),
         _hold_ruckig(_req(data, "hold_ruckig_control", path)),
+    )
+
+
+def _runtime(value: Any) -> RuntimeConfig:
+    path = "runtime"
+    data = _map(value, path)
+    _only(data, {
+        "joint_offsets", "current_limit_ma", "max_velocity", "max_acceleration",
+        "max_jerk", "state_timeout", "future_tolerance", "allow_unnamed_joint_states",
+    }, path)
+    return RuntimeConfig(
+        _vec(_req(data, "joint_offsets", path), MOTOR_COUNT, f"{path}.joint_offsets", False),
+        _positive(_req(data, "current_limit_ma", path), f"{path}.current_limit_ma"),
+        _positive_vec(_req(data, "max_velocity", path), MOTOR_COUNT, f"{path}.max_velocity", False),
+        _positive_vec(_req(data, "max_acceleration", path), MOTOR_COUNT, f"{path}.max_acceleration", False),
+        _positive_vec(_req(data, "max_jerk", path), MOTOR_COUNT, f"{path}.max_jerk", False),
+        _positive(data.get("state_timeout", 0.25), f"{path}.state_timeout"),
+        _positive(data.get("future_tolerance", 0.05), f"{path}.future_tolerance"),
+        _bool(data.get("allow_unnamed_joint_states", False), f"{path}.allow_unnamed_joint_states"),
     )
 
 
@@ -488,8 +524,8 @@ def _nonnegative_vec(value: Any, size: int, path: str, scalar: bool = True) -> t
     return result
 
 
-def _positive_vec(value: Any, size: int, path: str) -> tuple[float, ...]:
-    result = _vec(value, size, path)
+def _positive_vec(value: Any, size: int, path: str, scalar: bool = True) -> tuple[float, ...]:
+    result = _vec(value, size, path, scalar)
     if any(item <= 0 for item in result):
         raise ConfigError(f"{path} values must be positive")
     return result

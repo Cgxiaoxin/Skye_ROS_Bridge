@@ -938,6 +938,16 @@ QoS 与 `skye_robot_driver` 对齐：
   `colcon test-result` 零错误、零失败、零跳过。安装后的三个 `--show-args` 入口及
   四份控制配置可从包 share 读取。未连接真机，跨节点 ROS 图验收继续由 5.3 承担。
 
+配置合并调整（2026-10-08，替代上文 5.1/5.2 的双文件启动方式）：
+
+- 每侧只使用一份控制 YAML。操作员复制对应 profile 的配置，并在顶层 `runtime`
+  填入实测 `joint_offsets`、`current_limit_ma` 和 8 轴速度、加速度、jerk 上限；
+  `state_timeout`、`future_tolerance`、`allow_unnamed_joint_states` 也在此段配置。
+- `left_params_file` / `right_params_file` 已移除；`left_config` / `right_config`
+  指向合并后的单份 YAML。`config_path` 只用于告知节点加载哪份文件。
+- 包内 Thor/Orin YAML 保留为无标定模板。launch 在返回任一节点动作前检查两侧
+  文件和 `runtime`，节点自身也在打开串口前检查。缺少或无效的实测值拒绝启动。
+
 ### 任务 5.3：ROS 接口测试
 
 测试内容：

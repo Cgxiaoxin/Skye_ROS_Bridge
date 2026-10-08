@@ -8,7 +8,7 @@
 
 ## 配置
 
-Thor M6 默认参数安装在 `config/grav_comp_m6_left.yaml` 和 `config/grav_comp_m6_right.yaml`。可以用 `skye_factr_teleop.config.load_config` 加载并校验其中任一文件。返回的嵌套 dataclass 和数值元组不可修改。
+Thor M6 未标定的控制模板安装在 `config/grav_comp_m6_left.yaml` 和 `config/grav_comp_m6_right.yaml`。可以用 `skye_factr_teleop.config.load_config` 加载并校验其中任一文件。返回的嵌套 dataclass 和数值元组不可修改。
 
 Thor 搭配遥操作设备 A，Orin 搭配遥操作设备 B；Orin 配置安装在 `config/orin/` 下。两套配置分别使用对应设备的舵机端口和物理方向，原有的各自增益与臂关节限位屏障设置保持不变。新包尚未对这两种配对完成真机验收。这些配置描述主臂硬件，而不是从臂关节方向的语义映射。
 
@@ -33,25 +33,36 @@ ros2 run skye_factr_teleop skye_factr_teleop_driver --help
 
 ## 任务 5.1：ROS 驱动节点
 
-使用可执行程序参数 `--side left|right` 选择侧别，默认 `left`。默认节点名分别为 `skye_factr_teleop_left` 和 `skye_factr_teleop_right`，也支持标准 ROS 节点名重映射。应为该侧小臂提供包含已标定偏移和运动上限的 ROS 参数文件。启动后参数只读：
+使用可执行程序参数 `--side left|right` 选择侧别，默认 `left`。默认节点名分别为 `skye_factr_teleop_left` 和 `skye_factr_teleop_right`，也支持标准 ROS 节点名重映射。每侧提供一份包含控制配置、标定偏移和运动上限的 YAML。唯一的 ROS 参数是启动后只读的 `config_path`：
 
 | 参数 | 含义／默认值 |
 |---|---|
 | `config_path` | YAML 绝对路径或相对于包 share 目录的路径；留空时使用 `config/grav_comp_m6_<side>.yaml` |
-| `joint_offsets` | 必填：8 个物理舵机的标定偏移，单位 rad，包含夹爪 |
-| `current_limit_ma` | 必填：正数电流上限，同时受舵机额定值约束 |
-| `max_velocity`、`max_acceleration`、`max_jerk` | 必填：按主臂逻辑关节顺序排列的 8 个正数上限，单位分别为 rad/s、rad/s²、rad/s³ |
-| `state_timeout` | 消息头最大年龄与接收后最长时间，单位秒；默认 `0.25` |
-| `future_tolerance` | 消息头时间戳允许超前的秒数；默认 `0.05` |
-| `allow_unnamed_joint_states` | 默认 `false`；设为 true 后，无名称消息按固定 J1..J7 顺序解释 |
+| `runtime.joint_offsets` | 必填：8 个物理舵机的标定偏移，单位 rad，包含夹爪 |
+| `runtime.current_limit_ma` | 必填：正数电流上限，同时受舵机额定值约束 |
+| `runtime.max_velocity`、`runtime.max_acceleration`、`runtime.max_jerk` | 必填：按主臂逻辑关节顺序排列的 8 个正数上限，单位分别为 rad/s、rad/s²、rad/s³ |
+| `runtime.state_timeout` | 消息头最大年龄与接收后最长时间，单位秒；默认 `0.25` |
+| `runtime.future_tolerance` | 消息头时间戳允许超前的秒数；默认 `0.05` |
+| `runtime.allow_unnamed_joint_states` | 默认 `false`；设为 true 后，无名称消息按固定 J1..J7 顺序解释 |
 
-ROS 参数文件将这些值放在节点的 `ros__parameters` 下，它与 `config_path` 指向的控制 YAML 是两个文件。缺少偏移或上限时，节点会在打开串口前启动失败。节点通过 `skye_factr_description` 查找主臂 URDF，并使用 `dynamics.py` 中的 Pinocchio 适配器执行 RNEA、局部关节雅可比和正运动学。运行时 Python 依赖包括基线版本的 Pinocchio 和 Ruckig。
+复制对应的 Thor 或 Orin YAML 作为每台设备的独立文件，并加入顶层 `runtime`。包内模板故意不含此段，不能直接用于遥操启动。所需结构如下，启动前须将占位内容换成实测数值：
 
-通过阶段 7 硬件关卡后，操作员提供 ROS 参数文件的左臂启动命令示例如下：
+```yaml
+runtime:
+  joint_offsets: [<8 个实测弧度值>]
+  current_limit_ma: <实测安全电流上限，mA>
+  max_velocity: [<8 个正数上限，rad/s>]
+  max_acceleration: [<8 个正数上限，rad/s²>]
+  max_jerk: [<8 个正数上限，rad/s³>]
+```
+
+缺少或无效的值会使节点在打开串口前启动失败。节点通过 `skye_factr_description` 查找主臂 URDF，并使用 `dynamics.py` 中的 Pinocchio 适配器执行 RNEA、局部关节雅可比和正运动学。运行时 Python 依赖包括基线版本的 Pinocchio 和 Ruckig。
+
+通过阶段 7 硬件关卡后，操作员提供合并后 YAML 的左臂启动命令示例如下：
 
 ```bash
 ros2 run skye_factr_teleop skye_factr_teleop_driver --side left --ros-args \
-  --params-file /path/to/left_runtime.yaml \
+  -p config_path:=/path/to/left_calibrated.yaml \
   -r /joint_state:=/gento/left_joint_states \
   -r /joint_control:=/gento/left_joint_control \
   -r /joint_move:=/left_joint_move \
@@ -59,7 +70,7 @@ ros2 run skye_factr_teleop skye_factr_teleop_driver --side left --ros-args \
   -r /leader_arm/target_joint_state:=/left_leader_arm/target_joint_state
 ```
 
-右臂实例使用 `--side right`、右臂参数文件和右侧话题重映射。模式话题全局共享。节点提供以下基本接口，QoS 遵循阶段 0 冻结的契约：
+右臂实例使用 `--side right`、右臂标定 YAML 和右侧话题重映射。模式话题全局共享。节点提供以下基本接口，QoS 遵循阶段 0 冻结的契约：
 
 | 方向 | 话题 | 类型 |
 |---|---|---|
@@ -94,24 +105,23 @@ python3 -m pytest -q test/test_ros_driver.py test/test_dynamics.py test/test_dyn
 | 参数 | 含义 |
 |---|---|
 | `robot_profile` | `thor`：`config/grav_comp_m6_<side>.yaml`；`orin`：`config/orin/grav_comp_m6_<side>.yaml` |
-| `left_params_file`、`right_params_file` | 每个启动的小臂都必须提供：包含上述标定偏移、电流上限和轨迹上限的 ROS 参数 YAML |
-| `left_config`、`right_config` | 可选的每侧控制 YAML 覆盖路径；留空时使用 profile 默认配置 |
+| `left_config`、`right_config` | 每侧合并后 YAML 的路径；留空时使用 profile 模板，但模板缺少标定，不能直接启动遥操 |
 
-两类文件参数都支持绝对路径或相对于包 share 目录的路径。所选控制 YAML 的优先级高于 ROS 参数文件里的 `config_path`。单臂 launch 只声明该侧参数；双臂 launch 在启动节点前检查两侧文件路径。参数文件应分别使用节点键 `skye_factr_teleop_left` 和 `skye_factr_teleop_right`，也可以在左右两份文件中各使用 `/**`。launch 不会代填未经标定的偏移、电流或运动上限。
+每侧配置路径支持绝对路径或相对于包 share 目录的路径。单臂 launch 只声明该侧配置；双臂 launch 在启动任一节点前检查两侧文件及必填运行值。launch 不会代填未经标定的偏移、电流或运动上限。
 
-完成硬件验收后，使用操作员提供的运行参数文件启动：
+完成硬件验收后，使用操作员提供的标定 YAML 启动：
 
 ```bash
 ros2 launch skye_factr_teleop start_teleop_m6_left.launch.py \
-  robot_profile:=thor left_params_file:=/path/to/left_runtime.yaml
+  robot_profile:=thor left_config:=/path/to/left_calibrated.yaml
 
 ros2 launch skye_factr_teleop start_teleop_m6_right.launch.py \
-  robot_profile:=orin right_params_file:=/path/to/right_runtime.yaml
+  robot_profile:=orin right_config:=/path/to/right_calibrated.yaml
 
 ros2 launch skye_factr_teleop start_teleop_m6_dual.launch.py \
   robot_profile:=thor \
-  left_params_file:=/path/to/left_runtime.yaml \
-  right_params_file:=/path/to/right_runtime.yaml
+  left_config:=/path/to/left_calibrated.yaml \
+  right_config:=/path/to/right_calibrated.yaml
 ```
 
 每侧话题独立重映射：

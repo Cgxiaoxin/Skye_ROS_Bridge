@@ -11,6 +11,8 @@ from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+from .config import ConfigError, load_config
+
 
 def _existing_file(value, share, argument):
     if not value:
@@ -35,10 +37,12 @@ def _launch_setup(context, *, sides):
     for side in sides:
         config = LaunchConfiguration(f"{side}_config").perform(context)
         config = config or str(config_dir / f"grav_comp_m6_{side}.yaml")
-        params = LaunchConfiguration(f"{side}_params_file").perform(context)
-        files.append((side,
-                      _existing_file(config, share, f"{side}_config"),
-                      _existing_file(params, share, f"{side}_params_file")))
+        config = _existing_file(config, share, f"{side}_config")
+        try:
+            load_config(config, require_runtime=True)
+        except ConfigError as exc:
+            raise RuntimeError(f"{side}_config invalid: {exc}") from exc
+        files.append((side, config))
 
     return [
         Node(
@@ -47,7 +51,7 @@ def _launch_setup(context, *, sides):
             name=f"skye_factr_teleop_{side}",
             namespace="",
             arguments=["--side", side],
-            parameters=[params, {"config_path": config}],
+            parameters=[{"config_path": config}],
             remappings=[
                 ("/joint_state", f"/gento/{side}_joint_states"),
                 ("/joint_control", f"/gento/{side}_joint_control"),
@@ -57,29 +61,22 @@ def _launch_setup(context, *, sides):
             ],
             output="screen",
         )
-        for side, config, params in files
+        for side, config in files
     ]
 
 
 def leader_launch_description(sides):
-    """Declare profile, control YAML overrides, and required per-arm parameters."""
+    """Declare profile and one validated configuration YAML per arm."""
     actions = [DeclareLaunchArgument(
         "robot_profile", default_value="thor", choices=["thor", "orin"],
         description="Select the packaged leader hardware/control configuration",
     )]
     for side in sides:
-        actions.extend([
-            DeclareLaunchArgument(
-                f"{side}_params_file",
-                description=(f"{side} ROS parameter YAML with calibrated joint_offsets, "
-                             "current_limit_ma, max_velocity/max_acceleration/max_jerk; "
-                             "absolute or relative to the package share"),
-            ),
-            DeclareLaunchArgument(
-                f"{side}_config", default_value="",
-                description=(f"Override the {side} control YAML selected by robot_profile; "
-                             "absolute or relative to the package share"),
-            ),
-        ])
+        actions.append(DeclareLaunchArgument(
+            f"{side}_config", default_value="",
+            description=(f"{side} unified control and runtime YAML with measured calibration; "
+                         "empty selects the robot_profile template (which lacks calibration); "
+                         "absolute or relative to the package share"),
+        ))
     actions.append(OpaqueFunction(function=_launch_setup, kwargs={"sides": sides}))
     return LaunchDescription(actions)

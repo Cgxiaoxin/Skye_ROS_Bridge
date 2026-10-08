@@ -69,3 +69,11 @@
   `/gento/<side>_joint_control`；独立走位、leader 当前/目标状态使用左右独立话题。
   模式请求和 `/teleop/state` 保持共享。基础 launch 不启动键盘或大臂节点，使用
   ROS CLI 发出模式请求。
+
+## 2026-10-08：单份 YAML 配置
+
+- 上述 `left_params_file` / `right_params_file` 双文件方式已移除。每侧复制对应
+  Thor/Orin 控制 YAML，并在同一文件的顶层 `runtime` 填入实测偏移、电流上限和
+  8 轴速度、加速度、jerk 上限；再通过 `left_config` / `right_config` 传入。
+- 包内 profile 文件是无标定模板，不能直接启动遥操。launch 对两侧完整配置预检，
+  节点再次校验后才可能打开串口。`config_path` 仍是只读 ROS 参数，仅用来选择文件。

@@ -3,6 +3,16 @@
 # Thor: leader device A.
 name: grav_comp_m6_left # 主遥操未使用；仅辅助检查程序核对名称
 
+# 遥操标定模板：复制本文件，填入本侧实测值，再取消下列注释。
+# null 是占位符，不能用于启动。偏移按物理舵机 ID 1..8（含夹爪）排列；
+# 轨迹上限按主臂逻辑 8 轴顺序排列。电流单位 mA，其余单位见各字段。
+# runtime:
+#   joint_offsets: [null, null, null, null, null, null, null, null]  # rad
+#   current_limit_ma: null  # mA，正数
+#   max_velocity: [null, null, null, null, null, null, null, null]  # rad/s
+#   max_acceleration: [null, null, null, null, null, null, null, null]  # rad/s²
+#   max_jerk: [null, null, null, null, null, null, null, null]  # rad/s³
+
 dynamixel:
   dynamixel_port: usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0 # 遥操设备A（Thor）
   servo_types:

@@ -60,13 +60,6 @@ def _vector(value, size, label):
     return result
 
 
-def _positive(value, label):
-    value = float(value)
-    if not np.isfinite(value) or value <= 0:
-        raise ValueError(f"{label} must be finite and positive")
-    return value
-
-
 def resolve_config_path(value, side):
     path = Path(value) if value else Path(f"config/grav_comp_m6_{side}.yaml")
     if not path.is_absolute():
@@ -153,20 +146,17 @@ class SkyeFactrTeleopNode(Node):
 
     def _configure(self):
         config_path = self._parameter("config_path", "")
-        self.config = load_config(resolve_config_path(config_path, self.side))
-        self._offsets = _vector(self._parameter("joint_offsets", []), 8, "joint_offsets")
-        self._current_limit = _positive(self._parameter("current_limit_ma", 0.0), "current_limit_ma")
-        self._limits = {}
-        for name in ("max_velocity", "max_acceleration", "max_jerk"):
-            value = _vector(self._parameter(name, []), 8, name)
-            if np.any(value <= 0):
-                raise ValueError(f"{name} must be positive")
-            self._limits[name] = value
-        self._max_age = _positive(self._parameter("state_timeout", 0.25), "state_timeout")
-        self._future_tolerance = _positive(self._parameter("future_tolerance", 0.05), "future_tolerance")
-        self._allow_unnamed = self._parameter("allow_unnamed_joint_states", False)
-        if not isinstance(self._allow_unnamed, bool):
-            raise ValueError("allow_unnamed_joint_states must be bool")
+        self.config = load_config(resolve_config_path(config_path, self.side), require_runtime=True)
+        runtime = self.config.runtime
+        self._offsets = np.asarray(runtime.joint_offsets)
+        self._current_limit = runtime.current_limit_ma
+        self._limits = {
+            name: np.asarray(getattr(runtime, name))
+            for name in ("max_velocity", "max_acceleration", "max_jerk")
+        }
+        self._max_age = runtime.state_timeout
+        self._future_tolerance = runtime.future_tolerance
+        self._allow_unnamed = runtime.allow_unnamed_joint_states
         prefix = "l" if self.side == "left" else "r"
         self._names = [f"{prefix}_j{i}" for i in range(1, 8)]
 

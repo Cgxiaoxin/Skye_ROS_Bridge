@@ -11,6 +11,7 @@ import time
 
 import numpy as np
 import pytest
+import yaml
 
 pytest.importorskip("rclpy")
 from rclpy.context import Context
@@ -82,17 +83,21 @@ def context(monkeypatch, tmp_path):
 
 
 @pytest.fixture
-def make_node(context, monkeypatch):
+def make_node(context, monkeypatch, tmp_path):
     nodes = []
 
-    def make(side="left", *, parameters=None, hardware=None, record_publishers=True, **kwargs):
-        values = {
-            "config_path": str(Path(__file__).parents[1] / "config" / f"grav_comp_m6_{side}.yaml"),
+    def make(side="left", *, parameters=None, config_path_override=None,
+             hardware=None, record_publishers=True, **kwargs):
+        source = Path(__file__).parents[1] / "config" / f"grav_comp_m6_{side}.yaml"
+        document = yaml.safe_load(source.read_text(encoding="utf-8"))
+        document["runtime"] = {
             "joint_offsets": [0.0] * 8, "current_limit_ma": 50.0,
             "max_velocity": [0.5] * 8, "max_acceleration": [1.0] * 8,
             "max_jerk": [4.0] * 8,
         }
-        values.update(parameters or {})
+        document["runtime"].update(parameters or {})
+        config_path = tmp_path / f"{side}_{len(nodes)}.yaml"
+        config_path.write_text(yaml.safe_dump(document), encoding="utf-8")
         hardware = hardware or Hardware()
         trajectories = []
         clock = SimpleNamespace(now=100.0)
@@ -104,7 +109,7 @@ def make_node(context, monkeypatch):
 
         node = module.SkyeFactrTeleopNode(
             side, context=context, use_global_arguments=False,
-            parameter_overrides=[Parameter(key, value=value) for key, value in values.items()],
+            parameter_overrides=[Parameter("config_path", value=str(config_path_override or config_path))],
             hardware_factory=lambda config: hardware,
             dynamics_factory=lambda config: FakeDynamics(),
             trajectory_factory=factory, monotonic=lambda: clock.now, **kwargs,
@@ -311,16 +316,24 @@ def test_shutdown_closes_even_when_cleanup_or_callback_fails(make_node, fault):
     ("joint_offsets", [0.0] * 7), ("current_limit_ma", 0.0),
     ("max_jerk", [-1.0] * 8), ("state_timeout", -0.1),
 ])
-def test_invalid_parameters_fail_before_hardware_open(make_node, key, value):
+def test_invalid_runtime_values_fail_before_hardware_open(make_node, key, value):
     hardware = Hardware()
     with pytest.raises(ValueError):
         make_node(parameters={key: value}, hardware=hardware)
     assert hardware.open_calls == []
 
 
+def test_missing_runtime_fails_before_hardware_open(make_node):
+    hardware = Hardware()
+    template = Path(__file__).parents[1] / "config/grav_comp_m6_left.yaml"
+    with pytest.raises(ValueError, match="runtime is required"):
+        make_node(config_path_override=template, hardware=hardware)
+    assert hardware.open_calls == []
+
+
 def test_parameter_changes_are_rejected(make_node):
     node = make_node().node
-    result = node.set_parameters([Parameter("current_limit_ma", value=100.0)])
+    result = node.set_parameters([Parameter("config_path", value="/other.yaml")])
     assert not result[0].successful
 
 
