@@ -259,7 +259,7 @@ class ControlCore:
         # 未传入时，按配置生成开关；静摩擦跟随重力开关，保持上游默认行为。
         # 此处显式指定各字段，因此修改 ControlTerms 类的字段默认值不会影响此分支。
         self.terms = terms or ControlTerms(
-            joint_limits=config.arm_teleop.arm_limit_barrier_enable,
+            joint_limits=config.controller.joint_limit_barrier.arm_limit_barrier_enable,
             gravity=config.controller.gravity_comp.enable,
             static_friction=config.controller.gravity_comp.enable,
             nullspace=config.controller.null_space_regulation.enable,
@@ -400,16 +400,17 @@ class ControlCore:
         tracking = np.zeros(MOTOR_COUNT)
         target = target_velocity = None
         next_flags = self._dither_positive
-        arm, ctrl = self.config.arm_teleop, self.config.controller
+        ctrl = self.config.controller
         if self.hardware.torque_enabled:
             tracking, target, target_velocity = self._update_tracking(state, dt)
             motion = self.mode in (ControlMode.TELEOP_SYNCING, ControlMode.HOLD_SETTLING, ControlMode.SYNCED)
             if self.terms.joint_limits:
                 limit = joint_limit_barrier(
-                    state, arm.arm_joint_limits_min, arm.arm_joint_limits_max,
+                    state, ctrl.joint_limit_barrier.arm_joint_limits_min,
+                    ctrl.joint_limit_barrier.arm_joint_limits_max,
                     ctrl.joint_limit_barrier.kp, ctrl.joint_limit_barrier.kd,
                     self.config.gripper_teleop.limit_min, self.config.gripper_teleop.limit_max,
-                    margin=arm.arm_joint_limits_safety_margin,
+                    margin=ctrl.joint_limit_barrier.arm_joint_limits_safety_margin,
                 )
             if self.terms.gravity or self.terms.static_friction:
                 gain = ctrl.gravity_comp.gain

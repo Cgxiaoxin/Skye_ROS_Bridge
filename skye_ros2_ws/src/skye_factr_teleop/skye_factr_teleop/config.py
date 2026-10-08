@@ -47,10 +47,6 @@ class ArmTeleopConfig:
     baudrate: int
     num_arm_joints: int
     use_suction_cup: bool
-    arm_limit_barrier_enable: bool
-    arm_joint_limits_max: tuple[float, ...]
-    arm_joint_limits_min: tuple[float, ...]
-    arm_joint_limits_safety_margin: float
     initialization: InitializationConfig
     enable_follower_gravity_comp: bool
     follower_urdf_package: str
@@ -98,9 +94,13 @@ class StaticFrictionConfig:
 
 
 @dataclass(frozen=True)
-class PdConfig:
+class JointLimitBarrierConfig:
     kp: float
     kd: float
+    arm_limit_barrier_enable: bool
+    arm_joint_limits_max: tuple[float, ...]
+    arm_joint_limits_min: tuple[float, ...]
+    arm_joint_limits_safety_margin: float
 
 
 @dataclass(frozen=True)
@@ -145,7 +145,7 @@ class ControllerConfig:
     gravity_comp: GravityCompConfig
     null_space_regulation: NullSpaceConfig
     static_friction_comp: StaticFrictionConfig
-    joint_limit_barrier: PdConfig
+    joint_limit_barrier: JointLimitBarrierConfig
     joint_position_control: JointPositionConfig
     gripper_feedback: GripperFeedbackConfig
     hold_ruckig_control: HoldRuckigConfig
@@ -231,25 +231,13 @@ def _arm(value: Any) -> ArmTeleopConfig:
     data = _map(value, path)
     _only(data, {
         "leader_urdf_package", "leader_urdf", "leader_name", "baudrate",
-        "num_arm_joints", "use_suction_cup", "arm_limit_barrier_enable",
-        "arm_joint_limits_max", "arm_joint_limits_min",
-        "arm_joint_limits_safety_margin", "initialization",
+        "num_arm_joints", "use_suction_cup", "initialization",
         "enable_follower_gravity_comp", "follower_urdf_package",
         "follower_urdf", "follower_joint_offset", "follower_gravity_in_world",
     }, path)
     count = _int(_req(data, "num_arm_joints", path), f"{path}.num_arm_joints")
     if count != ARM_JOINT_COUNT:
         raise ConfigError(f"{path}.num_arm_joints must be {ARM_JOINT_COUNT}")
-    lower = _vec(_req(data, "arm_joint_limits_min", path), count, f"{path}.arm_joint_limits_min", False)
-    upper = _vec(_req(data, "arm_joint_limits_max", path), count, f"{path}.arm_joint_limits_max", False)
-    margin = _num(_req(data, "arm_joint_limits_safety_margin", path), f"{path}.arm_joint_limits_safety_margin")
-    if margin < 0:
-        raise ConfigError(f"{path}.arm_joint_limits_safety_margin must be non-negative")
-    for index, (minimum, maximum) in enumerate(zip(lower, upper), 1):
-        if minimum >= maximum:
-            raise ConfigError(f"{path} joint {index} lower limit must be below upper limit")
-        if minimum + margin >= maximum - margin:
-            raise ConfigError(f"{path} joint {index} safety margin leaves no valid range")
     init_path = f"{path}.initialization"
     init = _map(_req(data, "initialization", path), init_path)
     _only(init, {"calibration_joint_pos", "initial_match_joint_pos"}, init_path)
@@ -269,8 +257,7 @@ def _arm(value: Any) -> ArmTeleopConfig:
         _str(_req(data, "leader_name", path), f"{path}.leader_name"),
         baudrate, count,
         _bool(_req(data, "use_suction_cup", path), f"{path}.use_suction_cup"),
-        _bool(_req(data, "arm_limit_barrier_enable", path), f"{path}.arm_limit_barrier_enable"),
-        upper, lower, margin, initialization,
+        initialization,
         _bool(_req(data, "enable_follower_gravity_comp", path), f"{path}.enable_follower_gravity_comp"),
         _package(_req(data, "follower_urdf_package", path), f"{path}.follower_urdf_package"),
         _resource(_req(data, "follower_urdf", path), f"{path}.follower_urdf"),
@@ -309,7 +296,7 @@ def _controller(value: Any) -> ControllerConfig:
         _gravity_comp(_req(data, "gravity_comp", path)),
         _null_space(_req(data, "null_space_regulation", path)),
         _static_friction(_req(data, "static_friction_comp", path)),
-        _pd(_req(data, "joint_limit_barrier", path), f"{path}.joint_limit_barrier"),
+        _joint_limit_barrier(_req(data, "joint_limit_barrier", path)),
         _joint_position(_req(data, "joint_position_control", path)),
         _gripper_feedback(_req(data, "gripper_feedback", path)),
         _hold_ruckig(_req(data, "hold_ruckig_control", path)),
@@ -383,11 +370,30 @@ def _static_friction(value: Any) -> StaticFrictionConfig:
     )
 
 
-def _pd(value: Any, path: str) -> PdConfig:
+def _joint_limit_barrier(value: Any) -> JointLimitBarrierConfig:
+    path = "controller.joint_limit_barrier"
     data = _map(value, path)
-    _only(data, {"kp", "kd"}, path)
-    return PdConfig(_nonnegative(_req(data, "kp", path), f"{path}.kp"),
-                    _nonnegative(_req(data, "kd", path), f"{path}.kd"))
+    _only(data, {
+        "kp", "kd", "arm_limit_barrier_enable", "arm_joint_limits_max",
+        "arm_joint_limits_min", "arm_joint_limits_safety_margin",
+    }, path)
+    lower = _vec(_req(data, "arm_joint_limits_min", path), ARM_JOINT_COUNT,
+                 f"{path}.arm_joint_limits_min", False)
+    upper = _vec(_req(data, "arm_joint_limits_max", path), ARM_JOINT_COUNT,
+                 f"{path}.arm_joint_limits_max", False)
+    margin = _nonnegative(_req(data, "arm_joint_limits_safety_margin", path),
+                          f"{path}.arm_joint_limits_safety_margin")
+    for index, (minimum, maximum) in enumerate(zip(lower, upper), 1):
+        if minimum >= maximum:
+            raise ConfigError(f"{path} joint {index} lower limit must be below upper limit")
+        if minimum + margin >= maximum - margin:
+            raise ConfigError(f"{path} joint {index} safety margin leaves no valid range")
+    return JointLimitBarrierConfig(
+        _nonnegative(_req(data, "kp", path), f"{path}.kp"),
+        _nonnegative(_req(data, "kd", path), f"{path}.kd"),
+        _bool(_req(data, "arm_limit_barrier_enable", path), f"{path}.arm_limit_barrier_enable"),
+        upper, lower, margin,
+    )
 
 
 def _joint_position(value: Any) -> JointPositionConfig:

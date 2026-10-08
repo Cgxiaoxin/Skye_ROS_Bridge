@@ -160,8 +160,9 @@ def test_position_only_preserves_joint_limit_and_nullspace_damping():
 
     dynamics.gravity = gravity
     result = core.step()
-    arm, ctrl = core.config.arm_teleop, core.config.controller
-    upper = arm.arm_joint_limits_max[0] - arm.arm_joint_limits_safety_margin
+    ctrl = core.config.controller
+    barrier = ctrl.joint_limit_barrier
+    upper = barrier.arm_joint_limits_max[0] - barrier.arm_joint_limits_safety_margin
     expected_limit = -ctrl.joint_limit_barrier.kp * (position[0] - upper) - ctrl.joint_limit_barrier.kd * velocity[0]
     n = ctrl.null_space_regulation
     expected_nullspace = -n.kp[6] * (position[6] - n.null_space_joint_target[6]) - n.kd[6] * velocity[6]

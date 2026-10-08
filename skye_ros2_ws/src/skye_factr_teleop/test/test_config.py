@@ -137,7 +137,7 @@ def test_missing_required_fields_fail(mutation, match):
     [
         (("dynamixel", "servo_types"), ["XM430-W350"] * 7, "8 values"),
         (("dynamixel", "joint_signs"), [1] * 7, "8 values"),
-        (("arm_teleop", "arm_joint_limits_max"), [1.0] * 6, "7 values"),
+        (("controller", "joint_limit_barrier", "arm_joint_limits_max"), [1.0] * 6, "7 values"),
         (("controller", "gravity_comp", "gain"), [1.0] * 6, "7 values"),
         (("controller", "hold_ruckig_control", "hold_kp"), [1.0] * 7, "8 values"),
         (("controller", "hold_ruckig_control", "hold_gravity_comp_gain"), [1.0] * 8, "7 values"),
@@ -163,14 +163,14 @@ def test_non_finite_values_fail(tmp_path, bad_value):
 
 def test_reversed_joint_limits_fail():
     document = _document()
-    document["arm_teleop"]["arm_joint_limits_min"][2] = 4.0
+    document["controller"]["joint_limit_barrier"]["arm_joint_limits_min"][2] = 4.0
     with pytest.raises(ConfigError, match="lower limit"):
         TeleopConfig.from_mapping(document)
 
 
 def test_safety_margin_must_leave_a_valid_range():
     document = _document()
-    document["arm_teleop"]["arm_joint_limits_safety_margin"] = 2.0
+    document["controller"]["joint_limit_barrier"]["arm_joint_limits_safety_margin"] = 2.0
     with pytest.raises(ConfigError, match="safety margin"):
         TeleopConfig.from_mapping(document)
 

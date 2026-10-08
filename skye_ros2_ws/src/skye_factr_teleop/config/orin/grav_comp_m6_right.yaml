@@ -34,12 +34,8 @@ arm_teleop:
   baudrate: 4000000
   num_arm_joints: 7 # 主遥操未使用；仅 config.py 校验
   use_suction_cup: false # 当前未消费
-  arm_limit_barrier_enable: false
-  arm_joint_limits_max: [3.0, 2.0, 3.0, 1.0472, 3.0, 0.9, 0.8]
-  arm_joint_limits_min: [-3.0, -2.0, -3.0, -2.5307, -3.0, -0.9, -0.5]
-  arm_joint_limits_safety_margin: 0.1
   initialization:
-    calibration_joint_pos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # 当前主遥操未消费；使用 ROS 参数 joint_offsets
+    calibration_joint_pos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # 当前主遥操未消费；使用 runtime.joint_offsets
     initial_match_joint_pos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # 当前未消费
   enable_follower_gravity_comp: true # 当前未消费
   follower_urdf_package: skye_factr_description # 当前未消费
@@ -58,6 +54,10 @@ controller:
   frequency: 500
 
   joint_limit_barrier:
+    arm_limit_barrier_enable: false
+    arm_joint_limits_max: [3.0, 2.0, 3.0, 1.0472, 3.0, 0.9, 0.8]
+    arm_joint_limits_min: [-3.0, -2.0, -3.0, -2.5307, -3.0, -0.9, -0.5]
+    arm_joint_limits_safety_margin: 0.1
     kp: 0.603561658022
     kd: 0.04315069084
 
