@@ -1,0 +1,80 @@
+# Tracking 力矩计算方案
+
+本文总结当前项目的 `tracking_torque` 实现，并分析其优缺点与后续开发建议。公式描述的是**逻辑关节坐标系中的指令力矩**，不等于电机最终输出力矩。主要依据是 [`ControlCore._update_tracking()`](../skye_factr_teleop/control_core.py)、[Ruckig 轨迹适配器](../skye_factr_teleop/trajectory.py)和[状态机](../skye_factr_teleop/state_machine.py)。
+
+## 计算方案
+
+对 7 个机械臂关节和 1 个夹爪统一计算。记第 `i` 轴的实测逻辑位置、速度为 $q_i,\dot q_i$，轨迹给出的目标位置、速度为 $q_{r,i},\dot q_{r,i}$，最终保持目标为 $q_i^*$。下式均按轴独立计算，增益取自 `controller.hold_ruckig_control`。
+
+### 1. 轨迹跟随：PD
+
+处于 `TELEOP_SYNCING` 且轨迹尚未结束时，每个控制周期先更新轨迹，再计算：
+
+$$
+\tau_{\mathrm{tracking},i}
+=K_{p,\mathrm{ruckig},i}(q_{r,i}-q_i)
++K_{d,\mathrm{ruckig},i}(\dot q_{r,i}-\dot q_i).
+$$
+
+轨迹由当前实测位置和速度启动，终点为同步时采集的跟随臂位置及夹爪目标；终点速度、加速度为零。`RuckigTrajectory.update()` 每调用一次推进一个固定控制周期，轨迹限制包括最大速度、加速度和加加速度。上述 PD 力矩只跟踪轨迹样本；代码没有单独添加轨迹加速度前馈力矩。
+
+### 2. 目标保持：带限幅积分的 PID
+
+处于 `HOLD_SETTLING` 或 `SYNCED` 时，令 $e_i=q_i^*-q_i$。每轴积分状态更新为：
+
+$$
+I_i[k]=
+\begin{cases}
+\operatorname{clip}\!\left(I_i[k-1]+e_i[k]\Delta t_k,
+-I_{\max,i},I_{\max,i}\right),
+& |e_i[k]|\le I_{\mathrm{thresh},i},\\
+0,& |e_i[k]|>I_{\mathrm{thresh},i}.
+\end{cases}
+$$
+
+其中 $\Delta t_k$ 是相邻两次 `step()` 的 `now` 差值。保持力矩为：
+
+$$
+\tau_{\mathrm{tracking},i}
+=K_{p,\mathrm{hold},i}e_i
+-K_{d,\mathrm{hold},i}\dot q_i
++K_{i,\mathrm{hold},i}I_i[k].
+$$
+
+保持目标速度为零，所以 D 项写为 $-K_d\dot q_i$。进入保持时积分状态清零。轨迹报告完成的**同一个控制周期**就切换到此公式，并临时令 $\Delta t_k=0$，避免把轨迹阶段的时间计入保持积分。
+
+在 `HOLD_SETTLING` 中，只有全部轴的位置误差和实测速度分别处于 `sync_position_tolerance`、`sync_velocity_tolerance` 内，并持续达到 `settle_duration`，状态才转为 `SYNCED`；进入 `SYNCED` 后仍按保持公式输出。同步和收敛各有超时退出机制。
+
+### 3. 输出边界
+
+其他模式下，或硬件力矩未使能时，`tracking_torque` 为零。每周期把它与关节限位、重力、摩擦及零空间力矩相加：
+
+$$
+\tau_{\mathrm{logical}}
+=\tau_{\mathrm{limit}}+\tau_{\mathrm{gravity}}
++\tau_{\mathrm{friction}}+\tau_{\mathrm{nullspace}}
++\tau_{\mathrm{tracking}}.
+$$
+
+随后按关节方向映射为物理力矩，转换为电流，并裁剪到电流上限。因此，`tracking_torque` 是加和前的计算项；电流饱和时，总输出无法完整实现计算出的各项力矩。
+
+## 优点与局限
+
+| 方面 | 优点 | 局限 |
+| --- | --- | --- |
+| 轨迹阶段 | 轨迹目标同时包含位置和速度；PD 能跟踪运动目标，并按轴调节刚度与阻尼。 | 没有加速度或逆动力学前馈；跟踪误差及其他补偿项会共同占用电流预算。 |
+| 保持阶段 | 固定目标下的积分项可减小持续偏差；积分限幅和误差阈值可限制远离目标时的积分累积。 | 积分限幅并未根据总电流饱和做抗饱和反馈；速度噪声会直接进入 D 项，积分误差阈值处也存在突变。 |
+| 状态切换 | 轨迹完成即开始保持；收敛要同时满足位置、速度和持续时间条件。 | 轨迹 PD 与保持 PID 的增益和目标速度可能不同，切换瞬间的力矩不保证连续。 |
+| 时间基准 | 保持积分使用实际传入的 `now` 间隔。 | Ruckig 每次更新按配置的固定周期推进；若实际 `step()` 周期偏离配置频率，轨迹时间与实际执行时间会不一致。 |
+
+这些是从实现推导出的工程特性，不能直接当作实机性能结论。
+
+## 开发建议
+
+1. **先记录闭环数据，再调增益。** 同步及保持阶段分别记录目标/实测位置和速度、五项力矩、裁剪前后电流、实际周期、状态切换时刻。优先确认误差来自跟踪增益、速度测量、周期偏差，还是电流饱和。
+2. **针对切换点检查力矩跳变。** 比较轨迹结束前后一周期的指令力矩与实测响应；若出现明显冲击，再考虑增益协调或短时平滑过渡。不要仅凭两组参数数值接近就认定输出连续。
+3. **让轨迹时间与执行周期一致。** 统计 `step()` 实际间隔及抖动，并与 Ruckig 配置频率比较；周期偏差明显时，再选择保证固定周期调度或采用与实测时间相适应的推进策略。
+4. **针对保持积分检查饱和。** 若总电流经常被裁剪且保持误差难以消除，可考虑用裁剪结果抑制同方向积分，并验证阈值重置、退出保持及重新同步时的积分状态。
+5. **分轴验证参数。** 从低电流条件开始，检查各轴的超调、收敛时间、静止抖动和夹爪响应；D 项引起明显噪声时，结合速度估计质量评估滤波及相应延迟。轨迹与保持阶段应分别评价。
+
+参考实现：[`control_core.py`](../skye_factr_teleop/control_core.py)、[`trajectory.py`](../skye_factr_teleop/trajectory.py)、[`state_machine.py`](../skye_factr_teleop/state_machine.py)。
