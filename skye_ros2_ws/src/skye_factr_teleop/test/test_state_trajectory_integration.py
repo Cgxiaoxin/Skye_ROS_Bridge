@@ -174,10 +174,15 @@ def test_complete_lifecycle_and_repeated_requests(rig):
 
     backend.result = FakeResult.Finished
     completed = tick(rig)
-    assert completed.mode == ControlMode.SYNCED
+    assert completed.mode == ControlMode.HOLD_SETTLING
     np.testing.assert_allclose(completed.target_position, 0.1)
     np.testing.assert_array_equal(core.hold_integral, np.zeros(8))
+    hardware.inject_state(np.full(8, 0.09) * core.joint_signs + core.joint_offsets,
+                          np.zeros(8))
     tick(rig, 0.01)
+    assert core.mode == ControlMode.HOLD_SETTLING
+    tick(rig, core.config.controller.hold_ruckig_control.settle_duration)
+    assert core.mode == ControlMode.SYNCED
     integral = core.hold_integral
     assert np.all(integral > 0)
     assert start(rig, target=0.2).outcome == "ignored"
@@ -215,7 +220,7 @@ def test_completion_at_timeout_boundary(rig, offset):
     rig.clock.now = entered + rig.core.config.controller.teleop_sync_timeout + offset
     result = rig.core.step(now=rig.clock.now)
     if offset < 0:
-        assert result.mode == ControlMode.SYNCED
+        assert result.mode == ControlMode.HOLD_SETTLING
         assert backend.calls == 1
         assert rig.hardware.torque_enabled
     else:
@@ -267,7 +272,7 @@ def test_restart_captures_new_start_and_cannot_reuse_old_motion(rig, exit_path):
     assert tick(rig).mode == ControlMode.TELEOP_SYNCING
     new.result = FakeResult.Finished
     result = tick(rig)
-    assert result.mode == ControlMode.SYNCED
+    assert result.mode == ControlMode.HOLD_SETTLING
     np.testing.assert_allclose(result.target_position, 0.2)
     np.testing.assert_array_equal(rig.core.hold_integral, np.zeros(8))
     assert old.calls == calls

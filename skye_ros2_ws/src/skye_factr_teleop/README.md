@@ -112,14 +112,16 @@ since receipt, so a paused ROS clock cannot keep old feedback valid indefinitely
 
 Startup opens/configures the bus with torque disabled, using
 `DynamixelDriver.open(enable_torque=False)`. A valid `switch_sync` request in
-`IDLE` requires fresh follower data before enabling torque. Successful sync
-enters hold; `switch_teleop` then allows seven-axis command publication.
+`IDLE` requires fresh follower data before enabling torque. Ruckig completion
+enters `HOLD_SETTLING`; measured position and velocity must remain within their
+configured tolerances for `settle_duration` before `SYNCED` permits
+`switch_teleop` and seven-axis command publication.
 Invalid or stale follower feedback during follower sync, hold, or teleop stops
 motion and returns to `IDLE`.
 
 `/joint_move` is accepted only in `IDLE`: it independently moves the leader to
 the supplied seven-axis target and holds it, using the configured gripper
-setpoint. Its completion reports `SYNCED` for target completion, but the node
+setpoint. After settling it reports `SYNCED`, but the node
 does **not** grant follower-teleop permission. Stop, then perform follower sync
 before requesting teleop. Repeated motion requests cannot replace an active
 trajectory. Target-state publication describes the running reference/hold
@@ -339,8 +341,8 @@ python3 -m pytest -q test/test_control_core.py
 
 ## Stage 4.1/4.2 state machine
 
-The frozen contract treats synchronization timeout as failure:
-`TELEOP_SYNCING -> IDLE`. It must not enter `SYNCED` or permit
+The contract treats trajectory and settling timeouts as failures:
+`TELEOP_SYNCING -> IDLE` or `HOLD_SETTLING -> IDLE`. Neither permits
 `switch_teleop` after timeout. Retry with `switch_sync`, wait for successful
 completion (`SYNCED`), then request `switch_teleop`.
 
@@ -352,8 +354,9 @@ task 4.3 also integrates trajectory cleanup and hold in `ControlCore`.
 Construct `StateMachine(now=...)` and pass explicit events to
 `handle(event, now=...)`. Events accept `Event` members or the frozen string
 names. Supply finite, nondecreasing timestamps from the same clock; no clock is
-read internally. The trajectory adapter must emit `sync_timeout` at the deadline
-instead of `sync_complete`.
+read internally. The control core emits `trajectory_complete` when Ruckig finishes,
+then `sync_complete` only after measured settling. Timeout takes precedence at
+each phase's deadline.
 
 Each immutable `TransitionResult` contains `previous_state`, `state`, `outcome`,
 `reason`, ordered `actions`, and `entered_at`. `accepted` means the event was
@@ -438,12 +441,19 @@ requests do not replace the target or restart the timeout.
 
 During synchronization, tracking torque is
 `ruckig_kp * (q_ref - q) + ruckig_kd * (dq_ref - dq)`.
-Ruckig completion enters hold on the captured final target. Hold torque is
+Ruckig completion enters `HOLD_SETTLING` on the captured final target. Hold torque is
 `hold_kp * error - hold_kd * dq + hold_ki * integral`.
 For each axis, integrate `error * dt` only when
 `abs(error) <= hold_i_thresh`; otherwise reset that axis's integral.
 `hold_i_max` bounds the accumulated error in rad·s, before multiplication by
 `hold_ki`. The first hold cycle starts with zero integral.
+
+During `HOLD_SETTLING`, every axis must satisfy `sync_position_tolerance` and
+`sync_velocity_tolerance` continuously for `settle_duration`. The timer resets
+when any axis leaves its band. Success enters `SYNCED` and hold continues.
+`settle_timeout` returns to `IDLE` and disables torque. These four settings are
+under `controller.hold_ruckig_control`; the supplied values are initial tuning
+values and need validation on the robot.
 
 The two phases use `ruckig_gravity_comp_gain` and `hold_gravity_comp_gain`
 respectively, replacing the normal gravity gain. The configured gravity mode
@@ -452,7 +462,8 @@ remain available; null-space regulation is suppressed during sync/hold to
 avoid competing with their full joint targets. Final torque uses the existing
 servo direction conversion and current limits.
 
-At `elapsed >= teleop_sync_timeout`, timeout wins before a Ruckig update. Stop,
+At `elapsed >= teleop_sync_timeout`, timeout wins before a Ruckig update. Settling
+timeout likewise wins before a hold update. Stop,
 timeout, and computation/setup failures clear the trajectory, integral, and
 target, return to `IDLE`, and attempt zero current and Torque Disable. An explicit
 `stop()` needs no timestamp; `handle("switch_stop", now=...)` also stops when

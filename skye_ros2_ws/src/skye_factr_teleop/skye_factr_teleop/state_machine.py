@@ -3,8 +3,8 @@
 
 """Pure teleoperation transitions; callers execute actions and supply time.
 
-The trajectory adapter emits SYNC_COMPLETE or SYNC_TIMEOUT, prioritizing timeout
-at the deadline. This module neither runs trajectories nor reads a clock.
+The control adapter emits trajectory and settling events, prioritizing timeout
+at each deadline. This module neither runs trajectories nor reads a clock.
 """
 
 from dataclasses import dataclass
@@ -18,6 +18,7 @@ class ControlMode(IntEnum):
     TELEOP_SYNCING = 1
     SYNCED = 2
     TELEOP = 3
+    HOLD_SETTLING = 4
     TELEPOSE = 5  # Reserved; no transition into this mode in the base machine.
 
 
@@ -27,6 +28,8 @@ class Event(str, Enum):
     SWITCH_STOP = "switch_stop"
     SYNC_COMPLETE = "sync_complete"
     SYNC_TIMEOUT = "sync_timeout"
+    TRAJECTORY_COMPLETE = "trajectory_complete"
+    SETTLE_TIMEOUT = "settle_timeout"
 
 
 class Action(str, Enum):
@@ -111,7 +114,7 @@ class StateMachine:
                     "accepted", state=ControlMode.TELEOP_SYNCING,
                     actions=(Action.CLEAR_SYNC, Action.START_SYNC), now=now,
                 )
-            if self.state in (ControlMode.TELEOP_SYNCING, ControlMode.SYNCED):
+            if self.state in (ControlMode.TELEOP_SYNCING, ControlMode.HOLD_SETTLING, ControlMode.SYNCED):
                 return self._result("ignored", reason="already_syncing_or_synced", now=now)
             return self._result("rejected", reason="stop_required", now=now)
 
@@ -124,18 +127,26 @@ class StateMachine:
                 now=now,
             )
 
-        # The remaining explicit events are trajectory completion and timeout.
-        if self.state != ControlMode.TELEOP_SYNCING:
-            return self._result("ignored", reason="not_syncing", now=now)
-        if event == Event.SYNC_TIMEOUT:
-            return self._result(
-                "accepted", state=ControlMode.IDLE, reason="sync_timeout",
-                actions=(Action.STOP_MOTION, Action.CLEAR_SYNC), now=now,
-            )
-        return self._result(
-            "accepted", state=ControlMode.SYNCED,
-            actions=(Action.STOP_MOTION, Action.START_HOLD), now=now,
-        )
+        if self.state == ControlMode.TELEOP_SYNCING:
+            if event == Event.SYNC_TIMEOUT:
+                return self._result(
+                    "accepted", state=ControlMode.IDLE, reason="sync_timeout",
+                    actions=(Action.STOP_MOTION, Action.CLEAR_SYNC), now=now,
+                )
+            if event == Event.TRAJECTORY_COMPLETE:
+                return self._result(
+                    "accepted", state=ControlMode.HOLD_SETTLING,
+                    actions=(Action.STOP_MOTION, Action.START_HOLD), now=now,
+                )
+        elif self.state == ControlMode.HOLD_SETTLING:
+            if event == Event.SETTLE_TIMEOUT:
+                return self._result(
+                    "accepted", state=ControlMode.IDLE, reason="settle_timeout",
+                    actions=(Action.STOP_MOTION, Action.CLEAR_SYNC), now=now,
+                )
+            if event == Event.SYNC_COMPLETE:
+                return self._result("accepted", state=ControlMode.SYNCED, now=now)
+        return self._result("ignored", reason="not_applicable", now=now)
 
     def _result(
         self, outcome: Literal["accepted", "rejected", "ignored"], *,

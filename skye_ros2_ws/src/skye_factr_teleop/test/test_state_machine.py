@@ -14,8 +14,9 @@ def _machine_in(state):
     events = {
         "IDLE": (),
         "TELEOP_SYNCING": ("switch_sync",),
-        "SYNCED": ("switch_sync", "sync_complete"),
-        "TELEOP": ("switch_sync", "sync_complete", "switch_teleop"),
+        "HOLD_SETTLING": ("switch_sync", "trajectory_complete"),
+        "SYNCED": ("switch_sync", "trajectory_complete", "sync_complete"),
+        "TELEOP": ("switch_sync", "trajectory_complete", "sync_complete", "switch_teleop"),
     }
     for now, event in enumerate(events[state], start=1):
         result = machine.handle(event, now=float(now))
@@ -35,8 +36,14 @@ def _machine_in(state):
         ("TELEOP_SYNCING", "switch_sync", "TELEOP_SYNCING", "ignored"),
         ("TELEOP_SYNCING", "switch_teleop", "TELEOP_SYNCING", "rejected"),
         ("TELEOP_SYNCING", "switch_stop", "IDLE", "accepted"),
-        ("TELEOP_SYNCING", "sync_complete", "SYNCED", "accepted"),
+        ("TELEOP_SYNCING", "trajectory_complete", "HOLD_SETTLING", "accepted"),
+        ("TELEOP_SYNCING", "sync_complete", "TELEOP_SYNCING", "ignored"),
         ("TELEOP_SYNCING", "sync_timeout", "IDLE", "accepted"),
+        ("HOLD_SETTLING", "switch_sync", "HOLD_SETTLING", "ignored"),
+        ("HOLD_SETTLING", "switch_teleop", "HOLD_SETTLING", "rejected"),
+        ("HOLD_SETTLING", "sync_complete", "SYNCED", "accepted"),
+        ("HOLD_SETTLING", "settle_timeout", "IDLE", "accepted"),
+        ("HOLD_SETTLING", "switch_stop", "IDLE", "accepted"),
         ("SYNCED", "switch_sync", "SYNCED", "ignored"),
         ("SYNCED", "switch_teleop", "TELEOP", "accepted"),
         ("SYNCED", "switch_stop", "IDLE", "accepted"),
@@ -88,6 +95,9 @@ def test_sync_exit_requires_a_new_successful_sync(exit_event):
     result = machine.handle("switch_teleop", now=6.0)
     assert result.outcome == "rejected"
     assert machine.state == sm.ControlMode.TELEOP_SYNCING
+    result = machine.handle("trajectory_complete", now=7.0)
+    assert result.state == sm.ControlMode.HOLD_SETTLING
+    assert machine.handle("switch_teleop", now=7.0).outcome == "rejected"
     result = machine.handle("sync_complete", now=7.0)
     assert result.outcome == "accepted"
     assert machine.state == sm.ControlMode.SYNCED
@@ -102,13 +112,16 @@ def test_base_control_mode_values():
     assert sm.ControlMode.TELEOP_SYNCING.value == 1
     assert sm.ControlMode.SYNCED.value == 2
     assert sm.ControlMode.TELEOP.value == 3
+    assert sm.ControlMode.HOLD_SETTLING.value == 4
 
 
 @pytest.mark.parametrize(
     "initial,event,actions",
     [
         ("IDLE", "switch_sync", ("clear_sync", "start_sync")),
-        ("TELEOP_SYNCING", "sync_complete", ("stop_motion", "start_hold")),
+        ("TELEOP_SYNCING", "trajectory_complete", ("stop_motion", "start_hold")),
+        ("HOLD_SETTLING", "sync_complete", ()),
+        ("HOLD_SETTLING", "settle_timeout", ("stop_motion", "clear_sync")),
         ("SYNCED", "switch_teleop", ("stop_motion", "clear_sync", "start_teleop")),
         ("TELEOP_SYNCING", "sync_timeout", ("stop_motion", "clear_sync")),
         ("IDLE", "switch_stop", ("stop_motion", "clear_sync")),
@@ -125,7 +138,7 @@ def test_ordered_control_actions(initial, event, actions):
         assert result.reason == "sync_timeout"
 
 
-@pytest.mark.parametrize("state", ["IDLE", "TELEOP_SYNCING", "SYNCED", "TELEOP"])
+@pytest.mark.parametrize("state", ["IDLE", "TELEOP_SYNCING", "HOLD_SETTLING", "SYNCED", "TELEOP"])
 @pytest.mark.parametrize("event", ["switch_telepose", "unknown"])
 def test_unsupported_events_are_rejected(state, event):
     machine = _machine_in(state)
@@ -167,7 +180,7 @@ def test_nonfinite_time_does_not_mutate_state(now):
     assert machine.state == sm.ControlMode.TELEOP_SYNCING
     assert machine.entered_at == 1.0
     assert machine.last_rejection_reason is None
-    assert machine.handle("sync_complete", now=2.0).outcome == "accepted"
+    assert machine.handle("trajectory_complete", now=2.0).outcome == "accepted"
 
 
 def test_time_cannot_move_backwards_but_same_timestamp_is_allowed():
@@ -177,4 +190,4 @@ def test_time_cannot_move_backwards_but_same_timestamp_is_allowed():
         machine.handle("sync_complete", now=2.0)
     assert machine.state == sm.ControlMode.TELEOP_SYNCING
     assert machine.entered_at == 1.0
-    assert machine.handle("sync_complete", now=3.0).outcome == "accepted"
+    assert machine.handle("trajectory_complete", now=3.0).outcome == "accepted"

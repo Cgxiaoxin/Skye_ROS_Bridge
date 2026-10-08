@@ -58,6 +58,19 @@ def packet(side="left", *, stamp=100.0):
     return message
 
 
+def settle(rig, *, follower=True):
+    rig.hardware.inject_state(rig.node.core._target * rig.node.core.joint_signs,
+                              np.zeros(8))
+    rig.clock.now += 0.002
+    if follower:
+        rig.node._on_follower(packet(rig.node.side, stamp=rig.clock.now))
+    rig.node._tick()
+    rig.clock.now += rig.node.config.controller.hold_ruckig_control.settle_duration + 0.002
+    if follower:
+        rig.node._on_follower(packet(rig.node.side, stamp=rig.clock.now))
+    rig.node._tick()
+
+
 @pytest.fixture
 def context(monkeypatch, tmp_path):
     monkeypatch.setenv("ROS_LOG_DIR", str(tmp_path / "ros_logs"))
@@ -149,9 +162,13 @@ def test_sync_hold_teleop_stop_and_published_shapes(make_node, side):
     rig.trajectories[0].finished = True
     rig.clock.now += 0.002
     node._tick()
-    assert node.core.mode == ControlMode.SYNCED
+    assert node.core.mode == ControlMode.HOLD_SETTLING
     assert len(node._target_pub.messages[-1].position) == 7
     assert len(node._current_pub.messages[-1].velocity) == 7
+    node._on_teleop(String(data="switch_teleop"))
+    assert node.core.mode == ControlMode.HOLD_SETTLING
+    settle(rig)
+    assert node.core.mode == ControlMode.SYNCED
     node._on_teleop(String(data="switch_teleop"))
     rig.clock.now += 0.002
     target_count = len(node._target_pub.messages)
@@ -167,7 +184,7 @@ def test_sync_hold_teleop_stop_and_published_shapes(make_node, side):
     assert len(node._command_pub.messages) == 1
     assert not rig.hardware.torque_enabled
     assert [msg.data for msg in node._state_pub.messages] == [
-        "TELEOP_SYNCING", "SYNCED", "TELEOP", "IDLE",
+        "TELEOP_SYNCING", "HOLD_SETTLING", "SYNCED", "TELEOP", "IDLE",
     ]
     np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))
 
@@ -180,11 +197,13 @@ def test_joint_move_holds_but_does_not_grant_teleop(make_node):
     rig.trajectories[0].finished = True
     rig.clock.now += 0.002
     node._tick()
+    assert node.core.mode == ControlMode.HOLD_SETTLING
+    settle(rig, follower=False)
     assert node.core.mode == ControlMode.SYNCED
-    node._on_follower(packet())
+    node._on_follower(packet(stamp=rig.clock.now))
     node._on_teleop(String(data="switch_teleop"))
     assert node.core.mode == ControlMode.SYNCED
-    node._on_joint_move(packet())
+    node._on_joint_move(packet(stamp=rig.clock.now))
     assert len(rig.trajectories) == 1
     node._on_stop(None)
     node._on_sync(String(data="switch_sync"))
@@ -202,6 +221,7 @@ def test_stale_follower_stops_all_follower_modes(make_node, mode):
         rig.clock.now += 0.002
         node._tick()
     if mode == "teleop":
+        settle(rig)
         node._on_teleop(String(data="switch_teleop"))
     rig.clock.now += 0.3
     node._tick()
@@ -490,6 +510,20 @@ def test_dual_ros_graph_types_remaps_and_isolation(make_node, context):
         for rig in rigs.values():
             rig.trajectories[0].finished = True
         _spin_until(executor, lambda: all(
+            rig.node.core.mode == ControlMode.HOLD_SETTLING for rig in rigs.values()))
+        for rig in rigs.values():
+            rig.hardware.inject_state(rig.node.core._target * rig.node.core.joint_signs,
+                                      np.zeros(8))
+        for _ in range(4):
+            for side, rig in rigs.items():
+                rig.clock.now += 0.1
+                follower_pubs[side].publish(packet(side, stamp=rig.clock.now))
+            _spin_until(executor, lambda: all(
+                rig.node._follower.received_at == rig.clock.now
+                for rig in rigs.values()))
+            for _ in range(5):
+                executor.spin_once(timeout_sec=0.01)
+        _spin_until(executor, lambda: all(
             rig.node.core.mode == ControlMode.SYNCED for rig in rigs.values()))
         _spin_until(executor, lambda: all(target[side] for side in rigs))
         assert all(target[side][-1].name == packet(side).name for side in rigs)
@@ -512,7 +546,7 @@ def test_dual_ros_graph_types_remaps_and_isolation(make_node, context):
         for _ in range(10):
             executor.spin_once(timeout_sec=0.01)
         assert {side: len(messages) for side, messages in commands.items()} == counts
-        for state in ("TELEOP_SYNCING", "SYNCED", "TELEOP", "IDLE"):
+        for state in ("TELEOP_SYNCING", "HOLD_SETTLING", "SYNCED", "TELEOP", "IDLE"):
             assert state in states
         assert all(not rig.hardware.torque_enabled for rig in rigs.values())
     finally:

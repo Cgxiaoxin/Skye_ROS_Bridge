@@ -73,9 +73,9 @@ ros2 run skye_factr_teleop skye_factr_teleop_driver --side left --ros-args \
 
 输入的 JointState 消息必须包含 7 个有限的 position 值；velocity 和 effort 必须为空，或各包含 7 个有限值。除非显式允许空名称，否则名称及顺序必须严格为 `l_j1..l_j7` 或 `r_j1..r_j7`。消息在节点 ROS 时钟域内必须具有非零且新鲜的时间戳。节点不会从组合的 14 轴消息中截取数据；它还检查自接收以来的单调时间，因此即使 ROS 时钟暂停，旧反馈也不会一直有效。
 
-启动时使用 `DynamixelDriver.open(enable_torque=False)` 打开并配置总线，保持力矩关闭。处于 `IDLE` 时，有效的 `switch_sync` 请求必须先有新鲜的从臂反馈，随后才会使能力矩。同步成功后进入保持；收到 `switch_teleop` 后才允许发布 7 轴控制命令。在从臂同步、保持或遥操期间，反馈无效或过期会停止运动并返回 `IDLE`。
+启动时使用 `DynamixelDriver.open(enable_torque=False)` 打开并配置总线，保持力矩关闭。处于 `IDLE` 时，有效的 `switch_sync` 请求必须先有新鲜的从臂反馈，随后才会使能力矩。Ruckig 完成后进入 `HOLD_SETTLING`；实测位置和速度连续达标后进入 `SYNCED`，此时 `switch_teleop` 才允许发布 7 轴控制命令。在从臂同步、保持或遥操期间，反馈无效或过期会停止运动并返回 `IDLE`。
 
-`/joint_move` 仅在 `IDLE` 接受：它让主臂独立走到消息给出的 7 轴目标并保持，夹爪使用配置中的设定值。走位完成时报告 `SYNCED`，但节点**不会**授予从臂遥操权限。需要先停止，再重新执行从臂同步，之后才能请求遥操。重复的走位请求不会替换正在运行的轨迹。目标状态话题发布的是运行中的参考值或保持目标；它不是输入话题。
+`/joint_move` 仅在 `IDLE` 接受：它让主臂独立走到消息给出的 7 轴目标并保持，夹爪使用配置中的设定值。稳定达标后报告 `SYNCED`，但节点**不会**授予从臂遥操权限。需要先停止，再重新执行从臂同步，之后才能请求遥操。重复的走位请求不会替换正在运行的轨迹。目标状态话题发布的是运行中的参考值或保持目标；它不是输入话题。
 
 回调在默认的互斥回调组中串行执行。定时器以配置频率使用稳定时钟；控制核心时间戳使用单调时钟。停止操作会关闭力矩并停止发布遥操命令。控制故障会取消定时器、尝试零电流和 Torque Disable，并关闭总线；故障后的节点需要重启。SIGINT 和节点销毁使用同一套可重复调用的清理过程，即使零电流写入失败，也会尝试关闭总线。
 
@@ -221,11 +221,11 @@ python3 -m pytest -q test/test_control_core.py
 
 ## 阶段 4.1／4.2：状态机
 
-冻结的契约将同步超时视为失败：`TELEOP_SYNCING -> IDLE`。超时后不得进入 `SYNCED`，也不得允许 `switch_teleop`。应重新发出 `switch_sync`，等待成功完成（`SYNCED`），再请求 `switch_teleop`。
+轨迹和收敛超时都视为失败：`TELEOP_SYNCING -> IDLE` 或 `HOLD_SETTLING -> IDLE`。超时后不得进入 `SYNCED`，也不得允许 `switch_teleop`。应重新发出 `switch_sync`，等待成功完成（`SYNCED`），再请求 `switch_teleop`。
 
 这改变了早期计划描述的“超时进入 `SYNCED`”行为。来源限制和调用方改动见[迁移说明](dev_docs/skye_factr_teleop_migration.md)。纯 Python 状态机已经实现；任务 4.3 也在 `ControlCore` 中接入轨迹清理与保持。
 
-构造 `StateMachine(now=...)` 后，将显式事件传给 `handle(event, now=...)`。事件可使用 `Event` 成员或冻结的字符串名称。时间戳必须有限、来自同一时钟且不递减；状态机内部不读取时钟。到达截止时间时，轨迹适配器必须发出 `sync_timeout`，而不是 `sync_complete`。
+构造 `StateMachine(now=...)` 后，将显式事件传给 `handle(event, now=...)`。事件可使用 `Event` 成员或字符串名称。时间戳必须有限、来自同一时钟且不递减；状态机内部不读取时钟。控制核心在 Ruckig 完成时发出 `trajectory_complete`，实测收敛后才发出 `sync_complete`；两个阶段到达截止时间时优先处理超时。
 
 不可变的 `TransitionResult` 包含 `previous_state`、`state`、`outcome`、`reason`、有序 `actions` 和 `entered_at`。`accepted` 仅表示事件已处理，因此被接受的超时事件仍表示同步失败。状态机在后续事件间保留 `last_rejection_reason`。`entered_at` 仅在状态改变时更新；重复的同步请求不会重启计时器。
 
@@ -284,11 +284,11 @@ cycle = core.step(now=tick_time)  # 调用方每个控制周期仅执行一次�
 
 被接受的同步请求会记录实测的 8 轴逻辑主臂位置和速度，并复制 7 个从臂位置与夹爪设定值。输入坐标必须事先映射到主臂逻辑坐标系。若省略夹爪目标，则使用 `gripper_teleop.limit_setpoint`。由于没有加速度测量，起始加速度设为零；目标速度和加速度也为零。每次同步都会新建轨迹。重复的同步请求不会替换目标或重启超时计时。
 
-同步期间，轨迹跟踪力矩为 `ruckig_kp * (q_ref - q) + ruckig_kd * (dq_ref - dq)`。Ruckig 完成后，对记录的最终目标进入保持。保持力矩为 `hold_kp * error - hold_kd * dq + hold_ki * integral`。对每个轴，仅当 `abs(error) <= hold_i_thresh` 时积分 `error * dt`；否则清零该轴积分。`hold_i_max` 对乘以 `hold_ki` 之前的累计误差限幅，单位为 rad·s。第一个保持周期从零积分开始。
+同步期间，轨迹跟踪力矩为 `ruckig_kp * (q_ref - q) + ruckig_kd * (dq_ref - dq)`。Ruckig 完成后进入 `HOLD_SETTLING`，对记录的最终目标保持。保持力矩为 `hold_kp * error - hold_kd * dq + hold_ki * integral`。对每个轴，仅当 `abs(error) <= hold_i_thresh` 时积分 `error * dt`；否则清零该轴积分。`hold_i_max` 对乘以 `hold_ki` 之前的累计误差限幅，单位为 rad·s。第一个保持周期从零积分开始。所有轴的实测位置误差和速度分别连续满足 `sync_position_tolerance`、`sync_velocity_tolerance` 达 `settle_duration` 后进入 `SYNCED`，并继续保持；任一轴超阈值就重新计时。超过 `settle_timeout` 则返回 `IDLE` 并关闭力矩。这四项配置位于 `controller.hold_ruckig_control` 下；默认值需在真机上验证和调节。
 
 同步走位和保持阶段分别使用 `ruckig_gravity_comp_gain` 与 `hold_gravity_comp_gain`，替换常规重力增益。配置的重力模式和控制项开关仍然有效。关节限位保护和静摩擦补偿仍可使用；同步及保持时关闭零空间调节，以免与各关节完整目标相互冲突。最终力矩仍经过已有的舵机方向换算和电流限幅。
 
-当 `elapsed >= teleop_sync_timeout` 时，超时处理先于 Ruckig 更新。停止、超时以及计算／初始化失败都会清除轨迹、积分和目标，返回 `IDLE`，并尝试写零电流和执行 Torque Disable。显式 `stop()` 不需要时间戳；`handle("switch_stop", now=...)` 即使收到无效时间戳也会停止。其他故障在清理后继续向外抛出。重新尝试同步前，调用方必须有意重新使能力矩。核心 API 禁止外部注入完成／超时事件，因此旧的异步事件无法完成新一轮同步。
+当 `elapsed >= teleop_sync_timeout` 时，超时处理先于 Ruckig 更新；收敛超时也先于保持更新。停止、超时以及计算／初始化失败都会清除轨迹、积分和目标，返回 `IDLE`，并尝试写零电流和执行 Torque Disable。显式 `stop()` 不需要时间戳；`handle("switch_stop", now=...)` 即使收到无效时间戳也会停止。其他故障在清理后继续向外抛出。重新尝试同步前，调用方必须有意重新使能力矩。核心 API 禁止外部注入完成／超时事件，因此旧的异步事件无法完成新一轮同步。
 
 进入 `TELEOP` 时会清除自动跟踪与保持输出。常规补偿项仍可使用；ROS 发布由阶段 5 的适配层负责。可观察 `mode`、`last_transition` 和复制得到的 `hold_integral`。`CycleResult` 新增 `tracking_torque`、`mode`、`target_position` 和 `target_velocity`；同步／保持之外，目标字段为 `None`。`wrote_current` 描述正常周期的写入，与清理过程中用于安全停机的零电流写入分开统计。
 

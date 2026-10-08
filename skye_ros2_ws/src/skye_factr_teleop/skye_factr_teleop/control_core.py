@@ -271,6 +271,7 @@ class ControlCore:
         self._trajectory: TrajectoryIO | None = None
         self._target: np.ndarray | None = None
         self._hold_integral = np.zeros(MOTOR_COUNT)
+        self._settle_since: float | None = None
         self._last_step_at = self._now
         self._last_transition: TransitionResult | None = None
 
@@ -341,7 +342,8 @@ class ControlCore:
             return self.stop()
         try:
             self._time(now)
-            if event in (Event.SYNC_COMPLETE, Event.SYNC_TIMEOUT):
+            if event in (Event.SYNC_COMPLETE, Event.SYNC_TIMEOUT,
+                         Event.TRAJECTORY_COMPLETE, Event.SETTLE_TIMEOUT):
                 raise ValueError("trajectory events are internal to step()")
             result = self._machine.handle(event, now=self._now)
             self._apply_actions(result, follower_position, gripper_setpoint)
@@ -371,7 +373,7 @@ class ControlCore:
         return transform_leader_state(position, velocity, self.joint_offsets, self.joint_signs)
 
     def _prepare_cycle(self, now: float | None) -> float:
-        if now is None and self.mode in (ControlMode.TELEOP_SYNCING, ControlMode.SYNCED):
+        if now is None and self.mode in (ControlMode.TELEOP_SYNCING, ControlMode.HOLD_SETTLING, ControlMode.SYNCED):
             raise ValueError("now is required during synchronization and hold")
         if now is not None:
             self._time(now)
@@ -382,6 +384,11 @@ class ControlCore:
         if (self.mode == ControlMode.TELEOP_SYNCING
                 and self._now - self._machine.entered_at >= self.config.controller.teleop_sync_timeout):
             self._trajectory_event(Event.SYNC_TIMEOUT)
+            self._zero_and_disable()
+        if (self.mode == ControlMode.HOLD_SETTLING
+                and self._now - self._machine.entered_at
+                >= self.config.controller.hold_ruckig_control.settle_timeout):
+            self._trajectory_event(Event.SETTLE_TIMEOUT)
             self._zero_and_disable()
         return dt
 
@@ -396,7 +403,7 @@ class ControlCore:
         arm, ctrl = self.config.arm_teleop, self.config.controller
         if self.hardware.torque_enabled:
             tracking, target, target_velocity = self._update_tracking(state, dt)
-            motion = self.mode in (ControlMode.TELEOP_SYNCING, ControlMode.SYNCED)
+            motion = self.mode in (ControlMode.TELEOP_SYNCING, ControlMode.HOLD_SETTLING, ControlMode.SYNCED)
             if self.terms.joint_limits:
                 limit = joint_limit_barrier(
                     state, arm.arm_joint_limits_min, arm.arm_joint_limits_max,
@@ -408,7 +415,7 @@ class ControlCore:
                 gain = ctrl.gravity_comp.gain
                 if self.mode == ControlMode.TELEOP_SYNCING:
                     gain = ctrl.hold_ruckig_control.ruckig_gravity_comp_gain
-                elif self.mode == ControlMode.SYNCED:
+                elif self.mode in (ControlMode.HOLD_SETTLING, ControlMode.SYNCED):
                     gain = ctrl.hold_ruckig_control.hold_gravity_comp_gain
                 compensation = gravity_compensation(
                     state.arm_position, state.arm_velocity,
@@ -443,8 +450,8 @@ class ControlCore:
     def _update_tracking(
         self, state: LeaderState, dt: float,
     ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
-        """Advance sync/hold tracking; a finished trajectory enters SYNCED."""
-        if self.mode not in (ControlMode.TELEOP_SYNCING, ControlMode.SYNCED):
+        """Advance the trajectory, then hold until measured state settles."""
+        if self.mode not in (ControlMode.TELEOP_SYNCING, ControlMode.HOLD_SETTLING, ControlMode.SYNCED):
             return np.zeros(MOTOR_COUNT), None, None
 
         cfg = self.config.controller.hold_ruckig_control
@@ -463,12 +470,22 @@ class ControlCore:
                 torque += np.asarray(cfg.ruckig_kd) * (target_velocity - velocity)
                 return torque, target, target_velocity
 
-            self._trajectory_event(Event.SYNC_COMPLETE)
+            self._trajectory_event(Event.TRAJECTORY_COMPLETE)
             # Continue with hold control this cycle, without integrating trajectory time.
             dt = 0.0
 
         target = _vector(self._target, MOTOR_COUNT, "hold target")
         error = target - position
+        if self.mode == ControlMode.HOLD_SETTLING:
+            settled = (np.all(np.abs(error) <= cfg.sync_position_tolerance)
+                       and np.all(np.abs(velocity) <= cfg.sync_velocity_tolerance))
+            if settled:
+                if self._settle_since is None:
+                    self._settle_since = self._now
+                elif self._now - self._settle_since >= cfg.settle_duration:
+                    self._trajectory_event(Event.SYNC_COMPLETE)
+            else:
+                self._settle_since = None
 
         # Integrate only near the target; reset each axis outside its threshold.
         self._hold_integral = np.where(
@@ -524,6 +541,7 @@ class ControlCore:
                 if self._target is None:
                     raise RuntimeError("hold requires a synchronization target")
                 self._hold_integral.fill(0.0)
+                self._settle_since = None
             elif action == Action.START_TELEOP:
                 if not self.hardware.torque_enabled:
                     raise RuntimeError("teleoperation requires enabled torque")
@@ -534,6 +552,7 @@ class ControlCore:
         self._trajectory = None
         self._target = None
         self._hold_integral.fill(0.0)
+        self._settle_since = None
 
     def _zero_and_disable(self) -> None:
         if self.hardware.torque_enabled:

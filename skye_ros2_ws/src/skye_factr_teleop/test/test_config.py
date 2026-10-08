@@ -148,6 +148,8 @@ def test_arm_and_gripper_hold_dimensions_are_distinct():
     assert len(hold.ruckig_kp) == 8
     assert len(hold.hold_kp) == 8
     assert len(hold.hold_i_max) == 8
+    assert len(hold.sync_position_tolerance) == 8
+    assert len(hold.sync_velocity_tolerance) == 8
     assert len(hold.ruckig_gravity_comp_gain) == 7
     assert len(hold.hold_gravity_comp_gain) == 7
 
@@ -160,6 +162,10 @@ def test_arm_and_gripper_hold_dimensions_are_distinct():
         (lambda d: d["controller"].__setitem__("frequency", 0), "frequency must be positive"),
         (lambda d: d["controller"].__setitem__("teleop_sync_timeout", -1), "timeout must be positive"),
         (lambda d: d["controller"]["hold_ruckig_control"]["hold_i_max"].__setitem__(0, 0), "must be positive"),
+        (lambda d: d["controller"]["hold_ruckig_control"]["sync_position_tolerance"].__setitem__(0, 0), "must be positive"),
+        (lambda d: d["controller"]["hold_ruckig_control"].__setitem__("sync_velocity_tolerance", [0.1] * 7), "8 values"),
+        (lambda d: d["controller"]["hold_ruckig_control"].__setitem__("settle_duration", 0), "must be positive"),
+        (lambda d: d["controller"]["hold_ruckig_control"].__setitem__("settle_timeout", 0), "must be positive"),
         (lambda d: d["arm_teleop"].__setitem__("leader_urdf", "/legacy_ws/model.urdf"), "package-relative"),
     ],
 )

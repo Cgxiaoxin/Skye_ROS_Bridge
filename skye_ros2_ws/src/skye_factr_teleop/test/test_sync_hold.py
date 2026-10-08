@@ -111,7 +111,7 @@ def test_completion_enters_hold_with_distinct_gravity_and_pid_gains():
     begin(core)
     trajectories[0].finished = True
     result = core.step(now=1.002)
-    assert core.mode == ControlMode.SYNCED
+    assert core.mode == ControlMode.HOLD_SETTLING
     np.testing.assert_allclose(result.target_position, 0.1)
     np.testing.assert_array_equal(result.target_velocity, np.zeros(8))
     np.testing.assert_array_equal(core.hold_integral, np.zeros(8))
@@ -125,6 +125,40 @@ def test_completion_enters_hold_with_distinct_gravity_and_pid_gains():
     expected += np.array(hold.hold_ki) * 0.001
     np.testing.assert_allclose(result.tracking_torque, expected)
     assert trajectories[0].calls == 1  # Hold never advances the old trajectory.
+
+
+def test_settling_requires_position_velocity_and_continuous_dwell():
+    core, hardware, _, trajectories = make_core(gravity=False)
+    begin(core)
+    trajectories[0].finished = True
+    core.step(now=1.002)
+    assert core.mode == ControlMode.HOLD_SETTLING
+    assert core.handle("switch_teleop", now=1.003).outcome == "rejected"
+
+    hardware.inject_state(np.full(8, 0.1) * core.joint_signs,
+                          np.full(8, 0.2) * core.joint_signs)
+    core.step(now=1.1)
+    assert core.mode == ControlMode.HOLD_SETTLING
+    hardware.inject_state(np.full(8, 0.1) * core.joint_signs, np.zeros(8))
+    core.step(now=1.2)
+    hardware.inject_state(np.zeros(8), np.zeros(8))
+    core.step(now=1.3)  # Leaving the position band resets the dwell timer.
+    hardware.inject_state(np.full(8, 0.1) * core.joint_signs, np.zeros(8))
+    core.step(now=1.4)
+    assert core.step(now=1.64).mode == ControlMode.HOLD_SETTLING
+    assert core.step(now=1.65).mode == ControlMode.SYNCED
+
+
+def test_settle_timeout_disables_torque_and_rejects_teleop():
+    core, hardware, _, trajectories = make_core(gravity=False)
+    begin(core)
+    trajectories[0].finished = True
+    core.step(now=1.002)
+    result = core.step(now=1.002 + core.config.controller.hold_ruckig_control.settle_timeout)
+    assert result.mode == ControlMode.IDLE
+    assert core.last_transition.reason == "settle_timeout"
+    assert not hardware.torque_enabled
+    assert core.handle("switch_teleop", now=4.1).outcome == "rejected"
 
 
 def test_hold_integral_clamps_both_signs_and_resets_outside_threshold():
@@ -210,10 +244,15 @@ def test_leaving_hold_clears_integral_target_and_trajectory(event):
     core.step(now=1.002)
     core.step(now=1.102)
     assert np.any(core.hold_integral)
-    result = core.handle(event, now=1.2)
+    if event == "switch_teleop":
+        hardware.inject_state(np.full(8, 0.1) * core.joint_signs, np.zeros(8))
+        core.step(now=1.11)
+        core.step(now=1.37)
+        assert core.mode == ControlMode.SYNCED
+    result = core.handle(event, now=1.4)
     assert result.outcome == "accepted"
     np.testing.assert_array_equal(core.hold_integral, np.zeros(8))
-    result = core.step(now=1.202)
+    result = core.step(now=1.402)
     assert result.target_position is None
     assert result.target_velocity is None
     np.testing.assert_array_equal(result.tracking_torque, np.zeros(8))
@@ -221,7 +260,7 @@ def test_leaving_hold_clears_integral_target_and_trajectory(event):
     if event == "switch_teleop":
         assert result.mode == ControlMode.TELEOP
         assert hardware.torque_enabled
-        assert core.handle(event, now=1.204).outcome == "rejected"
+        assert core.handle(event, now=1.404).outcome == "rejected"
 
 
 @pytest.mark.parametrize("fault", ["trajectory", "sample", "gravity_on_completion", "write"])
@@ -285,6 +324,10 @@ def test_starting_motion_requires_enabled_torque(event):
         begin(core)
         trajectories[0].finished = True
         core.step(now=1.002)
+        hardware.inject_state(np.full(8, 0.1) * core.joint_signs, np.zeros(8))
+        core.step(now=1.01)
+        core.step(now=1.27)
+        assert core.mode == ControlMode.SYNCED
     hardware.set_torque_enabled(False)
     with pytest.raises(RuntimeError, match="enabled torque"):
         core.handle(event, now=2.0, follower_position=np.zeros(7))

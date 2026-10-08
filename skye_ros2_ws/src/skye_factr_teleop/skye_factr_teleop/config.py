@@ -131,6 +131,10 @@ class HoldRuckigConfig:
     hold_i_thresh: tuple[float, ...]
     ruckig_gravity_comp_gain: tuple[float, ...]
     hold_gravity_comp_gain: tuple[float, ...]
+    sync_position_tolerance: tuple[float, ...]
+    sync_velocity_tolerance: tuple[float, ...]
+    settle_duration: float
+    settle_timeout: float
 
 
 @dataclass(frozen=True)
@@ -381,9 +385,11 @@ def _hold_ruckig(value: Any) -> HoldRuckigConfig:
     path = "controller.hold_ruckig_control"
     data = _map(value, path)
     eight = {"ruckig_kp", "ruckig_kd", "hold_kp", "hold_kd", "hold_ki", "hold_i_max", "hold_i_thresh"}
+    tolerances = {"sync_position_tolerance", "sync_velocity_tolerance"}
     seven = {"ruckig_gravity_comp_gain", "hold_gravity_comp_gain"}
-    _only(data, eight | seven, path)
+    _only(data, eight | tolerances | seven | {"settle_duration", "settle_timeout"}, path)
     values = {key: _nonnegative_vec(_req(data, key, path), 8, f"{path}.{key}", False) for key in eight}
+    limits = {key: _positive_vec(_req(data, key, path), 8, f"{path}.{key}") for key in tolerances}
     for key in ("hold_i_max", "hold_i_thresh"):
         if any(item <= 0 for item in values[key]):
             raise ConfigError(f"{path}.{key} values must be positive")
@@ -393,6 +399,9 @@ def _hold_ruckig(value: Any) -> HoldRuckigConfig:
         values["hold_i_thresh"],
         _nonnegative_vec(_req(data, "ruckig_gravity_comp_gain", path), 7, f"{path}.ruckig_gravity_comp_gain", False),
         _nonnegative_vec(_req(data, "hold_gravity_comp_gain", path), 7, f"{path}.hold_gravity_comp_gain", False),
+        limits["sync_position_tolerance"], limits["sync_velocity_tolerance"],
+        _positive(_req(data, "settle_duration", path), f"{path}.settle_duration"),
+        _positive(_req(data, "settle_timeout", path), f"{path}.settle_timeout"),
     )
 
 
