@@ -31,7 +31,7 @@ def _calibrated_document():
     document = _document()
     document["dynamixel"].update({
         "joint_offsets": [0.0] * 8,
-        "current_limit_ma": 50.0,
+        "current_limit_ma": [50.0] * 8,
     })
     document["controller"]["sync_hold_control"]["ruckig"].update({
         "max_velocity": [0.5] * 8,
@@ -41,13 +41,14 @@ def _calibrated_document():
     return document
 
 
-def test_teleop_requires_calibration_but_readonly_tools_can_load_template(tmp_path):
-    assert load_config(LEFT_CONFIG).dynamixel.joint_offsets is None
-    with pytest.raises(ConfigError, match="dynamixel.joint_offsets is required"):
+def test_teleop_requires_trajectory_limits_but_readonly_tools_can_load_template(tmp_path):
+    assert load_config(LEFT_CONFIG).dynamixel.joint_offsets == (0.0,) * 8
+    assert load_config(LEFT_CONFIG).dynamixel.current_limit_ma == (50.0,) * 8
+    with pytest.raises(ConfigError, match="ruckig.max_velocity is required"):
         load_config(LEFT_CONFIG, require_runtime=True)
     config = load_config(_write(tmp_path, _calibrated_document()), require_runtime=True)
     assert config.dynamixel.joint_offsets == (0.0,) * 8
-    assert config.dynamixel.current_limit_ma == 50.0
+    assert config.dynamixel.current_limit_ma == (50.0,) * 8
     assert config.runtime.state_timeout == 0.25
     assert config.controller.sync_hold_control.ruckig.max_velocity == (0.5,) * 8
 
@@ -65,14 +66,26 @@ def test_missing_dynamixel_calibration_fails_startup_validation(tmp_path, field)
 @pytest.mark.parametrize("field,value", [
     ("joint_offsets", [0.0] * 7),
     ("joint_offsets", [None] * 8),
+    ("current_limit_ma", 50.0),
+    ("current_limit_ma", [50.0] * 7),
     ("current_limit_ma", 0.0),
     ("current_limit_ma", None),
+    ("current_limit_ma", [0.0] + [50.0] * 7),
+    ("current_limit_ma", [3210.0] + [50.0] * 7),
+    ("current_limit_ma", [50.0, 50.0, 911.0] + [50.0] * 5),
 ])
 def test_invalid_dynamixel_calibration_fails_startup_validation(tmp_path, field, value):
     document = _calibrated_document()
     document["dynamixel"][field] = value
     with pytest.raises(ConfigError, match=f"dynamixel.{field}"):
         load_config(_write(tmp_path, document), require_runtime=True)
+
+
+def test_current_limits_preserve_physical_servo_order(tmp_path):
+    document = _calibrated_document()
+    document["dynamixel"]["current_limit_ma"] = [100.0, 200.0] + [50.0] * 6
+    config = load_config(_write(tmp_path, document), require_runtime=True)
+    assert config.dynamixel.current_limit_ma == (100.0, 200.0) + (50.0,) * 6
 
 
 def test_runtime_state_policy_remains_optional(tmp_path):
@@ -111,8 +124,6 @@ def test_left_and_right_configs_load_and_preserve_differences():
     left = load_config(LEFT_CONFIG)
     right = load_config(RIGHT_CONFIG)
 
-    assert len(left.controller.initialization.calibration_joint_pos) == 7
-    assert not left.controller.end_effector.use_suction_cup
     assert len(left.dynamixel.servo_types) == 8
     assert left.controller.force_feedback_control.joint.dynamics.follower_joint_offset == 0
     assert right.controller.force_feedback_control.joint.dynamics.follower_joint_offset == 7
@@ -173,10 +184,6 @@ def test_result_is_deeply_immutable():
         (lambda d: d["controller"].pop("limit_barrier_control"), "controller.limit_barrier_control is required"),
         (lambda d: d["controller"]["limit_barrier_control"].pop("joint"), "controller.limit_barrier_control.joint is required"),
         (lambda d: d["controller"]["limit_barrier_control"].pop("gripper"), "controller.limit_barrier_control.gripper is required"),
-        (lambda d: d["controller"].pop("initialization"), "controller.initialization is required"),
-        (lambda d: d["controller"].pop("end_effector"), "controller.end_effector is required"),
-        (lambda d: d["controller"]["initialization"].pop("calibration_joint_pos"), "controller.initialization.calibration_joint_pos is required"),
-        (lambda d: d["controller"]["end_effector"].pop("use_suction_cup"), "controller.end_effector.use_suction_cup is required"),
         (lambda d: d["controller"]["force_feedback_control"]["joint"].pop("follower_gravity_comp_enable"), "follower_gravity_comp_enable is required"),
     ],
 )

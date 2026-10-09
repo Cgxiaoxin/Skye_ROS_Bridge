@@ -62,21 +62,24 @@ configuration:
 |---|---|
 | `config_path` | Absolute YAML path, or path relative to the package share; empty selects `config/grav_comp_m6_<side>.yaml` |
 | `dynamixel.joint_offsets` | Required: eight calibrated physical-servo offsets in rad, including gripper |
-| `dynamixel.current_limit_ma` | Required: positive current ceiling; also bounded by servo ratings |
+| `dynamixel.current_limit_ma` | Required: eight positive current ceilings in physical servo ID 1..8 order, in mA; each must stay within its model limit |
 | `controller.sync_hold_control.ruckig.max_velocity`, `max_acceleration`, `max_jerk` | Required for teleop: eight positive limits each, in logical leader order, rad/s, rad/s², rad/s³ |
 | `runtime.state_timeout` | Maximum header age and time since receipt, seconds; default `0.25` |
 | `runtime.future_tolerance` | Allowed future header timestamp skew, seconds; default `0.05` |
 | `runtime.allow_unnamed_joint_states` | Default `false`; if true, empty names mean fixed J1..J7 order |
 
-Copy the matching Thor or Orin YAML to a per-device file. Fill the two
-calibration fields under `dynamixel` and the three limit arrays under the existing
-`controller.sync_hold_control.ruckig` mapping. The packaged YAML files omit
-these measured values and cannot start teleoperation. The required fields are:
+Copy the matching Thor or Orin YAML to a per-device file. The eight `joint_offsets`
+are preset to `0.0`; verify Present Position with Dynamixel Wizard at the leader
+URDF zero pose for joints 1–7 and at the defined gripper zero for servo 8. The
+eight `current_limit_ma` values are preset to `50.0 mA` for low-current validation
+only; measure and adjust each servo's limit before regular teleoperation. Fill the
+three limit arrays under the existing `controller.sync_hold_control.ruckig` mapping.
+The packaged YAML files still omit these trajectory limits and cannot start teleoperation:
 
 ```yaml
 dynamixel:
-  joint_offsets: [<8 measured radians>]
-  current_limit_ma: <measured safe ceiling in mA>
+  current_limit_ma: [50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0] # low-current validation, mA
+  joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # verify with Dynamixel Wizard
 controller:
   sync_hold_control:
     ruckig:

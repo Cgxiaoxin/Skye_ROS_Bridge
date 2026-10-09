@@ -113,25 +113,6 @@ def _scalar(value: object, name: str) -> float:
         raise ValueError(f"{name} must be finite")
     return result
 
-def select_joint_offsets(
-    raw_position: object, joint_signs: object, calibration_joint_pos: object,
-) -> np.ndarray:
-    """Choose nearest M6 quarter-turn zero in -20π..20π; zero the gripper here.
-
-    Acquiring the calibration pose and checking physical alignment are external.
-    """
-    raw = _vector(raw_position, MOTOR_COUNT, "raw_position")
-    signs = _vector(joint_signs, MOTOR_COUNT, "joint_signs")
-    target = _vector(calibration_joint_pos, ARM_JOINT_COUNT, "calibration_joint_pos")
-    if not np.all(np.isin(signs, (-1.0, 1.0))):
-        raise ValueError("joint_signs must contain only -1 or 1")
-    choices = np.arange(-40, 41, dtype=float) * (np.pi / 2.0)
-    errors = np.abs((raw[:ARM_JOINT_COUNT, None] - choices) * signs[:ARM_JOINT_COUNT, None] - target[:, None])
-    offsets = np.empty(MOTOR_COUNT)
-    offsets[:ARM_JOINT_COUNT] = choices[np.argmin(errors, axis=1)]
-    offsets[-1] = raw[-1]
-    return offsets
-
 def transform_leader_state(
     raw_position: object, raw_velocity: object, offsets: object, joint_signs: object,
 ) -> LeaderState:

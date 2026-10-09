@@ -39,18 +39,18 @@ ros2 run skye_factr_teleop skye_factr_teleop_driver --help
 |---|---|
 | `config_path` | YAML 绝对路径或相对于包 share 目录的路径；留空时使用 `config/grav_comp_m6_<side>.yaml` |
 | `dynamixel.joint_offsets` | 必填：8 个物理舵机的标定偏移，单位 rad，包含夹爪 |
-| `dynamixel.current_limit_ma` | 必填：正数电流上限，同时受舵机额定值约束 |
+| `dynamixel.current_limit_ma` | 必填：按物理舵机 ID 1..8 排列的 8 个正数电流上限，单位 mA，逐项不得超过对应型号上限 |
 | `controller.sync_hold_control.ruckig.max_velocity`、`max_acceleration`、`max_jerk` | 遥操必填：按主臂逻辑关节顺序排列的 8 个正数上限，单位分别为 rad/s、rad/s²、rad/s³ |
 | `runtime.state_timeout` | 消息头最大年龄与接收后最长时间，单位秒；默认 `0.25` |
 | `runtime.future_tolerance` | 消息头时间戳允许超前的秒数；默认 `0.05` |
 | `runtime.allow_unnamed_joint_states` | 默认 `false`；设为 true 后，无名称消息按固定 J1..J7 顺序解释 |
 
-复制对应的 Thor 或 Orin YAML 作为每台设备的独立文件，在 `dynamixel` 下填写标定偏移和电流上限，并在已有的 `controller.sync_hold_control.ruckig` 下填写三个轨迹上限。包内模板故意不含这些值，不能直接用于遥操启动。必填字段如下，启动前须将占位内容换成实际数值：
+复制对应的 Thor 或 Orin YAML 作为每台设备的独立文件。`joint_offsets` 已预填 8 个 `0.0`；须使用 Dynamixel Wizard 核实主臂 7 轴在 URDF 零姿态、夹爪在其定义零位时的 Present Position。`current_limit_ma` 已按物理舵机 ID 1..8 预填 8 个 `50.0 mA`，仅供低电流验证，正式遥操须逐轴实测后调整。`controller.sync_hold_control.ruckig` 下的三个轨迹上限仍需填写，包内模板不能直接用于遥操启动：
 
 ```yaml
 dynamixel:
-  joint_offsets: [<8 个实测弧度值>]
-  current_limit_ma: <实测安全电流上限，mA>
+  current_limit_ma: [50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0] # 低电流验证值，mA
+  joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # 须用 Dynamixel Wizard 核实
 controller:
   sync_hold_control:
     ruckig:

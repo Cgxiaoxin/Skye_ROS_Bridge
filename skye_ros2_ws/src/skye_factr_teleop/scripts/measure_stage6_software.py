@@ -141,7 +141,7 @@ def measure(package_root, seconds):
             limits = {"max_velocity": [0.02] * 8,
                       "max_acceleration": [1.0] * 8, "max_jerk": [4.0] * 8}
             params = {"config_path": str(config), "joint_offsets": [0.0] * 8,
-                      "current_limit_ma": 50.0, **limits}
+                      "current_limit_ma": [50.0] * 8, **limits}
             records = samples[side]
             node = MeasuredNode(
                 side, records, context=context, use_global_arguments=False,

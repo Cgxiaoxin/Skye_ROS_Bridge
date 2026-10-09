@@ -29,22 +29,11 @@ class ConfigError(ValueError):
 @dataclass(frozen=True)
 class DynamixelConfig:
     dynamixel_port: str
-    baudrate: int
     servo_types: tuple[str, ...]
-    joint_signs: tuple[float, ...]
+    baudrate: int
+    current_limit_ma: tuple[float, ...] | None
     joint_offsets: tuple[float, ...] | None
-    current_limit_ma: float | None
-
-
-@dataclass(frozen=True)
-class InitializationConfig:
-    calibration_joint_pos: tuple[float, ...]
-    initial_match_joint_pos: tuple[float, ...]
-
-
-@dataclass(frozen=True)
-class EndEffectorConfig:
-    use_suction_cup: bool
+    joint_signs: tuple[float, ...]
 
 
 @dataclass(frozen=True)
@@ -118,13 +107,6 @@ class LimitBarrierControlConfig:
 
 
 @dataclass(frozen=True)
-class JointPositionConfig:
-    interpolation_step_size: float
-    kp: float
-    kd: float
-
-
-@dataclass(frozen=True)
 class GripperFeedbackConfig:
     enable: bool
     gain: float
@@ -178,11 +160,8 @@ class ControllerConfig:
     force_feedback_control: ForceFeedbackControlConfig
     joint_gravity_comp: JointGravityCompConfig
     null_space_regulation: NullSpaceConfig
-    initialization: InitializationConfig
-    end_effector: EndEffectorConfig
     static_friction_comp: StaticFrictionConfig
     limit_barrier_control: LimitBarrierControlConfig
-    joint_position_control: JointPositionConfig
     sync_hold_control: SyncHoldControlConfig
 
 
@@ -255,34 +234,27 @@ def _dynamixel(value: Any) -> DynamixelConfig:
     signs = _vec(_req(data, "joint_signs", path), MOTOR_COUNT, f"{path}.joint_signs", False)
     if any(sign not in (-1.0, 1.0) for sign in signs):
         raise ConfigError(f"{path}.joint_signs values must be -1 or 1")
+    current_limits = (
+        _positive_vec(data["current_limit_ma"], MOTOR_COUNT, f"{path}.current_limit_ma", False)
+        if "current_limit_ma" in data else None
+    )
+    if current_limits is not None:
+        from .dynamixel_driver import get_servo_spec
+
+        for index, (limit, model) in enumerate(zip(current_limits, types)):
+            model_limit = get_servo_spec(model).current_limit_ma
+            if limit > model_limit:
+                raise ConfigError(
+                    f"{path}.current_limit_ma[{index}] exceeds {model} current limit {model_limit} mA"
+                )
     return DynamixelConfig(
         _str(_req(data, "dynamixel_port", path), f"{path}.dynamixel_port"),
-        baudrate,
         types,
-        signs,
+        baudrate,
+        current_limits,
         _vec(data["joint_offsets"], MOTOR_COUNT, f"{path}.joint_offsets", False)
         if "joint_offsets" in data else None,
-        _positive(data["current_limit_ma"], f"{path}.current_limit_ma")
-        if "current_limit_ma" in data else None,
-    )
-
-
-def _initialization(value: Any) -> InitializationConfig:
-    path = "controller.initialization"
-    data = _map(value, path)
-    _only(data, {"calibration_joint_pos", "initial_match_joint_pos"}, path)
-    return InitializationConfig(
-        _vec(_req(data, "calibration_joint_pos", path), ARM_JOINT_COUNT, f"{path}.calibration_joint_pos", False),
-        _vec(_req(data, "initial_match_joint_pos", path), ARM_JOINT_COUNT, f"{path}.initial_match_joint_pos", False),
-    )
-
-
-def _end_effector(value: Any) -> EndEffectorConfig:
-    path = "controller.end_effector"
-    data = _map(value, path)
-    _only(data, {"use_suction_cup"}, path)
-    return EndEffectorConfig(
-        _bool(_req(data, "use_suction_cup", path), f"{path}.use_suction_cup"),
+        signs,
     )
 
 
@@ -291,9 +263,9 @@ def _controller(value: Any) -> ControllerConfig:
     data = _map(value, path)
     _only(data, {
         "frequency", "force_feedback_control", "joint_gravity_comp",
-        "null_space_regulation", "initialization", "end_effector",
+        "null_space_regulation",
         "static_friction_comp", "limit_barrier_control",
-        "joint_position_control", "sync_hold_control",
+        "sync_hold_control",
     }, path)
     frequency = _positive(_req(data, "frequency", path), f"{path}.frequency")
     return ControllerConfig(
@@ -301,11 +273,8 @@ def _controller(value: Any) -> ControllerConfig:
         _force_feedback_control(_req(data, "force_feedback_control", path)),
         _joint_gravity_comp(_req(data, "joint_gravity_comp", path)),
         _null_space(_req(data, "null_space_regulation", path)),
-        _initialization(_req(data, "initialization", path)),
-        _end_effector(_req(data, "end_effector", path)),
         _static_friction(_req(data, "static_friction_comp", path)),
         _limit_barrier_control(_req(data, "limit_barrier_control", path)),
-        _joint_position(_req(data, "joint_position_control", path)),
         _sync_hold_control(_req(data, "sync_hold_control", path)),
     )
 
@@ -450,17 +419,6 @@ def _gripper_barrier(value: Any) -> GripperBarrierConfig:
         raise ConfigError(f"{path}.limit_min must be below limit_max")
     return GripperBarrierConfig(
         grip_max, grip_min,
-        _nonnegative(_req(data, "kp", path), f"{path}.kp"),
-        _nonnegative(_req(data, "kd", path), f"{path}.kd"),
-    )
-
-
-def _joint_position(value: Any) -> JointPositionConfig:
-    path = "controller.joint_position_control"
-    data = _map(value, path)
-    _only(data, {"interpolation_step_size", "kp", "kd"}, path)
-    return JointPositionConfig(
-        _positive(_req(data, "interpolation_step_size", path), f"{path}.interpolation_step_size"),
         _nonnegative(_req(data, "kp", path), f"{path}.kp"),
         _nonnegative(_req(data, "kd", path), f"{path}.kd"),
     )

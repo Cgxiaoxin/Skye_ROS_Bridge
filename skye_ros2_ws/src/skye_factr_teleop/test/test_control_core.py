@@ -13,7 +13,7 @@ from conftest import FakeDynamixelIO
 from skye_factr_teleop.config import load_config
 from skye_factr_teleop.control_core import (
     ControlCore, ControlTerms, LeaderState, gravity_compensation,
-    joint_limit_barrier, nullspace_regulation, select_joint_offsets,
+    joint_limit_barrier, nullspace_regulation,
     static_friction_compensation, transform_leader_state,
 )
 
@@ -48,13 +48,11 @@ def _core(*, terms=None, torque_enabled=True, limit=100.0, gravity_mode="positio
     return core, hardware, dynamics
 
 
-def test_quarter_turn_calibration_and_signed_state_mapping():
+def test_signed_state_mapping():
     raw = np.array([np.pi / 2 + 0.1, -np.pi / 2 - 0.1, 0, 0, 0, 0, 0, 0.8])
     signs = np.array([1, -1, 1, 1, 1, -1, -1, -1])
     original = raw.copy()
-    offsets = select_joint_offsets(raw, signs, np.zeros(7))
-    np.testing.assert_allclose(offsets[:2], [np.pi / 2, -np.pi / 2])
-    assert offsets[-1] == 0.8
+    offsets = np.array([np.pi / 2, -np.pi / 2, 0, 0, 0, 0, 0, 0.8])
     state = transform_leader_state(raw, np.ones(8), offsets, signs)
     np.testing.assert_allclose(state.arm_position[:2], [0.1, 0.1])
     np.testing.assert_allclose(state.arm_velocity[:2], [1, -1])
@@ -210,6 +208,14 @@ def test_physical_direction_mapping_and_model_rating_clip():
         from skye_factr_teleop.dynamixel_driver import get_servo_spec
         assert abs(current) <= get_servo_spec(model).current_limit_ma
     np.testing.assert_array_equal(hardware.last_currents_ma, result.physical_current_ma)
+
+
+def test_per_servo_current_limits_clip_independently():
+    limits = np.array([10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0])
+    core, _, dynamics = _core(terms=ControlTerms(False, True, False, False), limit=limits)
+    dynamics.gravity_value[:] = 100
+    result = core.step()
+    np.testing.assert_allclose(np.abs(result.physical_current_ma[:7]), limits[:7])
 
 
 def test_each_term_can_be_switched_off_independently():

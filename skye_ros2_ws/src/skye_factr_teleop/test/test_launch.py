@@ -33,7 +33,7 @@ def expand_launch(monkeypatch, tmp_path):
             name = f"grav_comp_m6_{side}.yaml"
             document = yaml.safe_load((PACKAGE_ROOT / profile_dir / name).read_text())
             document["dynamixel"].update({
-                "joint_offsets": [0.0] * 8, "current_limit_ma": 50.0,
+                "joint_offsets": [0.0] * 8, "current_limit_ma": [50.0] * 8,
             })
             document["controller"]["sync_hold_control"]["ruckig"].update({
                 "max_velocity": [0.5] * 8, "max_acceleration": [1.0] * 8,
@@ -103,7 +103,7 @@ def test_launch_profiles_sides_and_remaps(expand_launch, profile, kind, sides):
         config = config_dir / f"grav_comp_m6_{side}.yaml"
         assert parameters[0][node.node_name]["ros__parameters"] == {"config_path": str(config)}
         loaded = load_config(config, require_runtime=True)
-        assert loaded.dynamixel.current_limit_ma == 50.0
+        assert loaded.dynamixel.current_limit_ma == (50.0,) * 8
         assert loaded.controller.force_feedback_control.joint.dynamics.follower_joint_offset == (0 if side == "left" else 7)
 
 
@@ -134,7 +134,7 @@ def test_relative_config_path_uses_package_share(expand_launch):
 @pytest.mark.parametrize("arguments,match", [
     ({"robot_profile": "invalid"}, "is not valid"),
     ({"left_config": "missing.yaml"}, "left_config file does not exist"),
-    ({"left_config": str(PACKAGE_ROOT / "config/grav_comp_m6_left.yaml")}, "dynamixel.joint_offsets is required"),
+    ({"left_config": str(PACKAGE_ROOT / "config/grav_comp_m6_left.yaml")}, "ruckig.max_velocity is required"),
 ])
 def test_invalid_arguments_never_start_processes(expand_launch, arguments, match):
     with pytest.raises(RuntimeError, match=match):
@@ -148,16 +148,19 @@ def test_dual_checks_both_files_before_starting_either_arm(expand_launch):
     assert not expand_launch.captured
 
 
-def test_dual_rejects_missing_right_calibration_before_starting_left(expand_launch):
-    template = PACKAGE_ROOT / "config/grav_comp_m6_right.yaml"
-    with pytest.raises(RuntimeError, match="right_config invalid: .*dynamixel.joint_offsets is required"):
-        expand_launch("dual", right_config=str(template))
+def test_dual_rejects_missing_right_current_limit_before_starting_left(expand_launch):
+    document = yaml.safe_load((PACKAGE_ROOT / "config/grav_comp_m6_right.yaml").read_text())
+    document["dynamixel"].pop("current_limit_ma")
+    bad = expand_launch.share / "right_without_current_limit.yaml"
+    bad.write_text(yaml.safe_dump(document))
+    with pytest.raises(RuntimeError, match="right_config invalid: .*dynamixel.current_limit_ma is required"):
+        expand_launch("dual", right_config=str(bad))
     assert not expand_launch.captured
 
 
 def test_dual_rejects_missing_right_ruckig_limit_before_starting_left(expand_launch):
     document = yaml.safe_load((PACKAGE_ROOT / "config/grav_comp_m6_right.yaml").read_text())
-    document["dynamixel"].update({"joint_offsets": [0.0] * 8, "current_limit_ma": 50.0})
+    document["dynamixel"].update({"joint_offsets": [0.0] * 8, "current_limit_ma": [50.0] * 8})
     bad = expand_launch.share / "right_without_limits.yaml"
     bad.write_text(yaml.safe_dump(document))
     with pytest.raises(RuntimeError, match="right_config invalid: .*ruckig.max_velocity is required"):

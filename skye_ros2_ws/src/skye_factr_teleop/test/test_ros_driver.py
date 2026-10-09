@@ -104,7 +104,7 @@ def make_node(context, monkeypatch, tmp_path):
         source = Path(__file__).parents[1] / "config" / f"grav_comp_m6_{side}.yaml"
         document = yaml.safe_load(source.read_text(encoding="utf-8"))
         document["dynamixel"].update({
-            "joint_offsets": [0.0] * 8, "current_limit_ma": 50.0,
+            "joint_offsets": [0.0] * 8, "current_limit_ma": [50.0] * 8,
         })
         document["controller"]["sync_hold_control"]["ruckig"].update({
             "max_velocity": [0.5] * 8, "max_acceleration": [1.0] * 8,
@@ -330,7 +330,7 @@ def test_shutdown_closes_even_when_cleanup_or_callback_fails(make_node, fault):
 
 
 @pytest.mark.parametrize("key,value", [
-    ("joint_offsets", [0.0] * 7), ("current_limit_ma", 0.0),
+    ("joint_offsets", [0.0] * 7), ("current_limit_ma", 50.0),
     ("state_timeout", -0.1),
 ])
 def test_invalid_config_values_fail_before_hardware_open(make_node, key, value):
@@ -340,11 +340,15 @@ def test_invalid_config_values_fail_before_hardware_open(make_node, key, value):
     assert hardware.open_calls == []
 
 
-def test_missing_calibration_fails_before_hardware_open(make_node):
+def test_missing_current_limit_fails_before_hardware_open(make_node, tmp_path):
     hardware = Hardware()
     template = Path(__file__).parents[1] / "config/grav_comp_m6_left.yaml"
-    with pytest.raises(ValueError, match="dynamixel.joint_offsets is required"):
-        make_node(config_path_override=template, hardware=hardware)
+    document = yaml.safe_load(template.read_text())
+    document["dynamixel"].pop("current_limit_ma")
+    config = tmp_path / "without_current_limit.yaml"
+    config.write_text(yaml.safe_dump(document))
+    with pytest.raises(ValueError, match="dynamixel.current_limit_ma is required"):
+        make_node(config_path_override=config, hardware=hardware)
     assert hardware.open_calls == []
 
 
@@ -352,7 +356,7 @@ def test_missing_ruckig_limits_fail_before_hardware_open(make_node, tmp_path):
     hardware = Hardware()
     template = Path(__file__).parents[1] / "config/grav_comp_m6_left.yaml"
     document = yaml.safe_load(template.read_text())
-    document["dynamixel"].update({"joint_offsets": [0.0] * 8, "current_limit_ma": 50.0})
+    document["dynamixel"].update({"joint_offsets": [0.0] * 8, "current_limit_ma": [50.0] * 8})
     config = tmp_path / "without_limits.yaml"
     config.write_text(yaml.safe_dump(document))
     with pytest.raises(ValueError, match="ruckig.max_velocity is required"):
