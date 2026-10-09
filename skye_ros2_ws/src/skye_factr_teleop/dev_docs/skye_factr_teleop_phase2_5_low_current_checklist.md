@@ -2,14 +2,16 @@
 
 本文用于阶段 2.5.2。连接硬件前先完成第 1--3 节；第 4 节之后才包含真实串口写入。
 本工具只调用生产 `DynamixelDriver`，不启动控制核心或 ROS 遥操节点。
+本轮使用遥操设备 A（Thor）：左侧 USB by-id 为 `FTBEO9L1`，右侧为 `FTBEO8WL`；
+两侧命令使用 `config/grav_comp_m6_*.yaml`，不得混用遥操设备 B（Orin）的串口或预演记录。
 
-## 当前进度（2026-09-23）
+## 当前进度（2026-10-09）
 
 | 小节 | 状态 | 依据或待办 |
 | --- | --- | --- |
 | 1. 覆盖范围与硬限制 | PASS（静态核对） | 左 ID 1 为 XM430-W350，`20 ≤ 50 ≤ 100 mA`；右 ID 3 为 XC330-T288，`20 ≤ 50 ≤ 91 mA`。现场批准仍按第 4 节确认。 |
 | 2. 无硬件自动测试 | PASS | `test_dynamixel_driver.py` 与 `test_low_current_check.py` 合计 59 项通过。 |
-| 3. 连接前参数预演 | PASS | ROS 2 已发现低电流工具；`validation_records/phase2_5_2/left_id1_prepared.json` 与 `right_id3_prepared.json` 均为 `PREPARED`。 |
+| 3. 连接前参数预演 | PASS | 设备 A 的左右配置已重新预演；`validation_records/phase2_5_2/left_id1_prepared.json` 与 `right_id3_prepared.json` 均为 `PREPARED`。 |
 | 4. 上电和连接前现场确认 | PENDING | 需现场逐项确认。 |
 | 5. 真实单舵机验证 | PENDING | 左右串口映射、latency timer 和真实电流脉冲尚未验收。 |
 | 6. 通过与停止条件 | PENDING | 需根据真实测试结果判定。 |
@@ -130,6 +132,11 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_low_current_check -- \
 - [ ] 现场负责人已批准本次低电流数值和 0.5 秒脉冲；
 - [ ] 未启动控制核心或 ROS 遥操节点。
 
+可保留现有 Dynamixel 菊花链接线，但同侧所有舵机会一起上电。若保留整条总线，先独立
+确认非目标 ID 均为 Torque Disable、没有其它程序发送控制命令，并支撑好可能下垂的机械臂；
+本工具只检查目标 ID，不会核对其它舵机的 Torque 状态。若要物理隔离，仅在断电后断开
+其它舵机的连接，保持目标舵机的通信和外部供电；不得带电插拔。两次验证之间同样先断电。
+
 只读确认串口占用：
 
 ```bash
@@ -142,12 +149,12 @@ pgrep -af 'factr_teleop|skye_factr_teleop|dynamixel' || true
 `--confirm-single-servo`，并把输出文件名改为 `*_result.json`。以下命令均从
 `skye_ros2_ws` 目录、已加载工作区的同一终端执行。
 
-先确认左侧 USB by-id 名称及其对应的实体设备。当前左侧配置使用遥操设备 B；核对
+先确认左侧 USB by-id 名称及其对应的实体设备。当前左侧配置使用遥操设备 A；核对
 `USB_BY_ID` 与左侧 YAML 的 `dynamixel_port` 和实体标签一致，再设置并回读 latency timer：
 
 ```bash
 find /dev/serial/by-id -maxdepth 1 -type l -printf '%p -> %l\n' | sort
-USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0
+USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0
 TTY_PATH=$(readlink -f "$USB_BY_ID")
 test -c "$TTY_PATH"
 TTY_NAME=$(basename "$TTY_PATH")
@@ -174,12 +181,12 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_low_current_check -- \
 
 两次验证之间先断电，并完成第 4 节对应侧别的全部检查。
 
-重新确认右侧 USB by-id 名称及其对应的实体设备。当前右侧配置使用遥操设备 B；核对
+重新确认右侧 USB by-id 名称及其对应的实体设备。当前右侧配置使用遥操设备 A；核对
 `USB_BY_ID` 与右侧 YAML 的 `dynamixel_port` 和实体标签一致，再设置并回读 latency timer：
 
 ```bash
 find /dev/serial/by-id -maxdepth 1 -type l -printf '%p -> %l\n' | sort
-USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0
+USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0
 TTY_PATH=$(readlink -f "$USB_BY_ID")
 test -c "$TTY_PATH"
 TTY_NAME=$(basename "$TTY_PATH")

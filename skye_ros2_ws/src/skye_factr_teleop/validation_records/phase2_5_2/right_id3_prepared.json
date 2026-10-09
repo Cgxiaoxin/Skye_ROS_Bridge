@@ -1,10 +1,10 @@
 {
   "schema": "skye_factr_teleop.phase_2_5_2.v1",
-  "started_at": "2026-09-23T15:51:27+08:00",
+  "started_at": "2026-10-09T16:40:28+08:00",
   "mode": "prepare-only",
   "side": "right",
   "config": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml",
-  "configured_port": "usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0",
+  "configured_port": "usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0",
   "resolved_port": null,
   "baudrate": 4000000,
   "latency_timer": null,

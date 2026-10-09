@@ -24,7 +24,7 @@ dynamixel:
   # 使用 Dynamixel Wizard 核实：ID 1..7 在主臂 URDF 零姿态、ID 8 在夹爪定义零位时，Present Position 均约为 0。
   joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # rad，按物理舵机 ID 1..8
   # Physical leader-servo directions only; not a follower semantic mapping.
-  joint_signs: [1, 1, 1, 1, 1, -1, -1, 1] # 遥操设备A（Thor）
+  joint_signs: [1, 1, 1, 1, 1, -1, -1, 1] # 遥操设备A（Thor）（checked 26/10/9）
 
 controller:
   frequency: 500

@@ -99,7 +99,8 @@ cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-select skye_factr_description skye_factr_teleop
 source install/setup.bash
-RECORD_ROOT=/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase2_5_1
+# 根据设备更换为A/B后缀
+RECORD_ROOT=/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase2_5_1_A
 mkdir -p "$RECORD_ROOT"
 ```
 
@@ -111,19 +112,23 @@ mkdir -p "$RECORD_ROOT"
 find /dev/serial/by-id -maxdepth 1 -type l -printf '%p -> %l\n' | sort
 ```
 
-当前左侧配置使用遥操设备 B。设置左侧 FTDI latency timer 并回读确认：
+设置左侧 FTDI latency timer 并回读确认：
 
 ```bash
-USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0
+# 设备A
+USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0
+# 设备B
+# USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0
 
 TTY_PATH=$(readlink -f "$USB_BY_ID")
 TTY_NAME=$(basename "$TTY_PATH")
 echo "USB by-id: $USB_BY_ID -> $TTY_PATH"
+
 echo 1 | sudo tee "/sys/bus/usb-serial/devices/${TTY_NAME}/latency_timer"
 cat "/sys/bus/usb-serial/devices/${TTY_NAME}/latency_timer"
 ```
 
-确认 `TTY_PATH` 是字符设备且回读结果为 `1`，然后运行左侧普通方向引导：
+确认 `TTY_PATH` 是字符设备且回读结果为 `1`，然后运行左侧普通方向引导（若为设备B，注意更换config路径）：
 
 ```bash
 ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
@@ -184,11 +189,15 @@ find /dev/serial/by-id -maxdepth 1 -type l -printf '%p -> %l\n' | sort
 当前右侧配置使用遥操设备 B。设置右侧 FTDI latency timer 并回读确认：
 
 ```bash
-USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0
+# 设备A
+USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0
+# 设备B
+# USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0
 
 TTY_PATH=$(readlink -f "$USB_BY_ID")
 TTY_NAME=$(basename "$TTY_PATH")
 echo "USB by-id: $USB_BY_ID -> $TTY_PATH"
+
 echo 1 | sudo tee "/sys/bus/usb-serial/devices/${TTY_NAME}/latency_timer"
 cat "/sys/bus/usb-serial/devices/${TTY_NAME}/latency_timer"
 ```
