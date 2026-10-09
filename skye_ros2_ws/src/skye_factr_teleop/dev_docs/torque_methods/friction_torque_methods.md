@@ -43,7 +43,7 @@ $$
 \end{cases}
 $$
 
-`position_velocity` 模式可能包含速度相关动力学项，因此这个输入不能一概视为纯重力力矩。同步中使用 `ruckig_gravity_comp_gain`，`HOLD_SETTLING` 和 `SYNCED` 使用 `hold_gravity_comp_gain`，其他状态使用 `gravity_comp.gain`。即使不将重力项加入总输出，只要静摩擦项启用，仍会计算这个输入。
+`position_velocity` 模式可能包含速度相关动力学项，因此这个输入不能一概视为纯重力力矩。同步中使用 `ruckig_gravity_comp_gain`，`HOLD_SETTLING` 和 `SYNCED` 使用 `hold_gravity_comp_gain`，其他状态使用 `joint_gravity_comp.gain`。即使不将重力项加入总输出，只要静摩擦项启用，仍会计算这个输入。
 
 **特点与限制：**抖动幅值随动力学输出、姿态和控制状态变化；当 `τ_comp` 接近零时，即使关节仍有静摩擦，抖动也接近零。超过速度阈值后该项完全关闭，没有显式的库仑或黏性摩擦补偿。负载相关幅值可能适合某些硬件，但动力学补偿力矩并不直接等于摩擦大小，需要实验验证。
 

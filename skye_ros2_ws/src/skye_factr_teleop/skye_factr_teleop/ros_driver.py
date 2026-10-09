@@ -103,13 +103,13 @@ def validate_joint_state(
 def _hardware_factory(config):
     return DynamixelDriver(
         range(1, 9), config.dynamixel.servo_types,
-        config.dynamixel.dynamixel_port, baudrate=config.arm_teleop.baudrate,
+        config.dynamixel.dynamixel_port, baudrate=config.dynamixel.baudrate,
     )
 
 
 def _make_pinocchio_dynamics(config):
-    arm = config.arm_teleop
-    path = Path(get_package_share_directory(arm.leader_urdf_package)) / arm.leader_urdf
+    dynamics = config.controller.joint_gravity_comp.dynamics
+    path = Path(get_package_share_directory(dynamics.leader_urdf_package)) / dynamics.leader_urdf
     return PinocchioDynamics(path)
 
 
@@ -148,10 +148,10 @@ class SkyeFactrTeleopNode(Node):
         config_path = self._parameter("config_path", "")
         self.config = load_config(resolve_config_path(config_path, self.side), require_runtime=True)
         runtime = self.config.runtime
-        self._offsets = np.asarray(runtime.joint_offsets)
-        self._current_limit = runtime.current_limit_ma
+        self._offsets = np.asarray(self.config.dynamixel.joint_offsets)
+        self._current_limit = self.config.dynamixel.current_limit_ma
         self._limits = {
-            name: np.asarray(getattr(runtime, name))
+            name: np.asarray(getattr(self.config.controller.sync_hold_control.ruckig, name))
             for name in ("max_velocity", "max_acceleration", "max_jerk")
         }
         self._max_age = runtime.state_timeout

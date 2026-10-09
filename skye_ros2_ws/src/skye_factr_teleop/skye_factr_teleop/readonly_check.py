@@ -444,7 +444,7 @@ def run_readonly_check(
         "configured_port": config.dynamixel.dynamixel_port,
         "resolved_port": None,
         "ids": list(EXPECTED_IDS),
-        "baudrate": config.arm_teleop.baudrate,
+        "baudrate": config.dynamixel.baudrate,
         "latency_timer": None,
         "devices": [],
         "samples": [],
@@ -464,7 +464,7 @@ def run_readonly_check(
         ids=EXPECTED_IDS,
         servo_types=config.dynamixel.servo_types,
         port=config.dynamixel.dynamixel_port,
-        baudrate=config.arm_teleop.baudrate,
+        baudrate=config.dynamixel.baudrate,
     )
     position_samples = []
     velocity_samples = []
@@ -623,7 +623,7 @@ def run_guided_check(
         "configured_port": config.dynamixel.dynamixel_port,
         "resolved_port": None,
         "ids": list(EXPECTED_IDS),
-        "baudrate": config.arm_teleop.baudrate,
+        "baudrate": config.dynamixel.baudrate,
         "latency_timer": None,
         "devices": [],
         "settings": {
@@ -657,7 +657,7 @@ def run_guided_check(
         ids=EXPECTED_IDS,
         servo_types=config.dynamixel.servo_types,
         port=config.dynamixel.dynamixel_port,
-        baudrate=config.arm_teleop.baudrate,
+        baudrate=config.dynamixel.baudrate,
     )
     close_error = None
     try:
@@ -934,7 +934,7 @@ def run_guided_continuous_check(
         "resolved_port": None,
         "ids": list(EXPECTED_IDS),
         "target_ids": list(target_ids),
-        "baudrate": config.arm_teleop.baudrate,
+        "baudrate": config.dynamixel.baudrate,
         "latency_timer": None,
         "devices": [],
         "settings": {
@@ -970,7 +970,7 @@ def run_guided_continuous_check(
         ids=EXPECTED_IDS,
         servo_types=config.dynamixel.servo_types,
         port=config.dynamixel.dynamixel_port,
-        baudrate=config.arm_teleop.baudrate,
+        baudrate=config.dynamixel.baudrate,
     )
     close_error = None
     try:
@@ -1283,10 +1283,10 @@ def _validate_arguments(
         raise ValueError(
             "Dynamixel port must be a by-id basename or absolute by-id path"
         )
-    if config.arm_teleop.baudrate != DEFAULT_BAUDRATE:
+    if config.dynamixel.baudrate != DEFAULT_BAUDRATE:
         raise ValueError(
             f"baudrate must be {DEFAULT_BAUDRATE}, "
-            f"got {config.arm_teleop.baudrate}"
+            f"got {config.dynamixel.baudrate}"
         )
     if isinstance(frames, bool) or frames < 2:
         raise ValueError("frames must be at least 2")

@@ -152,6 +152,7 @@ def transform_leader_state(
 def joint_limit_barrier(
     state: LeaderState, lower: object, upper: object, kp: float, kd: float,
     gripper_lower: float, gripper_upper: float, *, margin: float = 0.0,
+    gripper_kp: float, gripper_kd: float,
 ) -> np.ndarray:
     """Repulsive torque only outside the safe interval, including gripper."""
     q = _vector(state.arm_position, ARM_JOINT_COUNT, "arm_position")
@@ -170,10 +171,12 @@ def joint_limit_barrier(
     grip_vel = _scalar(state.gripper_velocity, "gripper_velocity")
     grip_min = _scalar(gripper_lower, "gripper_lower")
     grip_max = _scalar(gripper_upper, "gripper_upper")
-    if grip_min >= grip_max:
-        raise ValueError("invalid gripper limits")
+    grip_gain_p = _scalar(gripper_kp, "gripper_kp")
+    grip_gain_d = _scalar(gripper_kd, "gripper_kd")
+    if grip_min >= grip_max or min(grip_gain_p, grip_gain_d) < 0:
+        raise ValueError("invalid gripper limits or gains")
     if grip < grip_min or grip > grip_max:
-        result[-1] = -gain_p * (grip - np.clip(grip, grip_min, grip_max)) - gain_d * grip_vel
+        result[-1] = -grip_gain_p * (grip - np.clip(grip, grip_min, grip_max)) - grip_gain_d * grip_vel
     return result
 
 def gravity_compensation(
@@ -259,9 +262,9 @@ class ControlCore:
         # 未传入时，按配置生成开关；静摩擦跟随重力开关，保持上游默认行为。
         # 此处显式指定各字段，因此修改 ControlTerms 类的字段默认值不会影响此分支。
         self.terms = terms or ControlTerms(
-            joint_limits=config.controller.joint_limit_barrier.arm_limit_barrier_enable,
-            gravity=config.controller.gravity_comp.enable,
-            static_friction=config.controller.gravity_comp.enable,
+            joint_limits=config.controller.limit_barrier_control.enable,
+            gravity=config.controller.joint_gravity_comp.enable,
+            static_friction=config.controller.joint_gravity_comp.enable,
             nullspace=config.controller.null_space_regulation.enable,
         )
         self._dither_positive = np.ones(ARM_JOINT_COUNT, dtype=bool)
@@ -382,12 +385,13 @@ class ControlCore:
         if not self.hardware.torque_enabled and self.mode != ControlMode.IDLE:
             self.stop()
         if (self.mode == ControlMode.TELEOP_SYNCING
-                and self._now - self._machine.entered_at >= self.config.controller.teleop_sync_timeout):
+                and self._now - self._machine.entered_at
+                >= self.config.controller.sync_hold_control.ruckig.trajectory_timeout):
             self._trajectory_event(Event.SYNC_TIMEOUT)
             self._zero_and_disable()
         if (self.mode == ControlMode.HOLD_SETTLING
                 and self._now - self._machine.entered_at
-                >= self.config.controller.hold_ruckig_control.settle_timeout):
+                >= self.config.controller.sync_hold_control.hold.settle_timeout):
             self._trajectory_event(Event.SETTLE_TIMEOUT)
             self._zero_and_disable()
         return dt
@@ -405,23 +409,26 @@ class ControlCore:
             tracking, target, target_velocity = self._update_tracking(state, dt)
             motion = self.mode in (ControlMode.TELEOP_SYNCING, ControlMode.HOLD_SETTLING, ControlMode.SYNCED)
             if self.terms.joint_limits:
+                barrier = ctrl.limit_barrier_control
+                joint = barrier.joint
+                gripper = barrier.gripper
                 limit = joint_limit_barrier(
-                    state, ctrl.joint_limit_barrier.arm_joint_limits_min,
-                    ctrl.joint_limit_barrier.arm_joint_limits_max,
-                    ctrl.joint_limit_barrier.kp, ctrl.joint_limit_barrier.kd,
-                    self.config.gripper_teleop.limit_min, self.config.gripper_teleop.limit_max,
-                    margin=ctrl.joint_limit_barrier.arm_joint_limits_safety_margin,
+                    state, joint.limit_min, joint.limit_max,
+                    joint.kp, joint.kd,
+                    gripper.limit_min, gripper.limit_max,
+                    margin=joint.safety_margin,
+                    gripper_kp=gripper.kp, gripper_kd=gripper.kd,
                 )
             if self.terms.gravity or self.terms.static_friction:
-                gain = ctrl.gravity_comp.gain
+                gain = ctrl.joint_gravity_comp.gain
                 if self.mode == ControlMode.TELEOP_SYNCING:
-                    gain = ctrl.hold_ruckig_control.ruckig_gravity_comp_gain
+                    gain = ctrl.sync_hold_control.ruckig.gravity_comp_gain
                 elif self.mode in (ControlMode.HOLD_SETTLING, ControlMode.SYNCED):
-                    gain = ctrl.hold_ruckig_control.hold_gravity_comp_gain
+                    gain = ctrl.sync_hold_control.hold.gravity_comp_gain
                 compensation = gravity_compensation(
                     state.arm_position, state.arm_velocity,
                     self.dynamics, gain,
-                    mode=ctrl.gravity_comp.mode,
+                    mode=ctrl.joint_gravity_comp.mode,
                 )
                 if self.terms.gravity:
                     gravity[:ARM_JOINT_COUNT] = compensation
@@ -455,7 +462,8 @@ class ControlCore:
         if self.mode not in (ControlMode.TELEOP_SYNCING, ControlMode.HOLD_SETTLING, ControlMode.SYNCED):
             return np.zeros(MOTOR_COUNT), None, None
 
-        cfg = self.config.controller.hold_ruckig_control
+        ruckig = self.config.controller.sync_hold_control.ruckig
+        hold = self.config.controller.sync_hold_control.hold
         position = np.append(state.arm_position, state.gripper_position)
         velocity = np.append(state.arm_velocity, state.gripper_velocity)
 
@@ -467,8 +475,8 @@ class ControlCore:
             target = _vector(sample.position, MOTOR_COUNT, "trajectory position")
             target_velocity = _vector(sample.velocity, MOTOR_COUNT, "trajectory velocity")
             if not sample.finished:
-                torque = np.asarray(cfg.ruckig_kp) * (target - position)
-                torque += np.asarray(cfg.ruckig_kd) * (target_velocity - velocity)
+                torque = np.asarray(ruckig.kp) * (target - position)
+                torque += np.asarray(ruckig.kd) * (target_velocity - velocity)
                 return torque, target, target_velocity
 
             self._trajectory_event(Event.TRAJECTORY_COMPLETE)
@@ -478,30 +486,30 @@ class ControlCore:
         target = _vector(self._target, MOTOR_COUNT, "hold target")
         error = target - position
         if self.mode == ControlMode.HOLD_SETTLING:
-            settled = (np.all(np.abs(error) <= cfg.sync_position_tolerance)
-                       and np.all(np.abs(velocity) <= cfg.sync_velocity_tolerance))
+            settled = (np.all(np.abs(error) <= hold.sync_position_tolerance)
+                       and np.all(np.abs(velocity) <= hold.sync_velocity_tolerance))
             if settled:
                 if self._settle_since is None:
                     self._settle_since = self._now
-                elif self._now - self._settle_since >= cfg.settle_duration:
+                elif self._now - self._settle_since >= hold.settle_duration:
                     self._trajectory_event(Event.SYNC_COMPLETE)
             else:
                 self._settle_since = None
 
         # Integrate only near the target; reset each axis outside its threshold.
         self._hold_integral = np.where(
-            np.abs(error) <= cfg.hold_i_thresh,
+            np.abs(error) <= hold.i_thresh,
             np.clip(
                 self._hold_integral + error * dt,
-                -np.asarray(cfg.hold_i_max),
-                cfg.hold_i_max,
+                -np.asarray(hold.i_max),
+                hold.i_max,
             ),
             0.0,
         )
         torque = (
-            np.asarray(cfg.hold_kp) * error
-            - np.asarray(cfg.hold_kd) * velocity
-            + np.asarray(cfg.hold_ki) * self._hold_integral
+            np.asarray(hold.kp) * error
+            - np.asarray(hold.kd) * velocity
+            + np.asarray(hold.ki) * self._hold_integral
         )
         return torque, target, np.zeros(MOTOR_COUNT)
 
@@ -526,7 +534,7 @@ class ControlCore:
                     raise RuntimeError("synchronization requires a trajectory_factory with explicit limits")
                 arm = _vector(follower_position, ARM_JOINT_COUNT, "follower_position")
                 grip = _scalar(
-                    self.config.gripper_teleop.limit_setpoint
+                    self.config.controller.sync_hold_control.gripper_setpoint
                     if gripper_setpoint is None else gripper_setpoint, "gripper_setpoint",
                 )
                 self._target = np.append(arm, grip)

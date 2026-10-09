@@ -4,7 +4,7 @@
 
 ## 计算方案
 
-对 7 个机械臂关节和 1 个夹爪统一计算。记第 `i` 轴的实测逻辑位置、速度为 $q_i,\dot q_i$，轨迹给出的目标位置、速度为 $q_{r,i},\dot q_{r,i}$，最终保持目标为 $q_i^*$。下式均按轴独立计算，增益取自 `controller.hold_ruckig_control`。
+对 7 个机械臂关节和 1 个夹爪统一计算。记第 `i` 轴的实测逻辑位置、速度为 $q_i,\dot q_i$，轨迹给出的目标位置、速度为 $q_{r,i},\dot q_{r,i}$，最终保持目标为 $q_i^*$。下式均按轴独立计算，增益分别取自 `controller.sync_hold_control.ruckig` 和 `controller.sync_hold_control.hold`。
 
 ### 1. 轨迹跟随：PD
 
@@ -65,7 +65,7 @@ $$
 ### 当前行为
 
 - `SYNCED` 没有等待超时，控制循环持续按固定目标输出保持 PID。跟随臂状态仍须持续更新；超过 `state_timeout`（默认 0.25 s）会停止并关闭力矩，见 [`ros_driver.py`](../skye_factr_teleop/ros_driver.py)。
-- 切换时清除保持目标与积分，下周期 `tracking_torque` 归零；重力增益从 `hold_gravity_comp_gain` 改为 `gravity_comp.gain`。静摩擦及启用时的零空间力矩也可能改变。当前没有平滑过渡。默认左臂第 5～7 关节的重力增益分别从 `[0.3, 0.3, 0.3]` 变为 `[1.0, 0.8, 1.0]`。
+- 切换时清除保持目标与积分，下周期 `tracking_torque` 归零；重力增益从 `hold_gravity_comp_gain` 改为 `joint_gravity_comp.gain`。静摩擦及启用时的零空间力矩也可能改变。当前没有平滑过渡。默认左臂第 5～7 关节的重力增益分别从 `[0.3, 0.3, 0.3]` 变为 `[1.0, 0.8, 1.0]`。
 
 ### 优先做参数验证
 

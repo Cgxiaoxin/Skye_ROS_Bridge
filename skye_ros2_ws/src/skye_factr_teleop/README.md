@@ -24,7 +24,7 @@ and arm-limit barrier settings remain unchanged. Neither newly assigned pairing
 has undergone new-package hardware acceptance. These are leader hardware
 profiles, not follower joint-sign mappings.
 
-Set `controller.gravity_comp.mode` in the left/right YAML to choose compensation:
+Set `controller.joint_gravity_comp.mode` in the left/right YAML to choose compensation:
 
 | Mode | Model calculation |
 |---|---|
@@ -61,25 +61,28 @@ configuration:
 | Parameter | Meaning/default |
 |---|---|
 | `config_path` | Absolute YAML path, or path relative to the package share; empty selects `config/grav_comp_m6_<side>.yaml` |
-| `runtime.joint_offsets` | Required: eight calibrated physical-servo offsets in rad, including gripper |
-| `runtime.current_limit_ma` | Required: positive current ceiling; also bounded by servo ratings |
-| `runtime.max_velocity`, `runtime.max_acceleration`, `runtime.max_jerk` | Required: eight positive limits each, in logical leader order, rad/s, rad/s², rad/s³ |
+| `dynamixel.joint_offsets` | Required: eight calibrated physical-servo offsets in rad, including gripper |
+| `dynamixel.current_limit_ma` | Required: positive current ceiling; also bounded by servo ratings |
+| `controller.sync_hold_control.ruckig.max_velocity`, `max_acceleration`, `max_jerk` | Required for teleop: eight positive limits each, in logical leader order, rad/s, rad/s², rad/s³ |
 | `runtime.state_timeout` | Maximum header age and time since receipt, seconds; default `0.25` |
 | `runtime.future_tolerance` | Allowed future header timestamp skew, seconds; default `0.05` |
 | `runtime.allow_unnamed_joint_states` | Default `false`; if true, empty names mean fixed J1..J7 order |
 
-Copy the matching Thor or Orin YAML to a per-device file and add a top-level
-`runtime` mapping with measured values. The packaged YAML files intentionally
-omit this mapping and cannot start teleoperation. For example, the required
-shape is:
+Copy the matching Thor or Orin YAML to a per-device file. Fill the two
+calibration fields under `dynamixel` and the three limit arrays under the existing
+`controller.sync_hold_control.ruckig` mapping. The packaged YAML files omit
+these measured values and cannot start teleoperation. The required fields are:
 
 ```yaml
-runtime:
+dynamixel:
   joint_offsets: [<8 measured radians>]
   current_limit_ma: <measured safe ceiling in mA>
-  max_velocity: [<8 positive rad/s limits>]
-  max_acceleration: [<8 positive rad/s² limits>]
-  max_jerk: [<8 positive rad/s³ limits>]
+controller:
+  sync_hold_control:
+    ruckig:
+      max_velocity: [<8 positive rad/s limits>]
+      max_acceleration: [<8 positive rad/s² limits>]
+      max_jerk: [<8 positive rad/s³ limits>]
 ```
 
 Replace each bracketed placeholder with actual YAML numbers before launch.
@@ -173,7 +176,7 @@ directory. No environment or Python module search paths are changed.
 
 Each config path accepts an absolute path or a path relative to the package
 share. A single-arm launch declares only that arm's config. In a dual-arm
-launch, both files and their required runtime values are validated before
+launch, both files and their required calibration and trajectory limits are validated before
 starting either node. Launch does not supply invented calibration offsets or
 motion/current limits.
 
@@ -445,36 +448,36 @@ cycle = core.step(now=tick_time)  # Once per caller's control cycle.
 Accepted sync captures the measured eight-axis logical leader position and
 velocity and copies the seven follower positions plus gripper setpoint.
 Coordinates must already be mapped to the logical leader frame. If omitted,
-the gripper target is `gripper_teleop.limit_setpoint`. Starting acceleration
+the gripper target is `controller.sync_hold_control.gripper_setpoint`. Starting acceleration
 is zero because no acceleration measurement is available; target velocity and
 acceleration are zero. A fresh trajectory is created per sync. Repeated sync
 requests do not replace the target or restart the timeout.
 
 During synchronization, tracking torque is
-`ruckig_kp * (q_ref - q) + ruckig_kd * (dq_ref - dq)`.
+`ruckig.kp * (q_ref - q) + ruckig.kd * (dq_ref - dq)`.
 Ruckig completion enters `HOLD_SETTLING` on the captured final target. Hold torque is
-`hold_kp * error - hold_kd * dq + hold_ki * integral`.
+`hold.kp * error - hold.kd * dq + hold.ki * integral`.
 For each axis, integrate `error * dt` only when
-`abs(error) <= hold_i_thresh`; otherwise reset that axis's integral.
-`hold_i_max` bounds the accumulated error in rad·s, before multiplication by
-`hold_ki`. The first hold cycle starts with zero integral.
+`abs(error) <= hold.i_thresh`; otherwise reset that axis's integral.
+`hold.i_max` bounds the accumulated error in rad·s, before multiplication by
+`hold.ki`. The first hold cycle starts with zero integral.
 
 During `HOLD_SETTLING`, every axis must satisfy `sync_position_tolerance` and
 `sync_velocity_tolerance` continuously for `settle_duration`. The timer resets
 when any axis leaves its band. Success enters `SYNCED` and hold continues.
 `settle_timeout` returns to `IDLE` and disables torque. These four settings are
-under `controller.hold_ruckig_control`; the supplied values are initial tuning
+under `controller.sync_hold_control.hold`; the supplied values are initial tuning
 values and need validation on the robot.
 
-The two phases use `ruckig_gravity_comp_gain` and `hold_gravity_comp_gain`
-respectively, replacing the normal gravity gain. The configured gravity mode
+The two phases use their respective `gravity_comp_gain` values, replacing the
+normal gravity gain. The configured gravity mode
 and term switches still apply. Joint-limit protection and static friction
 remain available; null-space regulation is suppressed during sync/hold to
 avoid competing with their full joint targets. Final torque uses the existing
 servo direction conversion and current limits.
 
-At `elapsed >= teleop_sync_timeout`, timeout wins before a Ruckig update. Settling
-timeout likewise wins before a hold update. Stop,
+At `elapsed >= controller.sync_hold_control.ruckig.trajectory_timeout`, timeout
+wins before a Ruckig update. Settling timeout likewise wins before a hold update. Stop,
 timeout, and computation/setup failures clear the trajectory, integral, and
 target, return to `IDLE`, and attempt zero current and Torque Disable. An explicit
 `stop()` needs no timestamp; `handle("switch_stop", now=...)` also stops when

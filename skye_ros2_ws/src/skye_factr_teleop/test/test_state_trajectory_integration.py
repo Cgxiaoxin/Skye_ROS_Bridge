@@ -181,7 +181,7 @@ def test_complete_lifecycle_and_repeated_requests(rig):
                           np.zeros(8))
     tick(rig, 0.01)
     assert core.mode == ControlMode.HOLD_SETTLING
-    tick(rig, core.config.controller.hold_ruckig_control.settle_duration)
+    tick(rig, core.config.controller.sync_hold_control.hold.settle_duration)
     assert core.mode == ControlMode.SYNCED
     integral = core.hold_integral
     assert np.all(integral > 0)
@@ -217,7 +217,7 @@ def test_completion_at_timeout_boundary(rig, offset):
     entered = start(rig).entered_at
     backend = rig.backends[0]
     backend.result = FakeResult.Finished
-    rig.clock.now = entered + rig.core.config.controller.teleop_sync_timeout + offset
+    rig.clock.now = entered + rig.core.config.controller.sync_hold_control.ruckig.trajectory_timeout + offset
     result = rig.core.step(now=rig.clock.now)
     if offset < 0:
         assert result.mode == ControlMode.HOLD_SETTLING
@@ -244,7 +244,7 @@ def test_restart_captures_new_start_and_cannot_reuse_old_motion(rig, exit_path):
         tick(rig, 0.02)
         assert np.any(rig.core.hold_integral)
     if exit_path == "timeout":
-        tick(rig, rig.core.config.controller.teleop_sync_timeout)
+        tick(rig, rig.core.config.controller.sync_hold_control.ruckig.trajectory_timeout)
     else:
         reads = rig.hardware.read_calls
         rig.core.handle("switch_stop", now=rig.clock.advance())

@@ -667,7 +667,7 @@ https://github.com/JasonJZLiu/FACTR_Teleop.git
 - 上游 gripper 只有 `actuation_range`，M6 需要 `limit_min`、`limit_setpoint`、
   `limit_max` 以及独立反馈参数；
 - 上游默认始终执行零空间调节，新实现遵守 YAML 中的 `enable`；
-- 上游没有 `arm_limit_barrier_enable`，新实现应显式支持；
+- 上游没有 `controller.limit_barrier_control.enable`，新实现应显式支持；
 - 上游只加载 leader 动力学，新实现还要按配置加载 follower URDF，并计算
   `tau_external = tau_reported - tau_follower_gravity`；
 - 上游没有 Ruckig、走位/保持控制和相关积分项，这些属于 Skye 新增实现；
@@ -732,7 +732,7 @@ Skye ROS 适配层按已确定的话题契约重新实现，并连接
 
 ### 10.8 配置和 URDF 如何参考
 
-上游 YAML 的四级分组可保留：
+上游 YAML 曾使用四个顶层分组：
 
 ```text
 dynamixel
@@ -740,6 +740,8 @@ arm_teleop
 gripper_teleop
 controller
 ```
+
+当前 M6 配置改用顶层 `dynamixel`、`controller` 和可选的 `runtime`。`initialization` 与 `end_effector` 位于 `controller` 下，紧随 `null_space_regulation`；夹爪上下限与独立增益在 `controller.limit_barrier_control`，默认同步目标在 `controller.sync_hold_control.gripper_setpoint`；leader URDF 在 `controller.joint_gravity_comp.dynamics`，从臂模型参数在 `controller.force_feedback_control.joint.dynamics`，从臂重力补偿开关在 `controller.force_feedback_control.joint`。不再使用顶层 `arm_teleop` 和 `gripper_teleop`。
 
 但参数值不从 Franka 示例继承。左右 M6 的端口、型号、方向、关节限制、增益、
 follower offset 和夹爪参数，应以当前已验证的 M6 YAML 为迁移输入，再由

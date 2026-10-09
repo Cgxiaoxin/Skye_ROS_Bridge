@@ -4,7 +4,7 @@
 
 ## 边界与符号
 
-对第 `i` 个机械臂关节，`q_i`、`dq_i` 分别为主臂逻辑角度和角速度，`L_i`、`U_i` 为原始下限和上限，`m` 为安全裕量；要求 `L_i + m < U_i - m`。项目当前从 YAML 的 `controller.joint_limit_barrier.arm_joint_limits_min/max` 读取边界，`arm_joint_limits_safety_margin` 为 `m`，**不读取主臂 URDF 的 `<limit>` 来计算限位力矩**。夹爪单独使用 YAML 的 `gripper_teleop.limit_min/max`，当前实现不对夹爪加安全裕量。见 [控制代码](../skye_factr_teleop/control_core.py)和[普通配置](../config/grav_comp_m6_left.yaml)。
+对第 `i` 个机械臂关节，`q_i`、`dq_i` 分别为主臂逻辑角度和角速度，`L_i`、`U_i` 为原始下限和上限，`m` 为安全裕量；要求 `L_i + m < U_i - m`。项目当前从 YAML 的 `controller.limit_barrier_control.joint.limit_min/max` 读取边界，`controller.limit_barrier_control.joint.safety_margin` 为 `m`，**不读取主臂 URDF 的 `<limit>` 来计算限位力矩**。夹爪单独使用 `controller.limit_barrier_control.gripper.limit_min/max` 和 `controller.limit_barrier_control.gripper.kp/kd`，当前实现不对夹爪加安全裕量。见 [控制代码](../skye_factr_teleop/control_core.py)和[普通配置](../config/grav_comp_m6_left.yaml)。
 
 论文讨论的是避免主臂带动从臂越过**从臂**关节限位。若要采用论文思路，需先验证 YAML 边界确实与从臂可用范围、主臂角度零点及方向逐关节对应；主臂 URDF 的 `<limit>` 不能自动替代这一校验。
 

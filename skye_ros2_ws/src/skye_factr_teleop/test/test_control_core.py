@@ -40,7 +40,7 @@ def _core(*, terms=None, torque_enabled=True, limit=100.0, gravity_mode="positio
     config = load_config(CONFIG)
     config = replace(config, controller=replace(
         config.controller,
-        gravity_comp=replace(config.controller.gravity_comp, mode=gravity_mode),
+        joint_gravity_comp=replace(config.controller.joint_gravity_comp, mode=gravity_mode),
     ))
     hardware = FakeDynamixelIO(np.zeros(8), np.zeros(8), torque_enabled=torque_enabled)
     dynamics = FakeDynamics()
@@ -65,9 +65,12 @@ def test_quarter_turn_calibration_and_signed_state_mapping():
 
 def test_joint_limit_barrier_including_gripper_and_margin():
     state = LeaderState(np.array([1.95, -1.95, 0, 0, 0, 0, 0]), np.ones(7), 1.2, 0.5)
-    result = joint_limit_barrier(state, [-2] * 7, [2] * 7, 2, 0.5, -1, 1, margin=0.1)
+    result = joint_limit_barrier(
+        state, [-2] * 7, [2] * 7, 2, 0.5, -1, 1,
+        margin=0.1, gripper_kp=3, gripper_kd=0.25,
+    )
     np.testing.assert_allclose(result[:3], [-0.6, -0.4, 0])
-    assert result[-1] == pytest.approx(-0.65)
+    assert result[-1] == pytest.approx(-0.725)
 
 
 def test_gravity_and_stiction_fixed_outputs_and_no_input_mutation():
@@ -131,7 +134,7 @@ def test_cycle_shares_velocity_dependent_compensation_with_stiction(gravity_enab
     second = core.step()
     expected = (
         np.arange(1.0, 8.0) + 10 * model_velocity
-    ) * core.config.controller.gravity_comp.gain
+    ) * core.config.controller.joint_gravity_comp.gain
     expected_friction = np.abs(expected) * core.config.controller.static_friction_comp.gain
     expected_friction[1] = 0
     assert len(calls) == 2  # One dynamics calculation per cycle for both terms.
@@ -161,9 +164,9 @@ def test_position_only_preserves_joint_limit_and_nullspace_damping():
     dynamics.gravity = gravity
     result = core.step()
     ctrl = core.config.controller
-    barrier = ctrl.joint_limit_barrier
-    upper = barrier.arm_joint_limits_max[0] - barrier.arm_joint_limits_safety_margin
-    expected_limit = -ctrl.joint_limit_barrier.kp * (position[0] - upper) - ctrl.joint_limit_barrier.kd * velocity[0]
+    barrier = ctrl.limit_barrier_control
+    upper = barrier.joint.limit_max[0] - barrier.joint.safety_margin
+    expected_limit = -barrier.joint.kp * (position[0] - upper) - barrier.joint.kd * velocity[0]
     n = ctrl.null_space_regulation
     expected_nullspace = -n.kp[6] * (position[6] - n.null_space_joint_target[6]) - n.kd[6] * velocity[6]
     assert result.joint_limit_torque[0] == pytest.approx(expected_limit)
@@ -194,7 +197,7 @@ def test_one_cycle_per_call_and_model_current_limit():
         assert result.wrote_current
         assert np.max(np.abs(result.physical_current_ma)) <= 20
     assert len(hardware.current_history_ma) == 3
-    np.testing.assert_allclose(result.gravity_torque[:7], np.arange(1, 8) * core.config.controller.gravity_comp.gain)
+    np.testing.assert_allclose(result.gravity_torque[:7], np.arange(1, 8) * core.config.controller.joint_gravity_comp.gain)
 
 
 def test_physical_direction_mapping_and_model_rating_clip():

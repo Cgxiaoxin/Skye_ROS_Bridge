@@ -3,6 +3,7 @@
 
 """Task 5.1: actual rclpy nodes with injected devices; no robot access."""
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 import os
@@ -25,6 +26,18 @@ from test_control_core import FakeDynamics
 from test_sync_hold import FakeTrajectory
 from skye_factr_teleop import ros_driver as module
 from skye_factr_teleop.state_machine import ControlMode
+
+
+def test_leader_dynamics_loads_when_gravity_comp_is_disabled(monkeypatch):
+    config = module.load_config(Path(__file__).parents[1] / "config/grav_comp_m6_left.yaml")
+    gravity = replace(config.controller.joint_gravity_comp, enable=False)
+    config = replace(config, controller=replace(config.controller, joint_gravity_comp=gravity))
+    monkeypatch.setattr(module, "get_package_share_directory", lambda package: f"/share/{package}")
+    monkeypatch.setattr(module, "PinocchioDynamics", lambda path: path)
+
+    assert module._make_pinocchio_dynamics(config) == Path(
+        "/share/skye_factr_description/urdf/m6left_isomorphism.urdf"
+    )
 
 
 class Hardware(FakeDynamixelIO):
@@ -66,7 +79,7 @@ def settle(rig, *, follower=True):
     if follower:
         rig.node._on_follower(packet(rig.node.side, stamp=rig.clock.now))
     rig.node._tick()
-    rig.clock.now += rig.node.config.controller.hold_ruckig_control.settle_duration + 0.002
+    rig.clock.now += rig.node.config.controller.sync_hold_control.hold.settle_duration + 0.002
     if follower:
         rig.node._on_follower(packet(rig.node.side, stamp=rig.clock.now))
     rig.node._tick()
@@ -90,12 +103,16 @@ def make_node(context, monkeypatch, tmp_path):
              hardware=None, record_publishers=True, **kwargs):
         source = Path(__file__).parents[1] / "config" / f"grav_comp_m6_{side}.yaml"
         document = yaml.safe_load(source.read_text(encoding="utf-8"))
-        document["runtime"] = {
+        document["dynamixel"].update({
             "joint_offsets": [0.0] * 8, "current_limit_ma": 50.0,
+        })
+        document["controller"]["sync_hold_control"]["ruckig"].update({
             "max_velocity": [0.5] * 8, "max_acceleration": [1.0] * 8,
             "max_jerk": [4.0] * 8,
-        }
-        document["runtime"].update(parameters or {})
+        })
+        for key, value in (parameters or {}).items():
+            target = document["dynamixel"] if key in ("joint_offsets", "current_limit_ma") else document.setdefault("runtime", {})
+            target[key] = value
         config_path = tmp_path / f"{side}_{len(nodes)}.yaml"
         config_path.write_text(yaml.safe_dump(document), encoding="utf-8")
         hardware = hardware or Hardware()
@@ -314,20 +331,32 @@ def test_shutdown_closes_even_when_cleanup_or_callback_fails(make_node, fault):
 
 @pytest.mark.parametrize("key,value", [
     ("joint_offsets", [0.0] * 7), ("current_limit_ma", 0.0),
-    ("max_jerk", [-1.0] * 8), ("state_timeout", -0.1),
+    ("state_timeout", -0.1),
 ])
-def test_invalid_runtime_values_fail_before_hardware_open(make_node, key, value):
+def test_invalid_config_values_fail_before_hardware_open(make_node, key, value):
     hardware = Hardware()
     with pytest.raises(ValueError):
         make_node(parameters={key: value}, hardware=hardware)
     assert hardware.open_calls == []
 
 
-def test_missing_runtime_fails_before_hardware_open(make_node):
+def test_missing_calibration_fails_before_hardware_open(make_node):
     hardware = Hardware()
     template = Path(__file__).parents[1] / "config/grav_comp_m6_left.yaml"
-    with pytest.raises(ValueError, match="runtime is required"):
+    with pytest.raises(ValueError, match="dynamixel.joint_offsets is required"):
         make_node(config_path_override=template, hardware=hardware)
+    assert hardware.open_calls == []
+
+
+def test_missing_ruckig_limits_fail_before_hardware_open(make_node, tmp_path):
+    hardware = Hardware()
+    template = Path(__file__).parents[1] / "config/grav_comp_m6_left.yaml"
+    document = yaml.safe_load(template.read_text())
+    document["dynamixel"].update({"joint_offsets": [0.0] * 8, "current_limit_ma": 50.0})
+    config = tmp_path / "without_limits.yaml"
+    config.write_text(yaml.safe_dump(document))
+    with pytest.raises(ValueError, match="ruckig.max_velocity is required"):
+        make_node(config_path_override=config, hardware=hardware)
     assert hardware.open_calls == []
 
 
@@ -375,7 +404,7 @@ def test_sync_timeout_with_fresh_input_publishes_idle(make_node):
     rig = make_node()
     rig.node._on_follower(packet())
     rig.node._on_sync(String(data="switch_sync"))
-    rig.clock.now += rig.node.config.controller.teleop_sync_timeout
+    rig.clock.now += rig.node.config.controller.sync_hold_control.ruckig.trajectory_timeout
     rig.node._on_follower(packet(stamp=rig.clock.now))
     rig.node._tick()
     assert rig.node.core.mode == ControlMode.IDLE

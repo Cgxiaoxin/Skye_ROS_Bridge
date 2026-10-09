@@ -29,46 +29,81 @@ def _write(tmp_path, document):
 
 def _calibrated_document():
     document = _document()
-    document["runtime"] = {
+    document["dynamixel"].update({
         "joint_offsets": [0.0] * 8,
         "current_limit_ma": 50.0,
+    })
+    document["controller"]["sync_hold_control"]["ruckig"].update({
         "max_velocity": [0.5] * 8,
         "max_acceleration": [1.0] * 8,
         "max_jerk": [4.0] * 8,
-    }
+    })
     return document
 
 
-def test_teleop_requires_complete_runtime_but_readonly_tools_can_load_template(tmp_path):
-    assert load_config(LEFT_CONFIG).runtime is None
-    with pytest.raises(ConfigError, match="runtime is required"):
+def test_teleop_requires_calibration_but_readonly_tools_can_load_template(tmp_path):
+    assert load_config(LEFT_CONFIG).dynamixel.joint_offsets is None
+    with pytest.raises(ConfigError, match="dynamixel.joint_offsets is required"):
         load_config(LEFT_CONFIG, require_runtime=True)
-    runtime = load_config(_write(tmp_path, _calibrated_document()), require_runtime=True).runtime
-    assert runtime.current_limit_ma == 50.0
-    assert runtime.state_timeout == 0.25
+    config = load_config(_write(tmp_path, _calibrated_document()), require_runtime=True)
+    assert config.dynamixel.joint_offsets == (0.0,) * 8
+    assert config.dynamixel.current_limit_ma == 50.0
+    assert config.runtime.state_timeout == 0.25
+    assert config.controller.sync_hold_control.ruckig.max_velocity == (0.5,) * 8
 
 
 @pytest.mark.parametrize("field", [
-    "joint_offsets", "current_limit_ma", "max_velocity", "max_acceleration", "max_jerk",
+    "joint_offsets", "current_limit_ma",
 ])
-def test_missing_runtime_field_fails_startup_validation(tmp_path, field):
+def test_missing_dynamixel_calibration_fails_startup_validation(tmp_path, field):
     document = _calibrated_document()
-    document["runtime"].pop(field)
-    with pytest.raises(ConfigError, match=f"runtime.{field} is required"):
+    document["dynamixel"].pop(field)
+    with pytest.raises(ConfigError, match=f"dynamixel.{field} is required"):
         load_config(_write(tmp_path, document), require_runtime=True)
 
 
 @pytest.mark.parametrize("field,value", [
     ("joint_offsets", [0.0] * 7),
+    ("joint_offsets", [None] * 8),
     ("current_limit_ma", 0.0),
+    ("current_limit_ma", None),
+])
+def test_invalid_dynamixel_calibration_fails_startup_validation(tmp_path, field, value):
+    document = _calibrated_document()
+    document["dynamixel"][field] = value
+    with pytest.raises(ConfigError, match=f"dynamixel.{field}"):
+        load_config(_write(tmp_path, document), require_runtime=True)
+
+
+def test_runtime_state_policy_remains_optional(tmp_path):
+    document = _calibrated_document()
+    document["runtime"] = {"state_timeout": 0.4, "future_tolerance": 0.1,
+                           "allow_unnamed_joint_states": True}
+    runtime = load_config(_write(tmp_path, document), require_runtime=True).runtime
+    assert runtime.state_timeout == 0.4
+    assert runtime.future_tolerance == 0.1
+    assert runtime.allow_unnamed_joint_states
+
+
+@pytest.mark.parametrize("field", ["max_velocity", "max_acceleration", "max_jerk"])
+def test_missing_ruckig_limit_fails_teleop_but_template_loads(tmp_path, field):
+    document = _calibrated_document()
+    document["controller"]["sync_hold_control"]["ruckig"].pop(field)
+    path = _write(tmp_path, document)
+    assert getattr(load_config(path).controller.sync_hold_control.ruckig, field) is None
+    with pytest.raises(ConfigError, match=f"ruckig.{field} is required"):
+        load_config(path, require_runtime=True)
+
+
+@pytest.mark.parametrize("field,value", [
     ("max_velocity", [0.5] * 7),
     ("max_acceleration", [1.0] * 7),
     ("max_jerk", [0.0] * 8),
 ])
-def test_invalid_runtime_field_fails_startup_validation(tmp_path, field, value):
+def test_invalid_ruckig_limit_fails_validation(tmp_path, field, value):
     document = _calibrated_document()
-    document["runtime"][field] = value
-    with pytest.raises(ConfigError, match=f"runtime.{field}"):
+    document["controller"]["sync_hold_control"]["ruckig"][field] = value
+    with pytest.raises(ConfigError, match=f"ruckig.{field}"):
         load_config(_write(tmp_path, document), require_runtime=True)
 
 
@@ -76,36 +111,43 @@ def test_left_and_right_configs_load_and_preserve_differences():
     left = load_config(LEFT_CONFIG)
     right = load_config(RIGHT_CONFIG)
 
-    assert left.arm_teleop.num_arm_joints == 7
+    assert len(left.controller.initialization.calibration_joint_pos) == 7
+    assert not left.controller.end_effector.use_suction_cup
     assert len(left.dynamixel.servo_types) == 8
-    assert left.arm_teleop.follower_joint_offset == 0
-    assert right.arm_teleop.follower_joint_offset == 7
+    assert left.controller.force_feedback_control.joint.dynamics.follower_joint_offset == 0
+    assert right.controller.force_feedback_control.joint.dynamics.follower_joint_offset == 7
+    assert left.controller.force_feedback_control.joint.follower_gravity_comp_enable
+    assert left.controller.force_feedback_control.gripper.gain == 20.0
     assert left.dynamixel.dynamixel_port != right.dynamixel.dynamixel_port
     assert left.dynamixel.joint_signs != right.dynamixel.joint_signs
-    assert left.arm_teleop.leader_urdf_package == "skye_factr_description"
-    assert not Path(left.arm_teleop.leader_urdf).is_absolute()
-    assert left.controller.gravity_comp.mode == "position_velocity"
-    assert right.controller.gravity_comp.mode == "position_velocity"
+    assert left.dynamixel.baudrate == 4_000_000
+    assert left.controller.joint_gravity_comp.dynamics.leader_urdf_package == "skye_factr_description"
+    assert not Path(left.controller.joint_gravity_comp.dynamics.leader_urdf).is_absolute()
+    assert left.controller.joint_gravity_comp.mode == "position_velocity"
+    assert right.controller.joint_gravity_comp.mode == "position_velocity"
+    assert left.controller.limit_barrier_control.gripper.kp == 0.301658022
+    assert right.controller.limit_barrier_control.gripper.kp == 1.03561658022
+    assert left.controller.sync_hold_control.gripper_setpoint == 0.55
 
 
 @pytest.mark.parametrize("mode", ["position_velocity", "position_only"])
 def test_gravity_modes_load_from_yaml(tmp_path, mode):
     document = _document()
-    document["controller"]["gravity_comp"]["mode"] = mode
-    assert load_config(_write(tmp_path, document)).controller.gravity_comp.mode == mode
+    document["controller"]["joint_gravity_comp"]["mode"] = mode
+    assert load_config(_write(tmp_path, document)).controller.joint_gravity_comp.mode == mode
 
 
 def test_missing_gravity_mode_preserves_factr_default():
     document = _document()
-    document["controller"]["gravity_comp"].pop("mode")
-    assert TeleopConfig.from_mapping(document).controller.gravity_comp.mode == "position_velocity"
+    document["controller"]["joint_gravity_comp"].pop("mode")
+    assert TeleopConfig.from_mapping(document).controller.joint_gravity_comp.mode == "position_velocity"
 
 
 @pytest.mark.parametrize("mode", ["unknown", "", None, True, []])
 def test_invalid_gravity_mode_fails(mode):
     document = _document()
-    document["controller"]["gravity_comp"]["mode"] = mode
-    with pytest.raises(ConfigError, match="gravity_comp.mode"):
+    document["controller"]["joint_gravity_comp"]["mode"] = mode
+    with pytest.raises(ConfigError, match="joint_gravity_comp.mode"):
         TeleopConfig.from_mapping(document)
 
 
@@ -114,7 +156,7 @@ def test_result_is_deeply_immutable():
     with pytest.raises(FrozenInstanceError):
         config.name = "changed"
     with pytest.raises(TypeError):
-        config.controller.gravity_comp.gain[0] = 0.0
+        config.controller.joint_gravity_comp.gain[0] = 0.0
 
 
 @pytest.mark.parametrize(
@@ -122,7 +164,20 @@ def test_result_is_deeply_immutable():
     [
         (lambda d: d.pop("controller"), "controller is required"),
         (lambda d: d["dynamixel"].pop("servo_types"), "servo_types is required"),
-        (lambda d: d["arm_teleop"]["initialization"].pop("calibration_joint_pos"), "calibration_joint_pos is required"),
+        (lambda d: d["dynamixel"].pop("baudrate"), "dynamixel.baudrate is required"),
+        (lambda d: d["controller"]["joint_gravity_comp"].pop("dynamics"), "controller.joint_gravity_comp.dynamics is required"),
+        (lambda d: d["controller"]["force_feedback_control"]["joint"].pop("dynamics"), "controller.force_feedback_control.joint.dynamics is required"),
+        (lambda d: d["controller"].pop("force_feedback_control"), "controller.force_feedback_control is required"),
+        (lambda d: d["controller"]["force_feedback_control"].pop("joint"), "controller.force_feedback_control.joint is required"),
+        (lambda d: d["controller"]["force_feedback_control"].pop("gripper"), "controller.force_feedback_control.gripper is required"),
+        (lambda d: d["controller"].pop("limit_barrier_control"), "controller.limit_barrier_control is required"),
+        (lambda d: d["controller"]["limit_barrier_control"].pop("joint"), "controller.limit_barrier_control.joint is required"),
+        (lambda d: d["controller"]["limit_barrier_control"].pop("gripper"), "controller.limit_barrier_control.gripper is required"),
+        (lambda d: d["controller"].pop("initialization"), "controller.initialization is required"),
+        (lambda d: d["controller"].pop("end_effector"), "controller.end_effector is required"),
+        (lambda d: d["controller"]["initialization"].pop("calibration_joint_pos"), "controller.initialization.calibration_joint_pos is required"),
+        (lambda d: d["controller"]["end_effector"].pop("use_suction_cup"), "controller.end_effector.use_suction_cup is required"),
+        (lambda d: d["controller"]["force_feedback_control"]["joint"].pop("follower_gravity_comp_enable"), "follower_gravity_comp_enable is required"),
     ],
 )
 def test_missing_required_fields_fail(mutation, match):
@@ -137,10 +192,10 @@ def test_missing_required_fields_fail(mutation, match):
     [
         (("dynamixel", "servo_types"), ["XM430-W350"] * 7, "8 values"),
         (("dynamixel", "joint_signs"), [1] * 7, "8 values"),
-        (("controller", "joint_limit_barrier", "arm_joint_limits_max"), [1.0] * 6, "7 values"),
-        (("controller", "gravity_comp", "gain"), [1.0] * 6, "7 values"),
-        (("controller", "hold_ruckig_control", "hold_kp"), [1.0] * 7, "8 values"),
-        (("controller", "hold_ruckig_control", "hold_gravity_comp_gain"), [1.0] * 8, "7 values"),
+        (("controller", "limit_barrier_control", "joint", "limit_max"), [1.0] * 6, "7 values"),
+        (("controller", "joint_gravity_comp", "gain"), [1.0] * 6, "7 values"),
+        (("controller", "sync_hold_control", "hold", "kp"), [1.0] * 7, "8 values"),
+        (("controller", "sync_hold_control", "hold", "gravity_comp_gain"), [1.0] * 8, "7 values"),
     ],
 )
 def test_wrong_array_lengths_fail(path, value, match):
@@ -156,47 +211,48 @@ def test_wrong_array_lengths_fail(path, value, match):
 @pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), -float("inf")])
 def test_non_finite_values_fail(tmp_path, bad_value):
     document = _document()
-    document["controller"]["gravity_comp"]["gain"][3] = bad_value
+    document["controller"]["joint_gravity_comp"]["gain"][3] = bad_value
     with pytest.raises(ConfigError, match="finite"):
         load_config(_write(tmp_path, document))
 
 
 def test_reversed_joint_limits_fail():
     document = _document()
-    document["controller"]["joint_limit_barrier"]["arm_joint_limits_min"][2] = 4.0
+    document["controller"]["limit_barrier_control"]["joint"]["limit_min"][2] = 4.0
     with pytest.raises(ConfigError, match="lower limit"):
         TeleopConfig.from_mapping(document)
 
 
 def test_safety_margin_must_leave_a_valid_range():
     document = _document()
-    document["controller"]["joint_limit_barrier"]["arm_joint_limits_safety_margin"] = 2.0
+    document["controller"]["limit_barrier_control"]["joint"]["safety_margin"] = 2.0
     with pytest.raises(ConfigError, match="safety margin"):
         TeleopConfig.from_mapping(document)
 
 
 def test_scalar_and_per_joint_gains_normalize_to_tuples():
     document = _document()
-    document["controller"]["gravity_comp"]["gain"] = 0.25
-    document["controller"]["torque_feedback"]["gain"] = list(range(7))
+    document["controller"]["joint_gravity_comp"]["gain"] = 0.25
+    document["controller"]["force_feedback_control"]["joint"]["gain"] = list(range(7))
     config = TeleopConfig.from_mapping(document)
 
-    assert config.controller.gravity_comp.gain == (0.25,) * 7
-    assert config.controller.torque_feedback.gain == tuple(float(i) for i in range(7))
+    assert config.controller.joint_gravity_comp.gain == (0.25,) * 7
+    assert config.controller.force_feedback_control.joint.gain == tuple(float(i) for i in range(7))
     assert config.controller.null_space_regulation.kp == (0.1,) * 7
     assert config.controller.static_friction_comp.enable_speed == (0.05,) * 7
 
 
 def test_arm_and_gripper_hold_dimensions_are_distinct():
     config = load_config(RIGHT_CONFIG)
-    hold = config.controller.hold_ruckig_control
-    assert len(hold.ruckig_kp) == 8
-    assert len(hold.hold_kp) == 8
-    assert len(hold.hold_i_max) == 8
+    ruckig = config.controller.sync_hold_control.ruckig
+    hold = config.controller.sync_hold_control.hold
+    assert len(ruckig.kp) == 8
+    assert len(hold.kp) == 8
+    assert len(hold.i_max) == 8
     assert len(hold.sync_position_tolerance) == 8
     assert len(hold.sync_velocity_tolerance) == 8
-    assert len(hold.ruckig_gravity_comp_gain) == 7
-    assert len(hold.hold_gravity_comp_gain) == 7
+    assert len(ruckig.gravity_comp_gain) == 7
+    assert len(hold.gravity_comp_gain) == 7
 
 
 @pytest.mark.parametrize(
@@ -205,13 +261,17 @@ def test_arm_and_gripper_hold_dimensions_are_distinct():
         (lambda d: d["dynamixel"]["servo_types"].__setitem__(0, "unknown"), "unsupported"),
         (lambda d: d["dynamixel"]["joint_signs"].__setitem__(0, 0), "-1 or 1"),
         (lambda d: d["controller"].__setitem__("frequency", 0), "frequency must be positive"),
-        (lambda d: d["controller"].__setitem__("teleop_sync_timeout", -1), "timeout must be positive"),
-        (lambda d: d["controller"]["hold_ruckig_control"]["hold_i_max"].__setitem__(0, 0), "must be positive"),
-        (lambda d: d["controller"]["hold_ruckig_control"]["sync_position_tolerance"].__setitem__(0, 0), "must be positive"),
-        (lambda d: d["controller"]["hold_ruckig_control"].__setitem__("sync_velocity_tolerance", [0.1] * 7), "8 values"),
-        (lambda d: d["controller"]["hold_ruckig_control"].__setitem__("settle_duration", 0), "must be positive"),
-        (lambda d: d["controller"]["hold_ruckig_control"].__setitem__("settle_timeout", 0), "must be positive"),
-        (lambda d: d["arm_teleop"].__setitem__("leader_urdf", "/legacy_ws/model.urdf"), "package-relative"),
+        (lambda d: d["controller"]["sync_hold_control"]["ruckig"].__setitem__("trajectory_timeout", -1), "timeout must be positive"),
+        (lambda d: d["controller"]["sync_hold_control"]["hold"]["i_max"].__setitem__(0, 0), "must be positive"),
+        (lambda d: d["controller"]["sync_hold_control"]["hold"]["sync_position_tolerance"].__setitem__(0, 0), "must be positive"),
+        (lambda d: d["controller"]["sync_hold_control"]["hold"].__setitem__("sync_velocity_tolerance", [0.1] * 7), "8 values"),
+        (lambda d: d["controller"]["sync_hold_control"]["hold"].__setitem__("settle_duration", 0), "must be positive"),
+        (lambda d: d["controller"]["sync_hold_control"]["hold"].__setitem__("settle_timeout", 0), "must be positive"),
+        (lambda d: d["dynamixel"].__setitem__("baudrate", 0), "dynamixel.baudrate must be positive"),
+        (lambda d: d["controller"]["limit_barrier_control"]["gripper"].__setitem__("limit_max", -1), "limit_min must be below limit_max"),
+        (lambda d: d["controller"]["limit_barrier_control"]["gripper"].__setitem__("kp", -1), "gripper.kp must be non-negative"),
+        (lambda d: d["controller"]["joint_gravity_comp"]["dynamics"].__setitem__("leader_urdf", "/legacy_ws/model.urdf"), "package-relative"),
+        (lambda d: d["controller"]["force_feedback_control"]["joint"]["dynamics"].__setitem__("follower_joint_offset", 3), "follower_joint_offset must be 0 or 7"),
     ],
 )
 def test_invalid_types_signs_control_and_resources_fail(mutation, match):

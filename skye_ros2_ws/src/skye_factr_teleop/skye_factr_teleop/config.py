@@ -29,8 +29,11 @@ class ConfigError(ValueError):
 @dataclass(frozen=True)
 class DynamixelConfig:
     dynamixel_port: str
+    baudrate: int
     servo_types: tuple[str, ...]
     joint_signs: tuple[float, ...]
+    joint_offsets: tuple[float, ...] | None
+    current_limit_ma: float | None
 
 
 @dataclass(frozen=True)
@@ -40,15 +43,18 @@ class InitializationConfig:
 
 
 @dataclass(frozen=True)
-class ArmTeleopConfig:
+class EndEffectorConfig:
+    use_suction_cup: bool
+
+
+@dataclass(frozen=True)
+class LeaderDynamicsConfig:
     leader_urdf_package: str
     leader_urdf: str
-    leader_name: str
-    baudrate: int
-    num_arm_joints: int
-    use_suction_cup: bool
-    initialization: InitializationConfig
-    enable_follower_gravity_comp: bool
+
+
+@dataclass(frozen=True)
+class FollowerDynamicsConfig:
     follower_urdf_package: str
     follower_urdf: str
     follower_joint_offset: int
@@ -56,26 +62,20 @@ class ArmTeleopConfig:
 
 
 @dataclass(frozen=True)
-class GripperTeleopConfig:
-    limit_min: float
-    limit_setpoint: float
-    limit_max: float
-    kp: float
-    kd: float
-
-
-@dataclass(frozen=True)
-class TorqueFeedbackConfig:
+class JointFeedbackConfig:
     enable: bool
+    follower_gravity_comp_enable: bool
+    dynamics: FollowerDynamicsConfig
     gain: tuple[float, ...]
     damping: tuple[float, ...]
     motor_scalar: tuple[float, ...]
 
 
 @dataclass(frozen=True)
-class GravityCompConfig:
+class JointGravityCompConfig:
     enable: bool
     gain: tuple[float, ...]
+    dynamics: LeaderDynamicsConfig
     mode: str = "position_velocity"
 
 
@@ -94,13 +94,27 @@ class StaticFrictionConfig:
 
 
 @dataclass(frozen=True)
-class JointLimitBarrierConfig:
+class JointBarrierConfig:
+    limit_max: tuple[float, ...]
+    limit_min: tuple[float, ...]
+    safety_margin: float
     kp: float
     kd: float
-    arm_limit_barrier_enable: bool
-    arm_joint_limits_max: tuple[float, ...]
-    arm_joint_limits_min: tuple[float, ...]
-    arm_joint_limits_safety_margin: float
+
+
+@dataclass(frozen=True)
+class GripperBarrierConfig:
+    limit_max: float
+    limit_min: float
+    kp: float
+    kd: float
+
+
+@dataclass(frozen=True)
+class LimitBarrierControlConfig:
+    enable: bool
+    joint: JointBarrierConfig
+    gripper: GripperBarrierConfig
 
 
 @dataclass(frozen=True)
@@ -121,16 +135,30 @@ class GripperFeedbackConfig:
 
 
 @dataclass(frozen=True)
-class HoldRuckigConfig:
-    ruckig_kp: tuple[float, ...]
-    ruckig_kd: tuple[float, ...]
-    hold_kp: tuple[float, ...]
-    hold_kd: tuple[float, ...]
-    hold_ki: tuple[float, ...]
-    hold_i_max: tuple[float, ...]
-    hold_i_thresh: tuple[float, ...]
-    ruckig_gravity_comp_gain: tuple[float, ...]
-    hold_gravity_comp_gain: tuple[float, ...]
+class ForceFeedbackControlConfig:
+    joint: JointFeedbackConfig
+    gripper: GripperFeedbackConfig
+
+
+@dataclass(frozen=True)
+class RuckigControlConfig:
+    kp: tuple[float, ...]
+    kd: tuple[float, ...]
+    gravity_comp_gain: tuple[float, ...]
+    max_velocity: tuple[float, ...] | None
+    max_acceleration: tuple[float, ...] | None
+    max_jerk: tuple[float, ...] | None
+    trajectory_timeout: float
+
+
+@dataclass(frozen=True)
+class HoldControlConfig:
+    kp: tuple[float, ...]
+    kd: tuple[float, ...]
+    ki: tuple[float, ...]
+    i_max: tuple[float, ...]
+    i_thresh: tuple[float, ...]
+    gravity_comp_gain: tuple[float, ...]
     sync_position_tolerance: tuple[float, ...]
     sync_velocity_tolerance: tuple[float, ...]
     settle_duration: float
@@ -138,56 +166,54 @@ class HoldRuckigConfig:
 
 
 @dataclass(frozen=True)
+class SyncHoldControlConfig:
+    gripper_setpoint: float
+    ruckig: RuckigControlConfig
+    hold: HoldControlConfig
+
+
+@dataclass(frozen=True)
 class ControllerConfig:
     frequency: float
-    teleop_sync_timeout: float
-    torque_feedback: TorqueFeedbackConfig
-    gravity_comp: GravityCompConfig
+    force_feedback_control: ForceFeedbackControlConfig
+    joint_gravity_comp: JointGravityCompConfig
     null_space_regulation: NullSpaceConfig
+    initialization: InitializationConfig
+    end_effector: EndEffectorConfig
     static_friction_comp: StaticFrictionConfig
-    joint_limit_barrier: JointLimitBarrierConfig
+    limit_barrier_control: LimitBarrierControlConfig
     joint_position_control: JointPositionConfig
-    gripper_feedback: GripperFeedbackConfig
-    hold_ruckig_control: HoldRuckigConfig
+    sync_hold_control: SyncHoldControlConfig
 
 
 @dataclass(frozen=True)
 class RuntimeConfig:
-    joint_offsets: tuple[float, ...]
-    current_limit_ma: float
-    max_velocity: tuple[float, ...]
-    max_acceleration: tuple[float, ...]
-    max_jerk: tuple[float, ...]
-    state_timeout: float
-    future_tolerance: float
-    allow_unnamed_joint_states: bool
+    state_timeout: float = 0.25
+    future_tolerance: float = 0.05
+    allow_unnamed_joint_states: bool = False
 
 
 @dataclass(frozen=True)
 class TeleopConfig:
     name: str
     dynamixel: DynamixelConfig
-    arm_teleop: ArmTeleopConfig
-    gripper_teleop: GripperTeleopConfig
     controller: ControllerConfig
-    runtime: RuntimeConfig | None
+    runtime: RuntimeConfig
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "TeleopConfig":
         data = _map(value, "config")
-        _only(data, {"name", "dynamixel", "arm_teleop", "gripper_teleop", "controller", "runtime"}, "config")
+        _only(data, {"name", "dynamixel", "controller", "runtime"}, "config")
         return cls(
             _str(_req(data, "name", "config"), "name"),
             _dynamixel(_req(data, "dynamixel", "config")),
-            _arm(_req(data, "arm_teleop", "config")),
-            _gripper(_req(data, "gripper_teleop", "config")),
             _controller(_req(data, "controller", "config")),
-            _runtime(data["runtime"]) if "runtime" in data else None,
+            _runtime(data.get("runtime", {})),
         )
 
 
 def load_config(path: Union[str, Path], *, require_runtime: bool = False) -> TeleopConfig:
-    """Safely load *path*, validate it, and return frozen dataclasses."""
+    """Load validated config; teleop startup also requires calibration and trajectory limits."""
     config_path = Path(path)
     try:
         with config_path.open(encoding="utf-8") as stream:
@@ -198,8 +224,14 @@ def load_config(path: Union[str, Path], *, require_runtime: bool = False) -> Tel
         raise ConfigError(f"{config_path}: configuration is empty")
     try:
         config = TeleopConfig.from_mapping(document)
-        if require_runtime and config.runtime is None:
-            raise ConfigError("config.runtime is required for teleop startup; supply measured calibration and limits")
+        if require_runtime:
+            for name in ("joint_offsets", "current_limit_ma"):
+                if getattr(config.dynamixel, name) is None:
+                    raise ConfigError(f"dynamixel.{name} is required for teleop startup")
+            ruckig = config.controller.sync_hold_control.ruckig
+            for name in ("max_velocity", "max_acceleration", "max_jerk"):
+                if getattr(ruckig, name) is None:
+                    raise ConfigError(f"controller.sync_hold_control.ruckig.{name} is required for teleop startup")
         return config
     except ConfigError as exc:
         raise ConfigError(f"{config_path}: {exc}") from exc
@@ -208,7 +240,11 @@ def load_config(path: Union[str, Path], *, require_runtime: bool = False) -> Tel
 def _dynamixel(value: Any) -> DynamixelConfig:
     path = "dynamixel"
     data = _map(value, path)
-    _only(data, {"dynamixel_port", "servo_types", "joint_signs"}, path)
+    _only(data, {"dynamixel_port", "baudrate", "servo_types", "joint_signs",
+                 "joint_offsets", "current_limit_ma"}, path)
+    baudrate = _int(_req(data, "baudrate", path), f"{path}.baudrate")
+    if baudrate <= 0:
+        raise ConfigError(f"{path}.baudrate must be positive")
     raw_types = _seq(_req(data, "servo_types", path), f"{path}.servo_types")
     if len(raw_types) != MOTOR_COUNT:
         raise ConfigError(f"{path}.servo_types must contain {MOTOR_COUNT} values")
@@ -221,44 +257,112 @@ def _dynamixel(value: Any) -> DynamixelConfig:
         raise ConfigError(f"{path}.joint_signs values must be -1 or 1")
     return DynamixelConfig(
         _str(_req(data, "dynamixel_port", path), f"{path}.dynamixel_port"),
+        baudrate,
         types,
         signs,
+        _vec(data["joint_offsets"], MOTOR_COUNT, f"{path}.joint_offsets", False)
+        if "joint_offsets" in data else None,
+        _positive(data["current_limit_ma"], f"{path}.current_limit_ma")
+        if "current_limit_ma" in data else None,
     )
 
 
-def _arm(value: Any) -> ArmTeleopConfig:
-    path = "arm_teleop"
+def _initialization(value: Any) -> InitializationConfig:
+    path = "controller.initialization"
+    data = _map(value, path)
+    _only(data, {"calibration_joint_pos", "initial_match_joint_pos"}, path)
+    return InitializationConfig(
+        _vec(_req(data, "calibration_joint_pos", path), ARM_JOINT_COUNT, f"{path}.calibration_joint_pos", False),
+        _vec(_req(data, "initial_match_joint_pos", path), ARM_JOINT_COUNT, f"{path}.initial_match_joint_pos", False),
+    )
+
+
+def _end_effector(value: Any) -> EndEffectorConfig:
+    path = "controller.end_effector"
+    data = _map(value, path)
+    _only(data, {"use_suction_cup"}, path)
+    return EndEffectorConfig(
+        _bool(_req(data, "use_suction_cup", path), f"{path}.use_suction_cup"),
+    )
+
+
+def _controller(value: Any) -> ControllerConfig:
+    path = "controller"
     data = _map(value, path)
     _only(data, {
-        "leader_urdf_package", "leader_urdf", "leader_name", "baudrate",
-        "num_arm_joints", "use_suction_cup", "initialization",
-        "enable_follower_gravity_comp", "follower_urdf_package",
-        "follower_urdf", "follower_joint_offset", "follower_gravity_in_world",
+        "frequency", "force_feedback_control", "joint_gravity_comp",
+        "null_space_regulation", "initialization", "end_effector",
+        "static_friction_comp", "limit_barrier_control",
+        "joint_position_control", "sync_hold_control",
     }, path)
-    count = _int(_req(data, "num_arm_joints", path), f"{path}.num_arm_joints")
-    if count != ARM_JOINT_COUNT:
-        raise ConfigError(f"{path}.num_arm_joints must be {ARM_JOINT_COUNT}")
-    init_path = f"{path}.initialization"
-    init = _map(_req(data, "initialization", path), init_path)
-    _only(init, {"calibration_joint_pos", "initial_match_joint_pos"}, init_path)
-    initialization = InitializationConfig(
-        _vec(_req(init, "calibration_joint_pos", init_path), count, f"{init_path}.calibration_joint_pos", False),
-        _vec(_req(init, "initial_match_joint_pos", init_path), count, f"{init_path}.initial_match_joint_pos", False),
+    frequency = _positive(_req(data, "frequency", path), f"{path}.frequency")
+    return ControllerConfig(
+        frequency,
+        _force_feedback_control(_req(data, "force_feedback_control", path)),
+        _joint_gravity_comp(_req(data, "joint_gravity_comp", path)),
+        _null_space(_req(data, "null_space_regulation", path)),
+        _initialization(_req(data, "initialization", path)),
+        _end_effector(_req(data, "end_effector", path)),
+        _static_friction(_req(data, "static_friction_comp", path)),
+        _limit_barrier_control(_req(data, "limit_barrier_control", path)),
+        _joint_position(_req(data, "joint_position_control", path)),
+        _sync_hold_control(_req(data, "sync_hold_control", path)),
     )
-    baudrate = _int(_req(data, "baudrate", path), f"{path}.baudrate")
-    if baudrate <= 0:
-        raise ConfigError(f"{path}.baudrate must be positive")
+
+
+def _runtime(value: Any) -> RuntimeConfig:
+    path = "runtime"
+    data = _map(value, path)
+    _only(data, {"state_timeout", "future_tolerance", "allow_unnamed_joint_states"}, path)
+    return RuntimeConfig(
+        _positive(data.get("state_timeout", 0.25), f"{path}.state_timeout"),
+        _positive(data.get("future_tolerance", 0.05), f"{path}.future_tolerance"),
+        _bool(data.get("allow_unnamed_joint_states", False), f"{path}.allow_unnamed_joint_states"),
+    )
+
+
+def _force_feedback_control(value: Any) -> ForceFeedbackControlConfig:
+    path = "controller.force_feedback_control"
+    data = _map(value, path)
+    _only(data, {"joint", "gripper"}, path)
+    return ForceFeedbackControlConfig(
+        _joint_feedback(_req(data, "joint", path)),
+        _gripper_feedback(_req(data, "gripper", path)),
+    )
+
+
+def _joint_feedback(value: Any) -> JointFeedbackConfig:
+    path = "controller.force_feedback_control.joint"
+    data = _map(value, path)
+    _only(data, {"enable", "follower_gravity_comp_enable", "dynamics", "gain", "damping", "motor_scalar"}, path)
+    return JointFeedbackConfig(
+        _bool(_req(data, "enable", path), f"{path}.enable"),
+        _bool(_req(data, "follower_gravity_comp_enable", path), f"{path}.follower_gravity_comp_enable"),
+        _follower_dynamics(_req(data, "dynamics", path)),
+        _nonnegative_vec(_req(data, "gain", path), 7, f"{path}.gain"),
+        _nonnegative_vec(_req(data, "damping", path), 7, f"{path}.damping"),
+        _positive_vec(_req(data, "motor_scalar", path), 7, f"{path}.motor_scalar"),
+    )
+
+
+def _leader_dynamics(value: Any) -> LeaderDynamicsConfig:
+    path = "controller.joint_gravity_comp.dynamics"
+    data = _map(value, path)
+    _only(data, {"leader_urdf_package", "leader_urdf"}, path)
+    return LeaderDynamicsConfig(
+        _package(_req(data, "leader_urdf_package", path), f"{path}.leader_urdf_package"),
+        _resource(_req(data, "leader_urdf", path), f"{path}.leader_urdf"),
+    )
+
+
+def _follower_dynamics(value: Any) -> FollowerDynamicsConfig:
+    path = "controller.force_feedback_control.joint.dynamics"
+    data = _map(value, path)
+    _only(data, {"follower_urdf_package", "follower_urdf", "follower_joint_offset", "follower_gravity_in_world"}, path)
     offset = _int(_req(data, "follower_joint_offset", path), f"{path}.follower_joint_offset")
     if offset not in (0, ARM_JOINT_COUNT):
         raise ConfigError(f"{path}.follower_joint_offset must be 0 or {ARM_JOINT_COUNT}")
-    return ArmTeleopConfig(
-        _package(_req(data, "leader_urdf_package", path), f"{path}.leader_urdf_package"),
-        _resource(_req(data, "leader_urdf", path), f"{path}.leader_urdf"),
-        _str(_req(data, "leader_name", path), f"{path}.leader_name"),
-        baudrate, count,
-        _bool(_req(data, "use_suction_cup", path), f"{path}.use_suction_cup"),
-        initialization,
-        _bool(_req(data, "enable_follower_gravity_comp", path), f"{path}.enable_follower_gravity_comp"),
+    return FollowerDynamicsConfig(
         _package(_req(data, "follower_urdf_package", path), f"{path}.follower_urdf_package"),
         _resource(_req(data, "follower_urdf", path), f"{path}.follower_urdf"),
         offset,
@@ -266,84 +370,17 @@ def _arm(value: Any) -> ArmTeleopConfig:
     )
 
 
-def _gripper(value: Any) -> GripperTeleopConfig:
-    path = "gripper_teleop"
+def _joint_gravity_comp(value: Any) -> JointGravityCompConfig:
+    path = "controller.joint_gravity_comp"
     data = _map(value, path)
-    _only(data, {"limit_min", "limit_setpoint", "limit_max", "kp", "kd"}, path)
-    minimum = _num(_req(data, "limit_min", path), f"{path}.limit_min")
-    setpoint = _num(_req(data, "limit_setpoint", path), f"{path}.limit_setpoint")
-    maximum = _num(_req(data, "limit_max", path), f"{path}.limit_max")
-    if minimum >= maximum:
-        raise ConfigError(f"{path}.limit_min must be below limit_max")
-    return GripperTeleopConfig(minimum, setpoint, maximum,
-        _nonnegative(_req(data, "kp", path), f"{path}.kp"),
-        _nonnegative(_req(data, "kd", path), f"{path}.kd"))
-
-
-def _controller(value: Any) -> ControllerConfig:
-    path = "controller"
-    data = _map(value, path)
-    _only(data, {
-        "frequency", "teleop_sync_timeout", "torque_feedback", "gravity_comp",
-        "null_space_regulation", "static_friction_comp", "joint_limit_barrier",
-        "joint_position_control", "gripper_feedback", "hold_ruckig_control",
-    }, path)
-    frequency = _positive(_req(data, "frequency", path), f"{path}.frequency")
-    timeout = _positive(_req(data, "teleop_sync_timeout", path), f"{path}.teleop_sync_timeout")
-    return ControllerConfig(
-        frequency, timeout,
-        _torque_feedback(_req(data, "torque_feedback", path)),
-        _gravity_comp(_req(data, "gravity_comp", path)),
-        _null_space(_req(data, "null_space_regulation", path)),
-        _static_friction(_req(data, "static_friction_comp", path)),
-        _joint_limit_barrier(_req(data, "joint_limit_barrier", path)),
-        _joint_position(_req(data, "joint_position_control", path)),
-        _gripper_feedback(_req(data, "gripper_feedback", path)),
-        _hold_ruckig(_req(data, "hold_ruckig_control", path)),
-    )
-
-
-def _runtime(value: Any) -> RuntimeConfig:
-    path = "runtime"
-    data = _map(value, path)
-    _only(data, {
-        "joint_offsets", "current_limit_ma", "max_velocity", "max_acceleration",
-        "max_jerk", "state_timeout", "future_tolerance", "allow_unnamed_joint_states",
-    }, path)
-    return RuntimeConfig(
-        _vec(_req(data, "joint_offsets", path), MOTOR_COUNT, f"{path}.joint_offsets", False),
-        _positive(_req(data, "current_limit_ma", path), f"{path}.current_limit_ma"),
-        _positive_vec(_req(data, "max_velocity", path), MOTOR_COUNT, f"{path}.max_velocity", False),
-        _positive_vec(_req(data, "max_acceleration", path), MOTOR_COUNT, f"{path}.max_acceleration", False),
-        _positive_vec(_req(data, "max_jerk", path), MOTOR_COUNT, f"{path}.max_jerk", False),
-        _positive(data.get("state_timeout", 0.25), f"{path}.state_timeout"),
-        _positive(data.get("future_tolerance", 0.05), f"{path}.future_tolerance"),
-        _bool(data.get("allow_unnamed_joint_states", False), f"{path}.allow_unnamed_joint_states"),
-    )
-
-
-def _torque_feedback(value: Any) -> TorqueFeedbackConfig:
-    path = "controller.torque_feedback"
-    data = _map(value, path)
-    _only(data, {"enable", "gain", "damping", "motor_scalar"}, path)
-    return TorqueFeedbackConfig(
-        _bool(_req(data, "enable", path), f"{path}.enable"),
-        _nonnegative_vec(_req(data, "gain", path), 7, f"{path}.gain"),
-        _nonnegative_vec(_req(data, "damping", path), 7, f"{path}.damping"),
-        _positive_vec(_req(data, "motor_scalar", path), 7, f"{path}.motor_scalar"),
-    )
-
-
-def _gravity_comp(value: Any) -> GravityCompConfig:
-    path = "controller.gravity_comp"
-    data = _map(value, path)
-    _only(data, {"enable", "gain", "mode"}, path)
+    _only(data, {"enable", "gain", "mode", "dynamics"}, path)
     mode = _str(data.get("mode", "position_velocity"), f"{path}.mode")
     if mode not in ("position_velocity", "position_only"):
         raise ConfigError(f"{path}.mode must be position_velocity or position_only")
-    return GravityCompConfig(
+    return JointGravityCompConfig(
         _bool(_req(data, "enable", path), f"{path}.enable"),
         _nonnegative_vec(_req(data, "gain", path), 7, f"{path}.gain"),
+        _leader_dynamics(_req(data, "dynamics", path)),
         mode,
     )
 
@@ -370,29 +407,51 @@ def _static_friction(value: Any) -> StaticFrictionConfig:
     )
 
 
-def _joint_limit_barrier(value: Any) -> JointLimitBarrierConfig:
-    path = "controller.joint_limit_barrier"
+def _limit_barrier_control(value: Any) -> LimitBarrierControlConfig:
+    path = "controller.limit_barrier_control"
     data = _map(value, path)
-    _only(data, {
-        "kp", "kd", "arm_limit_barrier_enable", "arm_joint_limits_max",
-        "arm_joint_limits_min", "arm_joint_limits_safety_margin",
-    }, path)
-    lower = _vec(_req(data, "arm_joint_limits_min", path), ARM_JOINT_COUNT,
-                 f"{path}.arm_joint_limits_min", False)
-    upper = _vec(_req(data, "arm_joint_limits_max", path), ARM_JOINT_COUNT,
-                 f"{path}.arm_joint_limits_max", False)
-    margin = _nonnegative(_req(data, "arm_joint_limits_safety_margin", path),
-                          f"{path}.arm_joint_limits_safety_margin")
+    _only(data, {"enable", "joint", "gripper"}, path)
+    return LimitBarrierControlConfig(
+        _bool(_req(data, "enable", path), f"{path}.enable"),
+        _joint_barrier(_req(data, "joint", path)),
+        _gripper_barrier(_req(data, "gripper", path)),
+    )
+
+
+def _joint_barrier(value: Any) -> JointBarrierConfig:
+    path = "controller.limit_barrier_control.joint"
+    data = _map(value, path)
+    _only(data, {"limit_max", "limit_min", "safety_margin", "kp", "kd"}, path)
+    lower = _vec(_req(data, "limit_min", path), ARM_JOINT_COUNT,
+                 f"{path}.limit_min", False)
+    upper = _vec(_req(data, "limit_max", path), ARM_JOINT_COUNT,
+                 f"{path}.limit_max", False)
+    margin = _nonnegative(_req(data, "safety_margin", path),
+                          f"{path}.safety_margin")
     for index, (minimum, maximum) in enumerate(zip(lower, upper), 1):
         if minimum >= maximum:
             raise ConfigError(f"{path} joint {index} lower limit must be below upper limit")
         if minimum + margin >= maximum - margin:
             raise ConfigError(f"{path} joint {index} safety margin leaves no valid range")
-    return JointLimitBarrierConfig(
+    return JointBarrierConfig(
+        upper, lower, margin,
         _nonnegative(_req(data, "kp", path), f"{path}.kp"),
         _nonnegative(_req(data, "kd", path), f"{path}.kd"),
-        _bool(_req(data, "arm_limit_barrier_enable", path), f"{path}.arm_limit_barrier_enable"),
-        upper, lower, margin,
+    )
+
+
+def _gripper_barrier(value: Any) -> GripperBarrierConfig:
+    path = "controller.limit_barrier_control.gripper"
+    data = _map(value, path)
+    _only(data, {"limit_max", "limit_min", "kp", "kd"}, path)
+    grip_max = _num(_req(data, "limit_max", path), f"{path}.limit_max")
+    grip_min = _num(_req(data, "limit_min", path), f"{path}.limit_min")
+    if grip_min >= grip_max:
+        raise ConfigError(f"{path}.limit_min must be below limit_max")
+    return GripperBarrierConfig(
+        grip_max, grip_min,
+        _nonnegative(_req(data, "kp", path), f"{path}.kp"),
+        _nonnegative(_req(data, "kd", path), f"{path}.kd"),
     )
 
 
@@ -408,7 +467,7 @@ def _joint_position(value: Any) -> JointPositionConfig:
 
 
 def _gripper_feedback(value: Any) -> GripperFeedbackConfig:
-    path = "controller.gripper_feedback"
+    path = "controller.force_feedback_control.gripper"
     data = _map(value, path)
     _only(data, {"enable", "gain", "ema_beta", "effort_threshold", "damping", "ema_fast_alpha"}, path)
     beta = _num(_req(data, "ema_beta", path), f"{path}.ema_beta")
@@ -423,25 +482,62 @@ def _gripper_feedback(value: Any) -> GripperFeedbackConfig:
     )
 
 
-def _hold_ruckig(value: Any) -> HoldRuckigConfig:
-    path = "controller.hold_ruckig_control"
+def _sync_hold_control(value: Any) -> SyncHoldControlConfig:
+    path = "controller.sync_hold_control"
     data = _map(value, path)
-    eight = {"ruckig_kp", "ruckig_kd", "hold_kp", "hold_kd", "hold_ki", "hold_i_max", "hold_i_thresh"}
-    tolerances = {"sync_position_tolerance", "sync_velocity_tolerance"}
-    seven = {"ruckig_gravity_comp_gain", "hold_gravity_comp_gain"}
-    _only(data, eight | tolerances | seven | {"settle_duration", "settle_timeout"}, path)
-    values = {key: _nonnegative_vec(_req(data, key, path), 8, f"{path}.{key}", False) for key in eight}
-    limits = {key: _positive_vec(_req(data, key, path), 8, f"{path}.{key}") for key in tolerances}
-    for key in ("hold_i_max", "hold_i_thresh"):
-        if any(item <= 0 for item in values[key]):
-            raise ConfigError(f"{path}.{key} values must be positive")
-    return HoldRuckigConfig(
-        values["ruckig_kp"], values["ruckig_kd"], values["hold_kp"],
-        values["hold_kd"], values["hold_ki"], values["hold_i_max"],
-        values["hold_i_thresh"],
-        _nonnegative_vec(_req(data, "ruckig_gravity_comp_gain", path), 7, f"{path}.ruckig_gravity_comp_gain", False),
-        _nonnegative_vec(_req(data, "hold_gravity_comp_gain", path), 7, f"{path}.hold_gravity_comp_gain", False),
-        limits["sync_position_tolerance"], limits["sync_velocity_tolerance"],
+    _only(data, {"gripper_setpoint", "ruckig", "hold"}, path)
+    return SyncHoldControlConfig(
+        _num(_req(data, "gripper_setpoint", path), f"{path}.gripper_setpoint"),
+        _ruckig_control(_req(data, "ruckig", path)),
+        _hold_control(_req(data, "hold", path)),
+    )
+
+
+def _ruckig_control(value: Any) -> RuckigControlConfig:
+    path = "controller.sync_hold_control.ruckig"
+    data = _map(value, path)
+    _only(data, {
+        "kp", "kd", "gravity_comp_gain", "max_velocity", "max_acceleration",
+        "max_jerk", "trajectory_timeout",
+    }, path)
+    limits = {
+        name: _positive_vec(data[name], MOTOR_COUNT, f"{path}.{name}", False)
+        if name in data else None
+        for name in ("max_velocity", "max_acceleration", "max_jerk")
+    }
+    return RuckigControlConfig(
+        _nonnegative_vec(_req(data, "kp", path), MOTOR_COUNT, f"{path}.kp", False),
+        _nonnegative_vec(_req(data, "kd", path), MOTOR_COUNT, f"{path}.kd", False),
+        _nonnegative_vec(_req(data, "gravity_comp_gain", path), ARM_JOINT_COUNT,
+                         f"{path}.gravity_comp_gain", False),
+        limits["max_velocity"], limits["max_acceleration"], limits["max_jerk"],
+        _positive(_req(data, "trajectory_timeout", path), f"{path}.trajectory_timeout"),
+    )
+
+
+def _hold_control(value: Any) -> HoldControlConfig:
+    path = "controller.sync_hold_control.hold"
+    data = _map(value, path)
+    _only(data, {
+        "kp", "kd", "ki", "i_max", "i_thresh", "gravity_comp_gain",
+        "sync_position_tolerance", "sync_velocity_tolerance",
+        "settle_duration", "settle_timeout",
+    }, path)
+    gains = {
+        name: _nonnegative_vec(_req(data, name, path), MOTOR_COUNT, f"{path}.{name}", False)
+        for name in ("kp", "kd", "ki", "i_max", "i_thresh")
+    }
+    for name in ("i_max", "i_thresh"):
+        if any(item <= 0 for item in gains[name]):
+            raise ConfigError(f"{path}.{name} values must be positive")
+    return HoldControlConfig(
+        gains["kp"], gains["kd"], gains["ki"], gains["i_max"], gains["i_thresh"],
+        _nonnegative_vec(_req(data, "gravity_comp_gain", path), ARM_JOINT_COUNT,
+                         f"{path}.gravity_comp_gain", False),
+        _positive_vec(_req(data, "sync_position_tolerance", path), MOTOR_COUNT,
+                      f"{path}.sync_position_tolerance"),
+        _positive_vec(_req(data, "sync_velocity_tolerance", path), MOTOR_COUNT,
+                      f"{path}.sync_velocity_tolerance"),
         _positive(_req(data, "settle_duration", path), f"{path}.settle_duration"),
         _positive(_req(data, "settle_timeout", path), f"{path}.settle_timeout"),
     )

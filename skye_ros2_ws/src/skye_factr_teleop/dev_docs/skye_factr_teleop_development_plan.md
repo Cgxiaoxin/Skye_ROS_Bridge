@@ -178,7 +178,7 @@ skye_ros2_ws/src/skye_factr_teleop/dev_docs/skye_factr_teleop_phase0_baseline.md
 | `/joint_move` | remap 到 `/left_joint_move`、`/right_joint_move` |
 
 同步优先订阅驱动已经提供的单臂 7 轴状态话题，不再让每侧节点共同消费 14 轴状态后
-依赖 `follower_joint_offset` 选择实时控制输入。`follower_joint_offset` 只保留给 14
+依赖 `controller.force_feedback_control.joint.dynamics.follower_joint_offset` 选择实时控制输入。`controller.force_feedback_control.joint.dynamics.follower_joint_offset` 只保留给 14
 自由度 follower 动力学模型使用。
 
 模式话题保持兼容：
@@ -636,7 +636,7 @@ forward_kinematics(q) -> pose
 `C(q, dq) @ dq + g(q)`，不是仅计算 `g(q)`。输入是按 `LeaderState` 顺序排列的
 7 个逻辑关节角度（rad）和速度（rad/s），输出单位为 N·m；逐关节增益由控制核心
 应用一次。静摩擦幅值使用同一份已乘增益的结果，每周期只计算一次动力学。
-`controller.gravity_comp.mode` 支持 `position_velocity`（默认，保持上游行为）和
+`controller.joint_gravity_comp.mode` 支持 `position_velocity`（默认，保持上游行为）和
 `position_only`（仅向动力学传入零速度，计算 `RNEA(q, 0, 0) = g(q)`）。旧配置省略
 该字段时使用默认模式，非法值在配置加载时拒绝。切换 YAML 后须重新加载配置并重建
 控制核心；不提供运行中热切换。模式不改变真实状态速度，限位阻尼、静摩擦低速判断、
@@ -940,13 +940,14 @@ QoS 与 `skye_robot_driver` 对齐：
 
 配置合并调整（2026-10-08，替代上文 5.1/5.2 的双文件启动方式）：
 
-- 每侧只使用一份控制 YAML。操作员复制对应 profile 的配置，并在顶层 `runtime`
-  填入实测 `joint_offsets`、`current_limit_ma` 和 8 轴速度、加速度、jerk 上限；
-  `state_timeout`、`future_tolerance`、`allow_unnamed_joint_states` 也在此段配置。
+- 每侧只使用一份控制 YAML。操作员复制对应 profile 的配置，在 `dynamixel`
+  下填入实测 `joint_offsets`、`current_limit_ma`，并在
+  `controller.sync_hold_control.ruckig` 填入 8 轴速度、加速度、jerk 上限；
+  可选的 `state_timeout`、`future_tolerance`、`allow_unnamed_joint_states` 保留在 `runtime`。
 - `left_params_file` / `right_params_file` 已移除；`left_config` / `right_config`
   指向合并后的单份 YAML。`config_path` 只用于告知节点加载哪份文件。
 - 包内 Thor/Orin YAML 保留为无标定模板。launch 在返回任一节点动作前检查两侧
-  文件和 `runtime`，节点自身也在打开串口前检查。缺少或无效的实测值拒绝启动。
+  文件、`dynamixel` 标定值和 Ruckig 上限，节点自身也在打开串口前检查。缺少或无效的实测值拒绝启动。
 
 ### 任务 5.3：ROS 接口测试
 

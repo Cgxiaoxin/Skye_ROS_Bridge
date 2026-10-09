@@ -194,8 +194,8 @@ BEST_EFFORT 订阅也可兼容已有 RELIABLE FACTR 发布者。`/joint_state` �
 - 左实例只能订阅 `/gento/left_joint_states`，右实例只能订阅
   `/gento/right_joint_states`；两者输入都必须恰为 7 轴。
 - 实时同步和控制路径不得订阅 `/gento/joint_states` 后再按
-  `follower_joint_offset` 切片。这样右实例不可能把 14 轴消息的前 7 轴误当作右臂。
-- `follower_joint_offset` 只用于 14 自由度 follower 动力学模型中的左右关节索引：左为
+  `controller.force_feedback_control.joint.dynamics.follower_joint_offset` 切片。这样右实例不可能把 14 轴消息的前 7 轴误当作右臂。
+- `controller.force_feedback_control.joint.dynamics.follower_joint_offset` 只用于 14 自由度 follower 动力学模型中的左右关节索引：左为
   `0`、右为 `7`；它不参与 ROS 实时状态消息选边。
 - launch 必须显式列出全部左右 remap，不依赖节点名、namespace 或相对话题的隐式
   解析来区分两侧。

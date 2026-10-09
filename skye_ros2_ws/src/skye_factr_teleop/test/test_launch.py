@@ -32,11 +32,13 @@ def expand_launch(monkeypatch, tmp_path):
         for side in ("left", "right"):
             name = f"grav_comp_m6_{side}.yaml"
             document = yaml.safe_load((PACKAGE_ROOT / profile_dir / name).read_text())
-            document["runtime"] = {
+            document["dynamixel"].update({
                 "joint_offsets": [0.0] * 8, "current_limit_ma": 50.0,
+            })
+            document["controller"]["sync_hold_control"]["ruckig"].update({
                 "max_velocity": [0.5] * 8, "max_acceleration": [1.0] * 8,
                 "max_jerk": [4.0] * 8,
-            }
+            })
             (share / profile_dir / name).write_text(yaml.safe_dump(document))
     monkeypatch.setattr(launch_support, "get_package_share_directory",
                         lambda package: str(share))
@@ -101,8 +103,8 @@ def test_launch_profiles_sides_and_remaps(expand_launch, profile, kind, sides):
         config = config_dir / f"grav_comp_m6_{side}.yaml"
         assert parameters[0][node.node_name]["ros__parameters"] == {"config_path": str(config)}
         loaded = load_config(config, require_runtime=True)
-        assert loaded.runtime.current_limit_ma == 50.0
-        assert loaded.arm_teleop.follower_joint_offset == (0 if side == "left" else 7)
+        assert loaded.dynamixel.current_limit_ma == 50.0
+        assert loaded.controller.force_feedback_control.joint.dynamics.follower_joint_offset == (0 if side == "left" else 7)
 
 
 @pytest.mark.parametrize("absolute", [False, True])
@@ -132,7 +134,7 @@ def test_relative_config_path_uses_package_share(expand_launch):
 @pytest.mark.parametrize("arguments,match", [
     ({"robot_profile": "invalid"}, "is not valid"),
     ({"left_config": "missing.yaml"}, "left_config file does not exist"),
-    ({"left_config": str(PACKAGE_ROOT / "config/grav_comp_m6_left.yaml")}, "runtime is required"),
+    ({"left_config": str(PACKAGE_ROOT / "config/grav_comp_m6_left.yaml")}, "dynamixel.joint_offsets is required"),
 ])
 def test_invalid_arguments_never_start_processes(expand_launch, arguments, match):
     with pytest.raises(RuntimeError, match=match):
@@ -148,8 +150,18 @@ def test_dual_checks_both_files_before_starting_either_arm(expand_launch):
 
 def test_dual_rejects_missing_right_calibration_before_starting_left(expand_launch):
     template = PACKAGE_ROOT / "config/grav_comp_m6_right.yaml"
-    with pytest.raises(RuntimeError, match="right_config invalid: .*runtime is required"):
+    with pytest.raises(RuntimeError, match="right_config invalid: .*dynamixel.joint_offsets is required"):
         expand_launch("dual", right_config=str(template))
+    assert not expand_launch.captured
+
+
+def test_dual_rejects_missing_right_ruckig_limit_before_starting_left(expand_launch):
+    document = yaml.safe_load((PACKAGE_ROOT / "config/grav_comp_m6_right.yaml").read_text())
+    document["dynamixel"].update({"joint_offsets": [0.0] * 8, "current_limit_ma": 50.0})
+    bad = expand_launch.share / "right_without_limits.yaml"
+    bad.write_text(yaml.safe_dump(document))
+    with pytest.raises(RuntimeError, match="right_config invalid: .*ruckig.max_velocity is required"):
+        expand_launch("dual", right_config=str(bad))
     assert not expand_launch.captured
 
 
@@ -164,13 +176,13 @@ def test_profile_configuration_matches_leader_devices_and_preserves_gains():
     assert left.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0"
     assert right.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0"
     assert right.dynamixel.joint_signs == (1, -1, 1, -1, 1, 1, 1, -1)
-    assert left.controller.gravity_comp.gain == (0.25, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0)
-    assert right.controller.gravity_comp.gain == (0.25, 0.2, 1.0, 1.0, 1.0, 0.8, 1.0)
-    assert thor_left.controller.joint_limit_barrier.arm_limit_barrier_enable
-    assert thor_right.controller.joint_limit_barrier.arm_limit_barrier_enable
-    assert not left.controller.joint_limit_barrier.arm_limit_barrier_enable
-    assert not right.controller.joint_limit_barrier.arm_limit_barrier_enable
-    assert (thor_left.controller.joint_limit_barrier.arm_joint_limits_min[-1]
-            == left.controller.joint_limit_barrier.arm_joint_limits_min[-1] == -0.8)
-    assert (thor_right.controller.joint_limit_barrier.arm_joint_limits_min[-1]
-            == right.controller.joint_limit_barrier.arm_joint_limits_min[-1] == -0.5)
+    assert left.controller.joint_gravity_comp.gain == (0.25, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0)
+    assert right.controller.joint_gravity_comp.gain == (0.25, 0.2, 1.0, 1.0, 1.0, 0.8, 1.0)
+    assert thor_left.controller.limit_barrier_control.enable
+    assert thor_right.controller.limit_barrier_control.enable
+    assert not left.controller.limit_barrier_control.enable
+    assert not right.controller.limit_barrier_control.enable
+    assert (thor_left.controller.limit_barrier_control.joint.limit_min[-1]
+            == left.controller.limit_barrier_control.joint.limit_min[-1] == -0.8)
+    assert (thor_right.controller.limit_barrier_control.joint.limit_min[-1]
+            == right.controller.limit_barrier_control.joint.limit_min[-1] == -0.5)

@@ -100,7 +100,7 @@ def run_low_current_check(
         "config": str(Path(config_path).resolve()),
         "configured_port": config.dynamixel.dynamixel_port,
         "resolved_port": None,
-        "baudrate": config.arm_teleop.baudrate,
+        "baudrate": config.dynamixel.baudrate,
         "latency_timer": None,
         "device": {
             "id": device_id,
@@ -170,7 +170,7 @@ def run_low_current_check(
         "ids": (device_id,),
         "servo_types": (model,),
         "port": config.dynamixel.dynamixel_port,
-        "baudrate": config.arm_teleop.baudrate,
+        "baudrate": config.dynamixel.baudrate,
     }
     try:
         _run_read_only_preflight(
@@ -372,7 +372,7 @@ def _validate_arguments(
         raise ValueError(
             "Dynamixel port must be a by-id basename or absolute by-id path"
         )
-    if config.arm_teleop.baudrate != DEFAULT_BAUDRATE:
+    if config.dynamixel.baudrate != DEFAULT_BAUDRATE:
         raise ValueError(f"baudrate must be {DEFAULT_BAUDRATE}")
     model = normalize_servo_type(config.dynamixel.servo_types[device_id - 1])
     ceiling = smoke_current_ceiling_ma(model)

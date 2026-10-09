@@ -12,7 +12,7 @@ Thor M6 未标定的控制模板安装在 `config/grav_comp_m6_left.yaml` 和 `c
 
 Thor 搭配遥操作设备 A，Orin 搭配遥操作设备 B；Orin 配置安装在 `config/orin/` 下。两套配置分别使用对应设备的舵机端口和物理方向，原有的各自增益与臂关节限位屏障设置保持不变。新包尚未对这两种配对完成真机验收。这些配置描述主臂硬件，而不是从臂关节方向的语义映射。
 
-在左右臂 YAML 中设置 `controller.gravity_comp.mode`，选择补偿计算方式：
+在左右臂 YAML 中设置 `controller.joint_gravity_comp.mode`，选择补偿计算方式：
 
 | 模式 | 模型计算 |
 |---|---|
@@ -38,22 +38,25 @@ ros2 run skye_factr_teleop skye_factr_teleop_driver --help
 | 参数 | 含义／默认值 |
 |---|---|
 | `config_path` | YAML 绝对路径或相对于包 share 目录的路径；留空时使用 `config/grav_comp_m6_<side>.yaml` |
-| `runtime.joint_offsets` | 必填：8 个物理舵机的标定偏移，单位 rad，包含夹爪 |
-| `runtime.current_limit_ma` | 必填：正数电流上限，同时受舵机额定值约束 |
-| `runtime.max_velocity`、`runtime.max_acceleration`、`runtime.max_jerk` | 必填：按主臂逻辑关节顺序排列的 8 个正数上限，单位分别为 rad/s、rad/s²、rad/s³ |
+| `dynamixel.joint_offsets` | 必填：8 个物理舵机的标定偏移，单位 rad，包含夹爪 |
+| `dynamixel.current_limit_ma` | 必填：正数电流上限，同时受舵机额定值约束 |
+| `controller.sync_hold_control.ruckig.max_velocity`、`max_acceleration`、`max_jerk` | 遥操必填：按主臂逻辑关节顺序排列的 8 个正数上限，单位分别为 rad/s、rad/s²、rad/s³ |
 | `runtime.state_timeout` | 消息头最大年龄与接收后最长时间，单位秒；默认 `0.25` |
 | `runtime.future_tolerance` | 消息头时间戳允许超前的秒数；默认 `0.05` |
 | `runtime.allow_unnamed_joint_states` | 默认 `false`；设为 true 后，无名称消息按固定 J1..J7 顺序解释 |
 
-复制对应的 Thor 或 Orin YAML 作为每台设备的独立文件，并加入顶层 `runtime`。包内模板故意不含此段，不能直接用于遥操启动。所需结构如下，启动前须将占位内容换成实测数值：
+复制对应的 Thor 或 Orin YAML 作为每台设备的独立文件，在 `dynamixel` 下填写标定偏移和电流上限，并在已有的 `controller.sync_hold_control.ruckig` 下填写三个轨迹上限。包内模板故意不含这些值，不能直接用于遥操启动。必填字段如下，启动前须将占位内容换成实际数值：
 
 ```yaml
-runtime:
+dynamixel:
   joint_offsets: [<8 个实测弧度值>]
   current_limit_ma: <实测安全电流上限，mA>
-  max_velocity: [<8 个正数上限，rad/s>]
-  max_acceleration: [<8 个正数上限，rad/s²>]
-  max_jerk: [<8 个正数上限，rad/s³>]
+controller:
+  sync_hold_control:
+    ruckig:
+      max_velocity: [<8 个正数上限，rad/s>]
+      max_acceleration: [<8 个正数上限，rad/s²>]
+      max_jerk: [<8 个正数上限，rad/s³>]
 ```
 
 缺少或无效的值会使节点在打开串口前启动失败。节点通过 `skye_factr_description` 查找主臂 URDF，并使用 `dynamics.py` 中的 Pinocchio 适配器执行 RNEA、局部关节雅可比和正运动学。运行时 Python 依赖包括基线版本的 Pinocchio 和 Ruckig。
@@ -292,13 +295,13 @@ core.handle(
 cycle = core.step(now=tick_time)  # 调用方每个控制周期仅执行一次。
 ```
 
-被接受的同步请求会记录实测的 8 轴逻辑主臂位置和速度，并复制 7 个从臂位置与夹爪设定值。输入坐标必须事先映射到主臂逻辑坐标系。若省略夹爪目标，则使用 `gripper_teleop.limit_setpoint`。由于没有加速度测量，起始加速度设为零；目标速度和加速度也为零。每次同步都会新建轨迹。重复的同步请求不会替换目标或重启超时计时。
+被接受的同步请求会记录实测的 8 轴逻辑主臂位置和速度，并复制 7 个从臂位置与夹爪设定值。输入坐标必须事先映射到主臂逻辑坐标系。若省略夹爪目标，则使用 `controller.sync_hold_control.gripper_setpoint`。由于没有加速度测量，起始加速度设为零；目标速度和加速度也为零。每次同步都会新建轨迹。重复的同步请求不会替换目标或重启超时计时。
 
-同步期间，轨迹跟踪力矩为 `ruckig_kp * (q_ref - q) + ruckig_kd * (dq_ref - dq)`。Ruckig 完成后进入 `HOLD_SETTLING`，对记录的最终目标保持。保持力矩为 `hold_kp * error - hold_kd * dq + hold_ki * integral`。对每个轴，仅当 `abs(error) <= hold_i_thresh` 时积分 `error * dt`；否则清零该轴积分。`hold_i_max` 对乘以 `hold_ki` 之前的累计误差限幅，单位为 rad·s。第一个保持周期从零积分开始。所有轴的实测位置误差和速度分别连续满足 `sync_position_tolerance`、`sync_velocity_tolerance` 达 `settle_duration` 后进入 `SYNCED`，并继续保持；任一轴超阈值就重新计时。超过 `settle_timeout` 则返回 `IDLE` 并关闭力矩。这四项配置位于 `controller.hold_ruckig_control` 下；默认值需在真机上验证和调节。
+同步期间，轨迹跟踪力矩为 `ruckig.kp * (q_ref - q) + ruckig.kd * (dq_ref - dq)`。Ruckig 完成后进入 `HOLD_SETTLING`，对记录的最终目标保持。保持力矩为 `hold.kp * error - hold.kd * dq + hold.ki * integral`。对每个轴，仅当 `abs(error) <= hold.i_thresh` 时积分 `error * dt`；否则清零该轴积分。`hold.i_max` 对乘以 `hold.ki` 之前的累计误差限幅，单位为 rad·s。第一个保持周期从零积分开始。所有轴的实测位置误差和速度分别连续满足 `sync_position_tolerance`、`sync_velocity_tolerance` 达 `settle_duration` 后进入 `SYNCED`，并继续保持；任一轴超阈值就重新计时。超过 `settle_timeout` 则返回 `IDLE` 并关闭力矩。这四项配置位于 `controller.sync_hold_control.hold` 下；默认值需在真机上验证和调节。
 
-同步走位和保持阶段分别使用 `ruckig_gravity_comp_gain` 与 `hold_gravity_comp_gain`，替换常规重力增益。配置的重力模式和控制项开关仍然有效。关节限位保护和静摩擦补偿仍可使用；同步及保持时关闭零空间调节，以免与各关节完整目标相互冲突。最终力矩仍经过已有的舵机方向换算和电流限幅。
+同步走位和保持阶段分别使用各自的 `gravity_comp_gain`，替换常规重力增益。配置的重力模式和控制项开关仍然有效。关节限位保护和静摩擦补偿仍可使用；同步及保持时关闭零空间调节，以免与各关节完整目标相互冲突。最终力矩仍经过已有的舵机方向换算和电流限幅。
 
-当 `elapsed >= teleop_sync_timeout` 时，超时处理先于 Ruckig 更新；收敛超时也先于保持更新。停止、超时以及计算／初始化失败都会清除轨迹、积分和目标，返回 `IDLE`，并尝试写零电流和执行 Torque Disable。显式 `stop()` 不需要时间戳；`handle("switch_stop", now=...)` 即使收到无效时间戳也会停止。其他故障在清理后继续向外抛出。重新尝试同步前，调用方必须有意重新使能力矩。核心 API 禁止外部注入完成／超时事件，因此旧的异步事件无法完成新一轮同步。
+当 `elapsed >= controller.sync_hold_control.ruckig.trajectory_timeout` 时，超时处理先于 Ruckig 更新；收敛超时也先于保持更新。停止、超时以及计算／初始化失败都会清除轨迹、积分和目标，返回 `IDLE`，并尝试写零电流和执行 Torque Disable。显式 `stop()` 不需要时间戳；`handle("switch_stop", now=...)` 即使收到无效时间戳也会停止。其他故障在清理后继续向外抛出。重新尝试同步前，调用方必须有意重新使能力矩。核心 API 禁止外部注入完成／超时事件，因此旧的异步事件无法完成新一轮同步。
 
 进入 `TELEOP` 时会清除自动跟踪与保持输出。常规补偿项仍可使用；ROS 发布由阶段 5 的适配层负责。可观察 `mode`、`last_transition` 和复制得到的 `hold_integral`。`CycleResult` 新增 `tracking_torque`、`mode`、`target_position` 和 `target_velocity`；同步／保持之外，目标字段为 `None`。`wrote_current` 描述正常周期的写入，与清理过程中用于安全停机的零电流写入分开统计。
 

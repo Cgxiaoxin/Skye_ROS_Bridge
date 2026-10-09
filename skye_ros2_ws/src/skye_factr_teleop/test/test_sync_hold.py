@@ -76,7 +76,7 @@ def test_sync_captures_measured_eight_axis_state_and_copies_target():
     np.testing.assert_allclose(trajectory.start_velocity, raw_velocity * core.joint_signs)
     target[:] = 99
     np.testing.assert_allclose(trajectory.target[:7], 0.1)
-    assert trajectory.target[-1] == core.config.gripper_teleop.limit_setpoint
+    assert trajectory.target[-1] == core.config.controller.sync_hold_control.gripper_setpoint
     assert trajectory.calls == 0
     assert hardware.current_history_ma == []
 
@@ -86,12 +86,12 @@ def test_one_update_per_cycle_pd_phase_gravity_and_current_clipping():
     velocity = np.full(8, 0.01)
     hardware.inject_state(np.zeros(8), velocity * core.joint_signs)
     begin(core)
-    cfg = core.config.controller.hold_ruckig_control
+    cfg = core.config.controller.sync_hold_control.ruckig
     result = core.step(now=1.002)
     assert trajectories[0].calls == 1
     assert len(hardware.current_history_ma) == 1
-    expected_pd = np.array(cfg.ruckig_kp) * 0.04 + np.array(cfg.ruckig_kd) * 0.01
-    expected_gravity = dynamics.gravity_value * cfg.ruckig_gravity_comp_gain
+    expected_pd = np.array(cfg.kp) * 0.04 + np.array(cfg.kd) * 0.01
+    expected_gravity = dynamics.gravity_value * cfg.gravity_comp_gain
     np.testing.assert_allclose(result.tracking_torque, expected_pd)
     np.testing.assert_allclose(result.gravity_torque[:7], expected_gravity)
     np.testing.assert_allclose(result.logical_torque[:7], expected_pd[:7] + expected_gravity)
@@ -106,8 +106,9 @@ def test_one_update_per_cycle_pd_phase_gravity_and_current_clipping():
 def test_completion_enters_hold_with_distinct_gravity_and_pid_gains():
     core, hardware, dynamics, trajectories = make_core()
     ctrl = core.config.controller
-    hold = replace(ctrl.hold_ruckig_control, hold_gravity_comp_gain=(0.2,) * 7)
-    core.config = replace(core.config, controller=replace(ctrl, hold_ruckig_control=hold))
+    hold = replace(ctrl.sync_hold_control.hold, gravity_comp_gain=(0.2,) * 7)
+    sync_hold = replace(ctrl.sync_hold_control, hold=hold)
+    core.config = replace(core.config, controller=replace(ctrl, sync_hold_control=sync_hold))
     begin(core)
     trajectories[0].finished = True
     result = core.step(now=1.002)
@@ -116,13 +117,13 @@ def test_completion_enters_hold_with_distinct_gravity_and_pid_gains():
     np.testing.assert_array_equal(result.target_velocity, np.zeros(8))
     np.testing.assert_array_equal(core.hold_integral, np.zeros(8))
     np.testing.assert_allclose(result.gravity_torque[:7], dynamics.gravity_value * 0.2)
-    np.testing.assert_allclose(result.tracking_torque, np.array(hold.hold_kp) * 0.1)
+    np.testing.assert_allclose(result.tracking_torque, np.array(hold.kp) * 0.1)
 
     hardware.inject_state(np.zeros(8), np.full(8, 0.02) * core.joint_signs)
     result = core.step(now=1.012)
     np.testing.assert_allclose(core.hold_integral, 0.001)
-    expected = np.array(hold.hold_kp) * 0.1 - np.array(hold.hold_kd) * 0.02
-    expected += np.array(hold.hold_ki) * 0.001
+    expected = np.array(hold.kp) * 0.1 - np.array(hold.kd) * 0.02
+    expected += np.array(hold.ki) * 0.001
     np.testing.assert_allclose(result.tracking_torque, expected)
     assert trajectories[0].calls == 1  # Hold never advances the old trajectory.
 
@@ -154,7 +155,7 @@ def test_settle_timeout_disables_torque_and_rejects_teleop():
     begin(core)
     trajectories[0].finished = True
     core.step(now=1.002)
-    result = core.step(now=1.002 + core.config.controller.hold_ruckig_control.settle_timeout)
+    result = core.step(now=1.002 + core.config.controller.sync_hold_control.hold.settle_timeout)
     assert result.mode == ControlMode.IDLE
     assert core.last_transition.reason == "settle_timeout"
     assert not hardware.torque_enabled
@@ -169,7 +170,7 @@ def test_hold_integral_clamps_both_signs_and_resets_outside_threshold():
     position = np.array([-0.1, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1, 0.1])
     hardware.inject_state(position * core.joint_signs, np.zeros(8))
     result = core.step(now=3.002)
-    expected = -np.sign(position) * np.array(core.config.controller.hold_ruckig_control.hold_i_max)
+    expected = -np.sign(position) * np.array(core.config.controller.sync_hold_control.hold.i_max)
     np.testing.assert_allclose(core.hold_integral, expected)
     # Snapshots returned to the caller cannot mutate the controller's target/integral.
     core.hold_integral[:] = 100

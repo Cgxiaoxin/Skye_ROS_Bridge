@@ -74,7 +74,7 @@ def leader_launch_description(sides):
     for side in sides:
         actions.append(DeclareLaunchArgument(
             f"{side}_config", default_value="",
-            description=(f"{side} unified control and runtime YAML with measured calibration; "
+            description=(f"{side} unified control YAML with measured dynamixel calibration; "
                          "empty selects the robot_profile template (which lacks calibration); "
                          "absolute or relative to the package share"),
         ))
