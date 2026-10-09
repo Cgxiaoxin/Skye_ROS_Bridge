@@ -23,5 +23,6 @@ class PinocchioDynamics:
         return np.array(self._pin.computeJointJacobian(self.model, self.data, q, 7), copy=True)
 
     def forward_kinematics(self, q):
+        """Return the end-effector pose; currently used only by the dynamics test."""
         self._pin.forwardKinematics(self.model, self.data, q)
         return self.data.oMi[7].copy()

@@ -188,7 +188,6 @@ skye_ros2_ws/src/skye_factr_teleop/dev_docs/skye_factr_teleop_phase0_baseline.md
 /mode/switch_teleop
 /mode/switch_stop
 /mode/switch_telepose
-/enable_position_sync
 ```
 
 验收：
@@ -1074,10 +1073,17 @@ ID、USB by-id、波特率、latency timer、只读采样结果、限值、正�
 ### 7.2 单臂重力补偿
 
 - 无负载、清场、急停可用；
-- 先禁用零空间、反馈和自动同步；
-- 逐关节验证 gravity gain 和 joint sign；
+- 先禁用零空间和反馈，避免触发同步走位；
+- 逐关节验证 gravity gain 和重力补偿的实际施力方向；沿用 2.5.1 已验收的
+  `joint_signs` 只读方向结果，不重复只读方向测试。若配置、装配或接线改变，先按
+  2.5.1 对受影响侧重新验收方向；
 - 验证限位屏障方向；
 - 验证 stop/进程退出行为。
+
+这里的“禁用自动同步”指本项验收期间不发送 `/mode/switch_sync` 请求，也不运行会
+自动发布该请求的外部节点。当前控制节点没有自动同步开关；只有收到有效的
+`switch_sync` 请求且从臂反馈有效时，才从 `IDLE` 开始同步。另需避免向对应侧的
+`/joint_move` 发布目标，因为它也会启动小臂走位。
 
 ### 7.3 单臂同步
 

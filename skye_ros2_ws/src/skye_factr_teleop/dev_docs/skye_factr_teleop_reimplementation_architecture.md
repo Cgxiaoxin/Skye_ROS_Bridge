@@ -294,7 +294,6 @@ IDLE ─────────────────────────
 | `/mode/switch_teleop` | 订阅 | 请求进入遥操 |
 | `/mode/switch_stop` | 订阅 | 请求停止 |
 | `/mode/switch_telepose` | 订阅 | 请求进入位姿遥操 |
-| `/enable_position_sync` | 订阅 | 遗留自动同步开关 |
 | `/leader_arm/current_state` | 发布 | leader 小臂当前关节状态 |
 | `/leader_arm/target_joint_state` | 发布 | leader 小臂走位或保持目标 |
 | `/teleop/state` | 发布 | 当前遥操状态 |

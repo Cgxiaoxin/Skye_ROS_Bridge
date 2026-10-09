@@ -182,7 +182,6 @@ BEST_EFFORT 订阅也可兼容已有 RELIABLE FACTR 发布者。`/joint_state` �
 | 订阅 | `/mode/switch_teleop` | `std_msgs/msg/String` | `event_qos` | `data="switch_teleop"`；无单位，请求进入 `TELEOP`。 |
 | 订阅 | `/mode/switch_stop` | `std_msgs/msg/String` | `event_qos` | `data="switch_stop"`；无单位，请求返回 `IDLE`。 |
 | 订阅 | `/mode/switch_telepose` | `std_msgs/msg/String` | `event_qos` | `data="switch_telepose"`；无单位，请求进入 `TELEPOSE`。 |
-| 订阅 | `/enable_position_sync` | `std_msgs/msg/Bool` | `event_qos` | 单个布尔值；仅保留旧自动同步开关兼容，正式遥操默认 `false`。 |
 | 发布 | `/teleop/state` | `std_msgs/msg/String` | `latched_state_qos` | 单个状态字符串：`IDLE`、`TELEOP_SYNCING`、`SYNCED`、`TELEOP` 或 `TELEPOSE`。 |
 
 模式话题保留现有 `std_msgs/msg/String` 类型和消息值，不改为 service、枚举消息或新的
