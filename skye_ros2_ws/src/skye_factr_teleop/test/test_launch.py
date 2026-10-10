@@ -57,10 +57,12 @@ def expand_launch(monkeypatch, tmp_path):
         return []
 
     monkeypatch.setattr(ExecuteProcess, "execute", capture_process)
-    def expand(kind, **arguments):
+    def expand(kind, *, gravity_test=False, **arguments):
         context = LaunchContext()
         context.launch_configurations.update(arguments)
-        path = PACKAGE_ROOT / "launch" / f"start_teleop_m6_{kind}.launch.py"
+        launch_name = (f"gravity_test_m6_{kind}.launch.py" if gravity_test
+                       else f"start_teleop_m6_{kind}.launch.py")
+        path = PACKAGE_ROOT / "launch" / launch_name
         description = runpy.run_path(str(path))["generate_launch_description"]()
         for action in description.entities:
             # Reject unexpected actions such as keyboard processes or environment edits.
@@ -175,7 +177,7 @@ def test_profile_configuration_matches_leader_devices_and_preserves_gains():
                    for side in ("left", "right")]
     assert thor_left.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0"
     assert thor_right.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0"
-    assert thor_right.dynamixel.joint_signs == (1, -1, 1, -1, 1, -1, -1, 1)
+    assert thor_right.dynamixel.joint_signs == (1, -1, 1, -1, 1, 1, 1, 1)
     assert left.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0"
     assert right.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0"
     assert right.dynamixel.joint_signs == (1, -1, 1, -1, 1, 1, 1, -1)
@@ -189,3 +191,29 @@ def test_profile_configuration_matches_leader_devices_and_preserves_gains():
             == left.controller.limit_barrier_control.joint.limit_min[-1] == -0.8)
     assert (thor_right.controller.limit_barrier_control.joint.limit_min[-1]
             == right.controller.limit_barrier_control.joint.limit_min[-1] == -0.5)
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_gravity_launch_accepts_calibration_without_ruckig_limits(expand_launch, side):
+    config = PACKAGE_ROOT / "config" / f"grav_comp_m6_{side}.yaml"
+    node, command, _, parameters = expand_launch(
+        side, gravity_test=True, config_path=str(config), joint_id="6",
+        gain_scale="0.5", current_limit_ma="20", ramp_seconds="2",
+        max_duration_seconds="5",
+    )[0]
+    assert command[command.index("--side") + 1] == side
+    values = parameters[0][node.node_name]["ros__parameters"]
+    assert values["gravity_test_only"] is True
+    assert values["gravity_test_joint_id"] == 6
+    assert values["gravity_test_current_limit_ma"] == 20.0
+
+
+def test_gravity_launch_rejects_cap_above_test_limit(expand_launch):
+    with pytest.raises(RuntimeError, match="current cap must not exceed 50 mA"):
+        expand_launch(
+            "left", gravity_test=True,
+            config_path=str(PACKAGE_ROOT / "config/grav_comp_m6_left.yaml"),
+            joint_id="1", gain_scale="0.5", current_limit_ma="51",
+            ramp_seconds="2", max_duration_seconds="5",
+        )
+    assert not expand_launch.captured

@@ -15,11 +15,11 @@
 | 4. 上电和连接前现场确认 | PASS（操作者确认） | 操作者确认阶段 2.5.2 已完成；JSON 可证明测试前目标舵机 Torque Disable，其余现场项目未逐项留痕。 |
 | 5. 真实单舵机验证 | PASS（正常路径） | 设备 A 左右 ID 1--8 共 16 份真机结果均为 `PASS`；操作者曾用 Ctrl+C 中断工具，但未保存该次结果。 |
 | 6. 通过与停止条件 | PASS（含人工确认） | 左侧最终 Torque Disable 有回读；右侧最后一次测试后的状态由操作者现场确认，既有右侧回读早于该次测试。异常路径软件故障注入测试通过。 |
-| 7. 验收记录 | PASS | 16 份真机 JSON 和两份 Torque Disable 回读已保存；右侧最终状态的人工确认及异常路径覆盖范围见[2.5.3 冒烟记录](skye_factr_teleop_development_plan.md#253-冒烟验收记录)。 |
+| 7. 验收记录 | PASS | 16 份真机 JSON 和两份 Torque Disable 回读已保存；右侧最终状态的人工确认及异常路径覆盖范围见[2.5.3 冒烟记录](../skye_factr_teleop_development_plan.md#253-冒烟验收记录)。 |
 
 `PREPARED` 只证明参数预演通过，不代表舵机已连接、运动方向已验证或 Torque Disable
 已在真机上确认。第 4、6、7 节的现场结果已汇总在
-[开发计划阶段 2.5.3](skye_factr_teleop_development_plan.md#253-冒烟验收记录)。
+[开发计划阶段 2.5.3](../skye_factr_teleop_development_plan.md#253-冒烟验收记录)。
 
 ## 1. 覆盖范围与硬限制
 
@@ -284,14 +284,14 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_low_current_check -- \
 
 | ID | 型号 | 已观察到 `PASS` 的测试电流 | 较低档位的结果 | 正/负脉冲位移（rad，当前 JSON） | 当前保存的结果文件 |
 | ---: | --- | --- | --- | --- | --- |
-| 1 | XM430-W350 | 20 mA | 未测试 | +0.0874 / -0.3743 | [`left_id1_result.json`](../validation_records/phase2_5_2_A/left_id1_result.json)（20 mA） |
-| 2 | XM430-W350 | 20 mA | 未测试 | +0.1166 / -0.3528 | [`left_id2_result.json`](../validation_records/phase2_5_2_A/left_id2_result.json)（20 mA） |
-| 3 | XC330-T288 | 20、30 mA | 10 mA：`INCONCLUSIVE` | +1.0692 / -1.2134 | [`left_id3_result.json`](../validation_records/phase2_5_2_A/left_id3_result.json)（30 mA） |
-| 4 | XC330-T288 | 30 mA | 20 mA：`INCONCLUSIVE`（两次） | +0.0414 / -0.0920 | [`left_id4_result.json`](../validation_records/phase2_5_2_A/left_id4_result.json)（30 mA） |
-| 5 | XC330-T288 | 20 mA | 未测试 | +0.0629 / -0.2040 | [`left_id5_result.json`](../validation_records/phase2_5_2_A/left_id5_result.json)（20 mA） |
-| 6 | XC330-T288 | 30 mA | 20 mA：`INCONCLUSIVE` | +0.4387 / -0.9219 | [`left_id6_result.json`](../validation_records/phase2_5_2_A/left_id6_result.json)（30 mA） |
-| 7 | XC330-T288 | 20 mA | 未测试 | +0.0230 / -0.0368 | [`left_id7_result.json`](../validation_records/phase2_5_2_A/left_id7_result.json)（20 mA） |
-| 8 | XC330-T288 | 30 mA | 20 mA：`INCONCLUSIVE` | +0.8912 / -0.7915 | [`left_id8_result.json`](../validation_records/phase2_5_2_A/left_id8_result.json)（30 mA） |
+| 1 | XM430-W350 | 20 mA | 未测试 | +0.0874 / -0.3743 | [`left_id1_result.json`](../../validation_records/phase2_5_2_A/left_id1_result.json)（20 mA） |
+| 2 | XM430-W350 | 20 mA | 未测试 | +0.1166 / -0.3528 | [`left_id2_result.json`](../../validation_records/phase2_5_2_A/left_id2_result.json)（20 mA） |
+| 3 | XC330-T288 | 20、30 mA | 10 mA：`INCONCLUSIVE` | +1.0692 / -1.2134 | [`left_id3_result.json`](../../validation_records/phase2_5_2_A/left_id3_result.json)（30 mA） |
+| 4 | XC330-T288 | 30 mA | 20 mA：`INCONCLUSIVE`（两次） | +0.0414 / -0.0920 | [`left_id4_result.json`](../../validation_records/phase2_5_2_A/left_id4_result.json)（30 mA） |
+| 5 | XC330-T288 | 20 mA | 未测试 | +0.0629 / -0.2040 | [`left_id5_result.json`](../../validation_records/phase2_5_2_A/left_id5_result.json)（20 mA） |
+| 6 | XC330-T288 | 30 mA | 20 mA：`INCONCLUSIVE` | +0.4387 / -0.9219 | [`left_id6_result.json`](../../validation_records/phase2_5_2_A/left_id6_result.json)（30 mA） |
+| 7 | XC330-T288 | 20 mA | 未测试 | +0.0230 / -0.0368 | [`left_id7_result.json`](../../validation_records/phase2_5_2_A/left_id7_result.json)（20 mA） |
+| 8 | XC330-T288 | 30 mA | 20 mA：`INCONCLUSIVE` | +0.8912 / -0.7915 | [`left_id8_result.json`](../../validation_records/phase2_5_2_A/left_id8_result.json)（30 mA） |
 
 位移列依次为 `positive_delta_rad / negative_delta_rad`：正脉冲后位置减初始位置、
 负脉冲后位置减正脉冲后位置。数值来自当前保存的 JSON，不包含已被覆盖的测试。
@@ -312,14 +312,14 @@ ID 3、6、8 在当前 30 mA 记录中的单次位置增量最大分别约为 1.
 
 | ID | 型号 | 已观察到 `PASS` 的测试电流 | 其它观察 | 正/负脉冲位移（rad，当前 JSON） | 当前保存的结果文件 |
 | ---: | --- | --- | --- | --- | --- |
-| 1 | XM430-W350 | 20 mA | 无较低档位记录 | +0.0476 / -0.2746 | [`right_id1_result.json`](../validation_records/phase2_5_2_A/right_id1_result.json)（20 mA） |
-| 2 | XM430-W350 | 20 mA | 无较低档位记录 | +0.0982 / -0.3973 | [`right_id2_result.json`](../validation_records/phase2_5_2_A/right_id2_result.json)（20 mA） |
-| 3 | XC330-T288 | 20 mA（两次） | 20 mA 另有一次 `INCONCLUSIVE` | +0.0905 / -0.1166 | [`right_id3_result.json`](../validation_records/phase2_5_2_A/right_id3_result.json)（20 mA） |
-| 4 | XC330-T288 | 30 mA（两次） | 20 mA：`INCONCLUSIVE` | +0.0568 / -0.1058 | [`right_id4_result.json`](../validation_records/phase2_5_2_A/right_id4_result.json)（30 mA） |
-| 5 | XC330-T288 | 30 mA | 20 mA：`INCONCLUSIVE` | +0.8023 / -0.8176 | [`right_id5_result.json`](../validation_records/phase2_5_2_A/right_id5_result.json)（30 mA） |
-| 6 | XC330-T288 | 20 mA | 无较低档位记录 | +0.1120 / -0.1718 | [`right_id6_result.json`](../validation_records/phase2_5_2_A/right_id6_result.json)（20 mA） |
-| 7 | XC330-T288 | 30 mA | 20 mA：`INCONCLUSIVE` | +0.3543 / -0.8912 | [`right_id7_result.json`](../validation_records/phase2_5_2_A/right_id7_result.json)（30 mA） |
-| 8 | XC330-T288 | 30 mA | 20 mA：`INCONCLUSIVE` | +0.7455 / -0.5952 | [`right_id8_result.json`](../validation_records/phase2_5_2_A/right_id8_result.json)（30 mA） |
+| 1 | XM430-W350 | 20 mA | 无较低档位记录 | +0.0476 / -0.2746 | [`right_id1_result.json`](../../validation_records/phase2_5_2_A/right_id1_result.json)（20 mA） |
+| 2 | XM430-W350 | 20 mA | 无较低档位记录 | +0.0982 / -0.3973 | [`right_id2_result.json`](../../validation_records/phase2_5_2_A/right_id2_result.json)（20 mA） |
+| 3 | XC330-T288 | 20 mA（两次） | 20 mA 另有一次 `INCONCLUSIVE` | +0.0905 / -0.1166 | [`right_id3_result.json`](../../validation_records/phase2_5_2_A/right_id3_result.json)（20 mA） |
+| 4 | XC330-T288 | 30 mA（两次） | 20 mA：`INCONCLUSIVE` | +0.0568 / -0.1058 | [`right_id4_result.json`](../../validation_records/phase2_5_2_A/right_id4_result.json)（30 mA） |
+| 5 | XC330-T288 | 30 mA | 20 mA：`INCONCLUSIVE` | +0.8023 / -0.8176 | [`right_id5_result.json`](../../validation_records/phase2_5_2_A/right_id5_result.json)（30 mA） |
+| 6 | XC330-T288 | 20 mA | 无较低档位记录 | +0.1120 / -0.1718 | [`right_id6_result.json`](../../validation_records/phase2_5_2_A/right_id6_result.json)（20 mA） |
+| 7 | XC330-T288 | 30 mA | 20 mA：`INCONCLUSIVE` | +0.3543 / -0.8912 | [`right_id7_result.json`](../../validation_records/phase2_5_2_A/right_id7_result.json)（30 mA） |
+| 8 | XC330-T288 | 30 mA | 20 mA：`INCONCLUSIVE` | +0.7455 / -0.5952 | [`right_id8_result.json`](../../validation_records/phase2_5_2_A/right_id8_result.json)（30 mA） |
 
 当前八份右臂 JSON 的 `result`、`initialization.result`、`direction.result` 和
 `shutdown.result` 均为 `PASS`。较早的 `INCONCLUSIVE` 结果已被同名文件覆盖，

@@ -12,10 +12,11 @@ import pytest
 from conftest import FakeDynamixelIO
 from skye_factr_teleop.config import load_config
 from skye_factr_teleop.control_core import (
-    ControlCore, ControlTerms, LeaderState, gravity_compensation,
+    ControlCore, ControlTerms, GravityTestSettings, LeaderState, gravity_compensation,
     joint_limit_barrier, nullspace_regulation,
     static_friction_compensation, transform_leader_state,
 )
+from skye_factr_teleop.state_machine import ControlMode
 
 
 CONFIG = Path(__file__).parents[1] / "config" / "grav_comp_m6_left.yaml"
@@ -196,6 +197,46 @@ def test_one_cycle_per_call_and_model_current_limit():
         assert np.max(np.abs(result.physical_current_ma)) <= 20
     assert len(hardware.current_history_ma) == 3
     np.testing.assert_allclose(result.gravity_torque[:7], np.arange(1, 8) * core.config.controller.joint_gravity_comp.gain)
+
+
+def test_gravity_test_isolates_one_joint_ramps_and_times_out():
+    core, hardware, _ = _core(limit=50)
+    core.gravity_test = GravityTestSettings(6, 0.5, 20.0, 2.0, 5.0)
+    started = core.handle("switch_gravity_test", now=0.0)
+    assert started.state == ControlMode.GRAVITY_TEST
+
+    first = core.step(now=1.0)
+    expected = 6 * core.config.controller.joint_gravity_comp.gain[5] * 0.5 * 0.5
+    np.testing.assert_allclose(first.gravity_torque[5], expected)
+    np.testing.assert_array_equal(np.delete(first.logical_torque, 5), np.zeros(7))
+    assert first.physical_current_ma[5] < 0
+    assert np.max(np.abs(first.physical_current_ma)) <= 20
+    assert not np.any(first.joint_limit_torque)
+    assert not np.any(first.friction_torque)
+    assert not np.any(first.nullspace_torque)
+    assert not np.any(first.tracking_torque)
+
+    full = core.step(now=2.0)
+    np.testing.assert_allclose(full.gravity_torque[5], expected * 2)
+    expired = core.step(now=5.0)
+    assert expired.mode == ControlMode.IDLE
+    assert core.last_transition.reason == "gravity_test_timeout"
+    assert not expired.wrote_current
+    assert not hardware.torque_enabled
+    np.testing.assert_array_equal(hardware.last_currents_ma, np.zeros(8))
+
+
+@pytest.mark.parametrize("values", [
+    (0, 0.5, 20.0, 2.0, 5.0),
+    (1, 1.1, 20.0, 2.0, 5.0),
+    (1, 0.5, 20.0, 5.0, 5.0),
+    (1, 0.5, 51.0, 2.0, 5.0),
+    (1, 0.5, 20.0, 0.5, 5.0),
+    (1, 0.5, 20.0, 2.0, 31.0),
+])
+def test_gravity_test_settings_reject_unsafe_values(values):
+    with pytest.raises(ValueError, match="gravity test"):
+        GravityTestSettings(*values)
 
 
 def test_physical_direction_mapping_and_model_rating_clip():

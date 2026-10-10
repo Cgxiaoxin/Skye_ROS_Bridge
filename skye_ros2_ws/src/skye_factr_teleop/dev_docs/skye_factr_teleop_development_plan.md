@@ -572,8 +572,8 @@ Torque Disable 结果
 
 | 侧别 | USB by-id | 只读采样 | 真实低电流结果 |
 | --- | --- | --- | --- |
-| 左 | `usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0` | [方向引导](../validation_records/phase2_5_1_A/left_guided.json)：`bus_result=PASS`、`guided_result=PASS_WITH_WARNINGS`；[连续角度](../validation_records/phase2_5_1_A/left_continuous.json)：`PASS_WITH_SKIPS_AND_WARNINGS` | [低电流清单与逐 ID 结果](skye_factr_teleop_phase2_5_low_current_checklist.md#8-设备-a-左臂实测记录2026-10-10)：ID 1--8，8/8 `PASS` |
-| 右 | `usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0` | [方向引导](../validation_records/phase2_5_1_A/right_guided.json)：`bus_result=PASS`、`guided_result=PASS_WITH_WARNINGS`；[连续角度](../validation_records/phase2_5_1_A/right_continuous.json)：`PASS_WITH_SKIPS_AND_WARNINGS` | [低电流清单与逐 ID 结果](skye_factr_teleop_phase2_5_low_current_checklist.md#9-设备-a-右臂实测记录2026-10-10)：ID 1--8，8/8 `PASS` |
+| 左 | `usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0` | [方向引导](../validation_records/phase2_5_1_A/left_guided.json)：`bus_result=PASS`、`guided_result=PASS_WITH_WARNINGS`；[连续角度](../validation_records/phase2_5_1_A/left_continuous.json)：`PASS_WITH_SKIPS_AND_WARNINGS` | [低电流清单与逐 ID 结果](checklist/phase2_5_low_current_checklist.md#8-设备-a-左臂实测记录2026-10-10)：ID 1--8，8/8 `PASS` |
+| 右 | `usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0` | [方向引导](../validation_records/phase2_5_1_A/right_guided.json)：`bus_result=PASS`、`guided_result=PASS_WITH_WARNINGS`；[连续角度](../validation_records/phase2_5_1_A/right_continuous.json)：`PASS_WITH_SKIPS_AND_WARNINGS` | [低电流清单与逐 ID 结果](checklist/phase2_5_low_current_checklist.md#9-设备-a-右臂实测记录2026-10-10)：ID 1--8，8/8 `PASS` |
 
 两侧记录的波特率均为 `4,000,000`，FTDI latency timer 均为 `1`；ID 1--2
 为 XM430-W350（model 1020），ID 3--8 为 XC330-T288（model 1220）。只读记录中
@@ -583,7 +583,7 @@ Torque Disable 结果
 
 低电流测试使用生产 `DynamixelDriver`，每次只使能目标 ID；操作者限值均为
 `50 mA`，正负脉冲各 `0.5 s`，间隔 `0.2 s`。下表给出覆盖两种型号的代表记录；
-其余 12 份结果及较低电流下的 `INCONCLUSIVE` 观察见[低电流清单](skye_factr_teleop_phase2_5_low_current_checklist.md#8-设备-a-左臂实测记录2026-10-10)。
+其余 12 份结果及较低电流下的 `INCONCLUSIVE` 观察见[低电流清单](checklist/phase2_5_low_current_checklist.md#8-设备-a-左臂实测记录2026-10-10)。
 
 | 侧别 / ID | 型号 | 测试电流 | 正 / 负脉冲位移（rad） | 结果文件 |
 | --- | --- | ---: | ---: | --- |
@@ -620,14 +620,14 @@ Torque Disable 的结果，且该次 `--output` 路径已无法追溯。操作�
 - [x] 操作者现场确认右侧最后一次低电流测试结束后 Torque Disable；最终状态
   没有测试后的寄存器回读文件，记录类型为人工确认；
 
-根据[低电流清单第 2 节](skye_factr_teleop_phase2_5_low_current_checklist.md#2-无硬件自动测试)
+根据[低电流清单第 2 节](checklist/phase2_5_low_current_checklist.md#2-无硬件自动测试)
 和第 6 节的通过条件，异常退出、通信失败的清理逻辑由无硬件故障注入测试验收；
 真机通信故障未测试如实保留在记录中，不要求为签收而带电断开总线。
 若今后单独执行真机异常测试，应使用独立输出文件，并在同一供电周期复核 Torque Disable。
 
 阶段 2.5 的左右总线只读、XM430/XC330 真机低电流、生产驱动使用、最终 Torque
 Disable 和验收记录均满足本节完成条件；任务 7.1 据此关闭。后续若需要机器可核查的
-右侧最终状态证据，可按[复核步骤](skye_factr_teleop_phase2_5_low_current_checklist.md#10-测试结束后复核-torque-disable)
+右侧最终状态证据，可按[复核步骤](checklist/phase2_5_low_current_checklist.md#10-测试结束后复核-torque-disable)
 补存新 JSON，不改写既有记录的时间顺序。
 
 阶段 2.5 不验证 leader 重力补偿、Ruckig、同步、遥操或双臂运动。
@@ -1109,7 +1109,7 @@ Dynamixel 真实同步读取、同步写入耗时和连接硬件后的控制周�
 
 状态：`PASS`（2026-10-10，设备 A；右侧最终 Torque Disable 为人工确认）。
 
-执行[阶段 2.5.2 低电流验证清单](skye_factr_teleop_phase2_5_low_current_checklist.md)
+执行[阶段 2.5.2 低电流验证清单](checklist/phase2_5_low_current_checklist.md)
 第 4--7 节。若 USB、接线或配置与阶段 2.5.1 记录相比已改变，先重新完成受影响侧的
 只读验收；任何低电流写入之前都必须确认当前侧只读通信通过。
 
@@ -1123,6 +1123,8 @@ ID、USB by-id、波特率、latency timer、只读采样结果、限值、正�
 
 ### 7.2 单臂重力补偿
 
+状态：`PREPARED`（[重力补偿真机清单](checklist/phase7_2_gravity_test_checklist.md)和验收入口已提供；重力补偿与限位屏障的真机结果均待记录）。
+
 - 无负载、清场、急停可用；
 - 先禁用零空间和反馈，避免触发同步走位；
 - 逐关节验证 gravity gain 和重力补偿的实际施力方向；沿用 2.5.1 已验收的
@@ -1135,6 +1137,10 @@ ID、USB by-id、波特率、latency timer、只读采样结果、限值、正�
 自动发布该请求的外部节点。当前控制节点没有自动同步开关；只有收到有效的
 `switch_sync` 请求且从臂反馈有效时，才从 `IDLE` 开始同步。另需避免向对应侧的
 `/joint_move` 发布目标，因为它也会启动小臂走位。
+重力补偿检查使用单侧的 `/mode/{side}/switch_gravity_test` 显式进入
+`GRAVITY_TEST`；`switch_stop`、超时或退出后验证零电流和 Torque Disable。
+该模式不输出限位屏障项，也不接受同步或走位请求。限位屏障方向另行验收，
+两项均通过后才完成 7.2。
 
 ### 7.3 单臂同步
 

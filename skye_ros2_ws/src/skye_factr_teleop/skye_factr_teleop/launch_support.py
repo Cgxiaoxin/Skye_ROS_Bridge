@@ -12,6 +12,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 from .config import ConfigError, load_config
+from .control_core import GravityTestSettings
 
 
 def _existing_file(value, share, argument):
@@ -80,3 +81,57 @@ def leader_launch_description(sides):
         ))
     actions.append(OpaqueFunction(function=_launch_setup, kwargs={"sides": sides}))
     return LaunchDescription(actions)
+
+
+def _gravity_test_setup(context, *, side):
+    share = Path(get_package_share_directory("skye_factr_teleop"))
+    config_path = _existing_file(
+        LaunchConfiguration("config_path").perform(context), share, "config_path",
+    )
+    try:
+        config = load_config(config_path)
+        if config.dynamixel.joint_offsets is None or config.dynamixel.current_limit_ma is None:
+            raise ValueError("calibrated joint_offsets and current_limit_ma are required")
+        settings = GravityTestSettings(
+            joint_id=int(LaunchConfiguration("joint_id").perform(context)),
+            gain_scale=float(LaunchConfiguration("gain_scale").perform(context)),
+            current_limit_ma=float(LaunchConfiguration("current_limit_ma").perform(context)),
+            ramp_seconds=float(LaunchConfiguration("ramp_seconds").perform(context)),
+            max_duration_seconds=float(LaunchConfiguration("max_duration_seconds").perform(context)),
+        )
+        if settings.current_limit_ma > min(config.dynamixel.current_limit_ma):
+            raise ValueError("gravity test current cap exceeds configured limit")
+        joint_gain = config.controller.joint_gravity_comp.gain[settings.joint_id - 1]
+        if not config.controller.joint_gravity_comp.enable or joint_gain <= 0:
+            raise ValueError("gravity test requires a positive enabled joint gain")
+    except (ConfigError, ValueError) as exc:
+        raise RuntimeError(f"gravity test configuration invalid: {exc}") from exc
+    return [Node(
+        package="skye_factr_teleop",
+        executable="skye_factr_teleop_driver",
+        name=f"skye_factr_teleop_{side}",
+        namespace="",
+        arguments=["--side", side],
+        parameters=[{
+            "config_path": config_path,
+            "gravity_test_only": True,
+            "gravity_test_joint_id": settings.joint_id,
+            "gravity_test_gain_scale": settings.gain_scale,
+            "gravity_test_current_limit_ma": settings.current_limit_ma,
+            "gravity_test_ramp_seconds": settings.ramp_seconds,
+            "gravity_test_max_duration_seconds": settings.max_duration_seconds,
+        }],
+        output="screen",
+    )]
+
+
+def gravity_test_launch_description(side):
+    return LaunchDescription([
+        DeclareLaunchArgument("config_path", default_value=""),
+        DeclareLaunchArgument("joint_id", default_value=""),
+        DeclareLaunchArgument("gain_scale", default_value=""),
+        DeclareLaunchArgument("current_limit_ma", default_value=""),
+        DeclareLaunchArgument("ramp_seconds", default_value=""),
+        DeclareLaunchArgument("max_duration_seconds", default_value=""),
+        OpaqueFunction(function=_gravity_test_setup, kwargs={"side": side}),
+    ])

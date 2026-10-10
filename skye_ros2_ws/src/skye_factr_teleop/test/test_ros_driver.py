@@ -100,16 +100,17 @@ def make_node(context, monkeypatch, tmp_path):
     nodes = []
 
     def make(side="left", *, parameters=None, config_path_override=None,
-             hardware=None, record_publishers=True, **kwargs):
+             hardware=None, record_publishers=True, gravity_test=None, **kwargs):
         source = Path(__file__).parents[1] / "config" / f"grav_comp_m6_{side}.yaml"
         document = yaml.safe_load(source.read_text(encoding="utf-8"))
         document["dynamixel"].update({
             "joint_offsets": [0.0] * 8, "current_limit_ma": [50.0] * 8,
         })
-        document["controller"]["sync_hold_control"]["ruckig"].update({
-            "max_velocity": [0.5] * 8, "max_acceleration": [1.0] * 8,
-            "max_jerk": [4.0] * 8,
-        })
+        if gravity_test is None:
+            document["controller"]["sync_hold_control"]["ruckig"].update({
+                "max_velocity": [0.5] * 8, "max_acceleration": [1.0] * 8,
+                "max_jerk": [4.0] * 8,
+            })
         for key, value in (parameters or {}).items():
             target = document["dynamixel"] if key in ("joint_offsets", "current_limit_ma") else document.setdefault("runtime", {})
             target[key] = value
@@ -124,9 +125,14 @@ def make_node(context, monkeypatch, tmp_path):
             trajectories.append(trajectory)
             return trajectory
 
+        overrides = [Parameter("config_path", value=str(config_path_override or config_path))]
+        if gravity_test is not None:
+            overrides.append(Parameter("gravity_test_only", value=True))
+            overrides.extend(Parameter(f"gravity_test_{key}", value=value)
+                             for key, value in gravity_test.items())
         node = module.SkyeFactrTeleopNode(
             side, context=context, use_global_arguments=False,
-            parameter_overrides=[Parameter("config_path", value=str(config_path_override or config_path))],
+            parameter_overrides=overrides,
             hardware_factory=lambda config: hardware,
             dynamics_factory=lambda config: FakeDynamics(),
             trajectory_factory=factory, monotonic=lambda: clock.now, **kwargs,
@@ -137,6 +143,8 @@ def make_node(context, monkeypatch, tmp_path):
         if record_publishers:
             for name in ("_state_pub", "_current_pub", "_target_pub", "_command_pub"):
                 setattr(node, name, Recorder())
+            if gravity_test is not None:
+                node._test_current_pub = Recorder()
         return SimpleNamespace(node=node, hardware=hardware, trajectories=trajectories,
                                clock=clock, publishers=pubs)
 
@@ -168,6 +176,59 @@ def test_interfaces_qos_and_disabled_startup(make_node, side):
             "/mode/switch_teleop", "/mode/switch_stop"} <= set(subs)
     assert subs["/joint_state"].qos_profile.reliability == ReliabilityPolicy.RELIABLE
     assert subs["/joint_state"].qos_profile.depth == 1
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_gravity_test_node_has_isolated_interface_and_stops(make_node, side):
+    rig = make_node(side, gravity_test={
+        "joint_id": 6,
+        "gain_scale": 0.5,
+        "current_limit_ma": 20.0,
+        "ramp_seconds": 2.0,
+        "max_duration_seconds": 5.0,
+    })
+    node = rig.node
+    subs = {sub.topic_name for sub in node.subscriptions}
+    assert subs == {f"/mode/{side}/switch_gravity_test", "/mode/switch_stop"}
+    assert rig.trajectories == []
+    assert rig.hardware.open_calls == [False]
+    assert not rig.hardware.torque_enabled
+
+    node._on_gravity_test(String(data="switch_gravity_test"))
+    assert node.core.mode == ControlMode.GRAVITY_TEST
+    assert rig.hardware.torque_enabled
+    rig.clock.now += 1.0
+    node._tick()
+    assert rig.hardware.last_currents_ma[5] * node.core.joint_signs[5] > 0
+    np.testing.assert_array_equal(np.delete(rig.hardware.last_currents_ma, 5), np.zeros(7))
+    assert node._test_current_pub.messages[-1].data[5] * node.core.joint_signs[5] > 0
+    assert not node._command_pub.messages
+    assert not node._target_pub.messages
+    node._on_stop(String(data="switch_stop"))
+    assert node.core.mode == ControlMode.IDLE
+    assert not rig.hardware.torque_enabled
+    np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))
+    node._on_gravity_test(String(data="switch_gravity_test"))
+    rig.clock.now += 5.0
+    node._tick()
+    assert node.core.mode == ControlMode.IDLE
+    assert node.core.last_transition.reason == "gravity_test_timeout"
+    assert not rig.hardware.torque_enabled
+
+
+def test_gravity_test_destroy_disables_torque(make_node):
+    rig = make_node(gravity_test={
+        "joint_id": 1,
+        "gain_scale": 0.1,
+        "current_limit_ma": 20.0,
+        "ramp_seconds": 2.0,
+        "max_duration_seconds": 5.0,
+    })
+    rig.node._on_gravity_test(String(data="switch_gravity_test"))
+    assert rig.hardware.torque_enabled
+    rig.node.destroy_node()
+    assert not rig.hardware.torque_enabled
+    np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))
 
 
 @pytest.mark.parametrize("side", ["left", "right"])

@@ -145,6 +145,11 @@ ros2 topic pub --once /mode/switch_teleop std_msgs/msg/String '{data: switch_tel
 ros2 topic pub --once /mode/switch_stop std_msgs/msg/String '{data: switch_stop}'
 ```
 
+阶段 7.2 使用单臂专用的 `gravity_test_m6_left.launch.py` 或
+`gravity_test_m6_right.launch.py`，由 `/mode/{side}/switch_gravity_test` 显式进入
+`GRAVITY_TEST`。参数、监视话题、停止条件和真机记录格式见
+[7.2 验收清单](dev_docs/checklist/phase7_2_gravity_test_checklist.md)。
+
 不启动硬件节点也可查看 launch 参数：
 
 ```bash
@@ -171,7 +176,7 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
   --output /tmp/skye_phase2_5_left.json
 ```
 
-检查右侧总线时，改用对应的右臂 YAML 和输出路径。自动报告 `PASS` 表示串口配置、设备身份、力矩关闭状态和采样数值范围通过检查。USB 左右侧映射、实体 ID 顺序、关节方向及连续角度运动仍需操作员核对。将结果用作阶段 2.5.1 验收依据前，应遵循[阶段 2.5.1 只读检查清单](dev_docs/skye_factr_teleop_phase2_5_readonly_checklist.md)。
+检查右侧总线时，改用对应的右臂 YAML 和输出路径。自动报告 `PASS` 表示串口配置、设备身份、力矩关闭状态和采样数值范围通过检查。USB 左右侧映射、实体 ID 顺序、关节方向及连续角度运动仍需操作员核对。将结果用作阶段 2.5.1 验收依据前，应遵循[阶段 2.5.1 只读检查清单](dev_docs/checklist/phase2_5_readonly_checklist.md)。
 
 首次验收 ID 和方向时，使用引导模式。它保持总线只读，提示操作员逐个设备做一次正向运动，自动采集静止、运动、停止宽限期和稳定终点的时间窗口，并为每侧生成一份汇总 JSON 记录：
 
@@ -220,7 +225,7 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_low_current_check -- \
   --output /tmp/skye_phase2_5_2_left_id1_prepared.json
 ```
 
-移除 `--prepare-only` 前，应遵循完整的[阶段 2.5.2 低电流检查清单](dev_docs/skye_factr_teleop_phase2_5_low_current_checklist.md)。硬件模式依次发送短时正向、零、反向、零电流命令，检查编码器方向，并始终调用正式驱动的关闭流程，写入零电流及 Torque Disable。
+移除 `--prepare-only` 前，应遵循完整的[阶段 2.5.2 低电流检查清单](dev_docs/checklist/phase2_5_low_current_checklist.md)。硬件模式依次发送短时正向、零、反向、零电流命令，检查编码器方向，并始终调用正式驱动的关闭流程，写入零电流及 Torque Disable。
 
 ## 阶段 3：控制核心（无硬件）
 

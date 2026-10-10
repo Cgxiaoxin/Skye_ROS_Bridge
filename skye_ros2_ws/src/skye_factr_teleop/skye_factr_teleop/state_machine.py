@@ -20,12 +20,15 @@ class ControlMode(IntEnum):
     TELEOP = 3
     HOLD_SETTLING = 4
     TELEPOSE = 5  # Reserved; no transition into this mode in the base machine.
+    GRAVITY_TEST = 6
 
 
 class Event(str, Enum):
     SWITCH_SYNC = "switch_sync"
     SWITCH_TELEOP = "switch_teleop"
     SWITCH_STOP = "switch_stop"
+    SWITCH_GRAVITY_TEST = "switch_gravity_test"
+    GRAVITY_TEST_TIMEOUT = "gravity_test_timeout"
     SYNC_COMPLETE = "sync_complete"
     SYNC_TIMEOUT = "sync_timeout"
     TRAJECTORY_COMPLETE = "trajectory_complete"
@@ -47,6 +50,7 @@ class Action(str, Enum):
     START_SYNC = "start_sync"
     START_HOLD = "start_hold"
     START_TELEOP = "start_teleop"
+    START_GRAVITY_TEST = "start_gravity_test"
 
 
 @dataclass(frozen=True)
@@ -105,6 +109,22 @@ class StateMachine:
         if event == Event.SWITCH_STOP:
             return self._result(
                 "accepted", state=ControlMode.IDLE,
+                actions=(Action.STOP_MOTION, Action.CLEAR_SYNC), now=now,
+            )
+
+        if event == Event.SWITCH_GRAVITY_TEST:
+            if self.state == ControlMode.IDLE:
+                return self._result(
+                    "accepted", state=ControlMode.GRAVITY_TEST,
+                    actions=(Action.CLEAR_SYNC, Action.START_GRAVITY_TEST), now=now,
+                )
+            if self.state == ControlMode.GRAVITY_TEST:
+                return self._result("ignored", reason="already_testing", now=now)
+            return self._result("rejected", reason="stop_required", now=now)
+
+        if event == Event.GRAVITY_TEST_TIMEOUT and self.state == ControlMode.GRAVITY_TEST:
+            return self._result(
+                "accepted", state=ControlMode.IDLE, reason="gravity_test_timeout",
                 actions=(Action.STOP_MOTION, Action.CLEAR_SYNC), now=now,
             )
 

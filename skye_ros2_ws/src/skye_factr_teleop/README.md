@@ -123,6 +123,12 @@ State data uses RELIABLE/VOLATILE/KEEP_LAST(1); joint commands use
 BEST_EFFORT/VOLATILE/KEEP_LAST(1). Mode requests use RELIABLE/VOLATILE/depth 10;
 state text uses RELIABLE/TRANSIENT_LOCAL/depth 1.
 
+Stage 7.2 uses the separate `gravity_test_m6_left.launch.py` or
+`gravity_test_m6_right.launch.py` entry. The side-specific
+`/mode/{side}/switch_gravity_test` request starts a time-limited single-joint
+test; see the [stage 7.2 checklist](dev_docs/checklist/phase7_2_gravity_test_checklist.md)
+for parameters, current telemetry, and stop checks.
+
 Incoming JointState messages require seven finite positions; velocity/effort
 must be empty or contain seven finite values. Names must be exactly
 `l_j1..l_j7` or `r_j1..r_j7` in order, unless empty names are explicitly allowed.
@@ -256,7 +262,7 @@ Use the corresponding right-side YAML and output path for the right bus. An
 automated `PASS` covers serial configuration, device identity, torque-off state,
 and sampled numeric ranges. USB side mapping, physical ID order, joint direction,
 and continuous-angle motion remain operator checks. Follow the
-[phase 2.5.1 read-only checklist](dev_docs/skye_factr_teleop_phase2_5_readonly_checklist.md)
+[phase 2.5.1 read-only checklist](dev_docs/checklist/phase2_5_readonly_checklist.md)
 before using the result as phase 2.5.1 acceptance evidence.
 
 For first-time ID and direction acceptance, use guided mode. It keeps the bus
@@ -332,7 +338,7 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_low_current_check -- \
 ```
 
 Follow the complete
-[phase 2.5.2 low-current checklist](dev_docs/skye_factr_teleop_phase2_5_low_current_checklist.md)
+[phase 2.5.2 low-current checklist](dev_docs/checklist/phase2_5_low_current_checklist.md)
 before removing `--prepare-only`. Hardware mode sends short positive, zero,
 negative, and zero commands, checks encoder direction, and always invokes the
 production close path to write zero current and Torque Disable.

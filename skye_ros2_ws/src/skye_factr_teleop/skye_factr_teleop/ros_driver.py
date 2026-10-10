@@ -19,11 +19,11 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from rclpy.utilities import remove_ros_args
 from sensor_msgs.msg import JointState
-from std_msgs.msg import String
+from std_msgs.msg import Float64MultiArray, String
 
 from .config import load_config
 from .state_machine import ControlMode
-from .control_core import ControlCore
+from .control_core import ControlCore, GravityTestSettings
 from .dynamics import PinocchioDynamics
 from .trajectory import RuckigTrajectory
 from .dynamixel_driver import DynamixelDriver
@@ -146,14 +146,40 @@ class SkyeFactrTeleopNode(Node):
 
     def _configure(self):
         config_path = self._parameter("config_path", "")
-        self.config = load_config(resolve_config_path(config_path, self.side), require_runtime=True)
+        self._gravity_test_only = self._parameter("gravity_test_only", False)
+        if type(self._gravity_test_only) is not bool:
+            raise ValueError("gravity_test_only must be a bool")
+        self.config = load_config(
+            resolve_config_path(config_path, self.side),
+            require_runtime=not self._gravity_test_only,
+        )
         runtime = self.config.runtime
+        self._gravity_test = None
+        if self._gravity_test_only:
+            if (self.config.dynamixel.joint_offsets is None
+                    or self.config.dynamixel.current_limit_ma is None):
+                raise ValueError("gravity test requires joint_offsets and current_limit_ma")
+            self._gravity_test = GravityTestSettings(
+                joint_id=self._parameter("gravity_test_joint_id", 0),
+                gain_scale=self._parameter("gravity_test_gain_scale", 0.0),
+                current_limit_ma=self._parameter("gravity_test_current_limit_ma", 0.0),
+                ramp_seconds=self._parameter("gravity_test_ramp_seconds", 0.0),
+                max_duration_seconds=self._parameter("gravity_test_max_duration_seconds", 0.0),
+            )
+            if self._gravity_test.current_limit_ma > min(self.config.dynamixel.current_limit_ma):
+                raise ValueError("gravity test current cap exceeds configured limit")
+            joint_gain = self.config.controller.joint_gravity_comp.gain[
+                self._gravity_test.joint_id - 1
+            ]
+            if not self.config.controller.joint_gravity_comp.enable or joint_gain <= 0:
+                raise ValueError("gravity test requires a positive enabled joint gain")
         self._offsets = np.asarray(self.config.dynamixel.joint_offsets)
         self._current_limit = self.config.dynamixel.current_limit_ma
-        self._limits = {
-            name: np.asarray(getattr(self.config.controller.sync_hold_control.ruckig, name))
-            for name in ("max_velocity", "max_acceleration", "max_jerk")
-        }
+        if not self._gravity_test_only:
+            self._limits = {
+                name: np.asarray(getattr(self.config.controller.sync_hold_control.ruckig, name))
+                for name in ("max_velocity", "max_acceleration", "max_jerk")
+            }
         self._max_age = runtime.state_timeout
         self._future_tolerance = runtime.future_tolerance
         self._allow_unnamed = runtime.allow_unnamed_joint_states
@@ -169,22 +195,35 @@ class SkyeFactrTeleopNode(Node):
         self._current_pub = self.create_publisher(JointState, "/leader_arm/current_state", state_qos())
         self._target_pub = self.create_publisher(JointState, "/leader_arm/target_joint_state", state_qos())
         self._command_pub = self.create_publisher(JointState, "/joint_control", command_qos())
-        self.create_subscription(JointState, "/joint_state", self._on_follower, state_qos())
-        self.create_subscription(JointState, "/joint_move", self._on_joint_move, state_qos())
-        self.create_subscription(String, "/mode/switch_sync", self._on_sync, event_qos())
-        self.create_subscription(String, "/mode/switch_teleop", self._on_teleop, event_qos())
+        self._test_current_pub = None
+        if self._gravity_test_only:
+            self._test_current_pub = self.create_publisher(
+                Float64MultiArray, f"/leader_arm/{self.side}/gravity_test_current_ma",
+                state_qos(),
+            )
         self.create_subscription(String, "/mode/switch_stop", self._on_stop, event_qos())
+        if self._gravity_test_only:
+            self.create_subscription(
+                String, f"/mode/{self.side}/switch_gravity_test",
+                self._on_gravity_test, event_qos(),
+            )
+        else:
+            self.create_subscription(JointState, "/joint_state", self._on_follower, state_qos())
+            self.create_subscription(JointState, "/joint_move", self._on_joint_move, state_qos())
+            self.create_subscription(String, "/mode/switch_sync", self._on_sync, event_qos())
+            self.create_subscription(String, "/mode/switch_teleop", self._on_teleop, event_qos())
 
     def _start_control(self, *, hardware_factory, dynamics_factory, trajectory_factory):
         dynamics = (dynamics_factory or _make_pinocchio_dynamics)(self.config)
-        make_trajectory = trajectory_factory or self._make_ruckig_trajectory
-        if trajectory_factory is None:
+        make_trajectory = None if self._gravity_test_only else (trajectory_factory or self._make_ruckig_trajectory)
+        if not self._gravity_test_only and trajectory_factory is None:
             make_trajectory()  # Check Ruckig before opening the hardware.
         self._hardware = (hardware_factory or _hardware_factory)(self.config)
         self._hardware.open(enable_torque=False)
         self.core = ControlCore(
             self.config, self._hardware, dynamics, self._offsets,
-            self._current_limit, trajectory_factory=make_trajectory, now=self._monotonic(),
+            self._current_limit, trajectory_factory=make_trajectory,
+            gravity_test=self._gravity_test, now=self._monotonic(),
         )
         self._publish_state()
         self._steady_clock = Clock(clock_type=ClockType.STEADY_TIME)
@@ -249,6 +288,18 @@ class SkyeFactrTeleopNode(Node):
             self.get_logger().warning("Synchronization requires fresh follower state")
             return
         self._start_motion(self._follower.position, follower_session=True)
+
+    def _on_gravity_test(self, message):
+        if self._closed or message.data != "switch_gravity_test":
+            return
+        if self.core.mode != ControlMode.IDLE:
+            return
+        try:
+            self._hardware.set_torque_enabled(True)
+            self.core.handle("switch_gravity_test", now=self._monotonic())
+            self._publish_state()
+        except Exception as exc:
+            self._fault(exc)
 
     def _on_joint_move(self, message):
         if self._closed:
@@ -322,10 +373,12 @@ class SkyeFactrTeleopNode(Node):
             ))
         if result.mode == ControlMode.TELEOP:
             self._command_pub.publish(self._joint_message(result.state.arm_position))
+        if self._test_current_pub is not None:
+            self._test_current_pub.publish(Float64MultiArray(data=result.physical_current_ma.tolist()))
         self._publish_state()
 
     def _fault(self, exc):
-        self.get_logger().error(f"Teleoperation stopped after failure: {exc}")
+        self.get_logger().error(f"Control stopped after failure: {exc}")
         self.shutdown_control()
 
     def shutdown_control(self):

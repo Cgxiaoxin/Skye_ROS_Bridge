@@ -22,6 +22,33 @@ class ControlTerms:
     static_friction: bool = True
     nullspace: bool = False
 
+
+@dataclass(frozen=True)
+class GravityTestSettings:
+    joint_id: int
+    gain_scale: float
+    current_limit_ma: float
+    ramp_seconds: float
+    max_duration_seconds: float
+
+    def __post_init__(self) -> None:
+        if type(self.joint_id) is not int or not 1 <= self.joint_id <= ARM_JOINT_COUNT:
+            raise ValueError("gravity test joint_id must be 1..7")
+        for name in ("gain_scale", "current_limit_ma", "ramp_seconds", "max_duration_seconds"):
+            value = getattr(self, name)
+            if not np.isfinite(value) or value <= 0:
+                raise ValueError(f"gravity test {name} must be finite and positive")
+        if self.gain_scale > 1:
+            raise ValueError("gravity test gain_scale must not exceed 1")
+        if self.current_limit_ma > 50:
+            raise ValueError("gravity test current cap must not exceed 50 mA")
+        if self.ramp_seconds < 1:
+            raise ValueError("gravity test ramp must be at least 1 second")
+        if self.max_duration_seconds > 30:
+            raise ValueError("gravity test duration must not exceed 30 seconds")
+        if self.max_duration_seconds <= self.ramp_seconds:
+            raise ValueError("gravity test duration must exceed ramp time")
+
 @dataclass(frozen=True)
 class LeaderState:
     arm_position: np.ndarray
@@ -224,6 +251,7 @@ class ControlCore:
         joint_offsets: object, current_limit_ma: object,
         terms: ControlTerms | None = None,
         *, trajectory_factory: Callable[[], TrajectoryIO] | None = None,
+        gravity_test: GravityTestSettings | None = None,
         now: float = 0.0,
     ) -> None:
         self.config, self.hardware, self.dynamics = config, hardware, dynamics
@@ -252,6 +280,7 @@ class ControlCore:
         self._now = _scalar(now, "now")
         self._machine = StateMachine(now=self._now)
         self._trajectory_factory = trajectory_factory
+        self.gravity_test = gravity_test
         self._trajectory: TrajectoryIO | None = None
         self._target: np.ndarray | None = None
         self._hold_integral = np.zeros(MOTOR_COUNT)
@@ -285,7 +314,10 @@ class ControlCore:
                 torque_nm_to_current_ma(torque, model)
                 for torque, model in zip(physical_torque, self.config.dynamixel.servo_types)
             ])
-            currents = np.clip(currents, -self.current_limit_ma, self.current_limit_ma)
+            limit = self.current_limit_ma
+            if self.mode == ControlMode.GRAVITY_TEST:
+                limit = np.minimum(limit, self.gravity_test.current_limit_ma)
+            currents = np.clip(currents, -limit, limit)
             wrote = bool(self.hardware.torque_enabled)
             if wrote:
                 self.hardware.write_currents(currents)
@@ -327,7 +359,8 @@ class ControlCore:
         try:
             self._time(now)
             if event in (Event.SYNC_COMPLETE, Event.SYNC_TIMEOUT,
-                         Event.TRAJECTORY_COMPLETE, Event.SETTLE_TIMEOUT):
+                         Event.TRAJECTORY_COMPLETE, Event.SETTLE_TIMEOUT,
+                         Event.GRAVITY_TEST_TIMEOUT):
                 raise ValueError("trajectory events are internal to step()")
             result = self._machine.handle(event, now=self._now)
             self._apply_actions(result, follower_position, gripper_setpoint)
@@ -365,6 +398,11 @@ class ControlCore:
         self._last_step_at = self._now
         if not self.hardware.torque_enabled and self.mode != ControlMode.IDLE:
             self.stop()
+        if (self.mode == ControlMode.GRAVITY_TEST
+                and self._now - self._machine.entered_at
+                >= self.gravity_test.max_duration_seconds):
+            self._trajectory_event(Event.GRAVITY_TEST_TIMEOUT)
+            self._zero_and_disable()
         if (self.mode == ControlMode.TELEOP_SYNCING
                 and self._now - self._machine.entered_at
                 >= self.config.controller.sync_hold_control.ruckig.trajectory_timeout):
@@ -387,6 +425,20 @@ class ControlCore:
         next_flags = self._dither_positive
         ctrl = self.config.controller
         if self.hardware.torque_enabled:
+            if self.mode == ControlMode.GRAVITY_TEST:
+                settings = self.gravity_test
+                ramp = min(1.0, (self._now - self._machine.entered_at) / settings.ramp_seconds)
+                index = settings.joint_id - 1
+                gain = np.zeros(ARM_JOINT_COUNT)
+                gain[index] = ctrl.joint_gravity_comp.gain[index] * settings.gain_scale * ramp
+                gravity[:ARM_JOINT_COUNT] = gravity_compensation(
+                    state.arm_position, state.arm_velocity, self.dynamics, gain,
+                    mode=ctrl.joint_gravity_comp.mode,
+                )
+                return _TorqueCalculation(
+                    limit, gravity, friction, nullspace, tracking,
+                    target, target_velocity, next_flags,
+                )
             tracking, target, target_velocity = self._update_tracking(state, dt)
             motion = self.mode in (ControlMode.TELEOP_SYNCING, ControlMode.HOLD_SETTLING, ControlMode.SYNCED)
             if self.terms.joint_limits:
@@ -537,6 +589,10 @@ class ControlCore:
                     raise RuntimeError("teleoperation requires enabled torque")
                 # Publication belongs to the future ROS adapter; the preceding
                 # actions have already removed leader automatic motion.
+            elif action == Action.START_GRAVITY_TEST:
+                if self.gravity_test is None or not self.hardware.torque_enabled:
+                    raise RuntimeError("gravity test requires settings and enabled torque")
+                self._last_step_at = self._now
 
     def _clear_sync(self) -> None:
         self._trajectory = None

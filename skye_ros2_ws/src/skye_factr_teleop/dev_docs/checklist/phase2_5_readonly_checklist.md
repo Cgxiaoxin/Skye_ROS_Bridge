@@ -60,35 +60,35 @@ pgrep -af 'factr_teleop|skye_factr_teleop|dynamixel' || true
 
 左侧零位参考截图：
 
-- [后视图](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view1_back.png)
-- [顶视图](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view2_top.png)
-- [左后视图](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback.png)
+- [后视图](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view1_back.png)
+- [顶视图](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view2_top.png)
+- [左后视图](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback.png)
 
 左侧各关节从 `0.000` 到约 `+0.200 rad` 的左后视图：
 
-- [joint1_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j1_dot2rad.png)
-- [joint2_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j2_dot2rad.png)
-- [joint3_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j3_dot2rad.png)
-- [joint4_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j4_dot2rad.png)
-- [joint5_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j5_dot2rad.png)
-- [joint6_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j6_dot2rad.png)
-- [joint7_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j7_dot2rad.png)
+- [joint1_left](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j1_dot2rad.png)
+- [joint2_left](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j2_dot2rad.png)
+- [joint3_left](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j3_dot2rad.png)
+- [joint4_left](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j4_dot2rad.png)
+- [joint5_left](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j5_dot2rad.png)
+- [joint6_left](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j6_dot2rad.png)
+- [joint7_left](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j7_dot2rad.png)
 
 右侧零位参考截图：
 
-- [后视图](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view1_back.png)
-- [顶视图](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view2_top.png)
-- [右后视图](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback.png)
+- [后视图](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view1_back.png)
+- [顶视图](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view2_top.png)
+- [右后视图](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback.png)
 
 右侧各关节从 `0.000` 到约 `+0.200 rad` 的右后视图：
 
-- [joint1_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j1_dot2rad.png)
-- [joint2_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j2_dot2rad.png)
-- [joint3_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j3_dot2rad.png)
-- [joint4_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j4_dot2rad.png)
-- [joint5_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j5_dot2rad.png)
-- [joint6_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j6_dot2rad.png)
-- [joint7_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j7_dot2rad.png)
+- [joint1_right](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j1_dot2rad.png)
+- [joint2_right](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j2_dot2rad.png)
+- [joint3_right](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j3_dot2rad.png)
+- [joint4_right](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j4_dot2rad.png)
+- [joint5_right](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j5_dot2rad.png)
+- [joint6_right](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j6_dot2rad.png)
+- [joint7_right](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j7_dot2rad.png)
 
 #### 0.1.3 构建并加载工作区
 
@@ -617,19 +617,19 @@ ros2 topic list | rg '^/(robot_description|joint_states|tf|tf_static)$'
 
 左侧零位参考截图：
 
-- [后视图](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view1_back.png)
-- [顶视图](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view2_top.png)
-- [左后视图](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback.png)
+- [后视图](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view1_back.png)
+- [顶视图](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view2_top.png)
+- [左后视图](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback.png)
 
 左侧各关节从 `0.000` 到约 `+0.200 rad` 的左后视图：
 
-- [joint1_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j1_dot2rad.png)
-- [joint2_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j2_dot2rad.png)
-- [joint3_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j3_dot2rad.png)
-- [joint4_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j4_dot2rad.png)
-- [joint5_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j5_dot2rad.png)
-- [joint6_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j6_dot2rad.png)
-- [joint7_left](../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j7_dot2rad.png)
+- [joint1_left](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j1_dot2rad.png)
+- [joint2_left](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j2_dot2rad.png)
+- [joint3_left](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j3_dot2rad.png)
+- [joint4_left](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j4_dot2rad.png)
+- [joint5_left](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j5_dot2rad.png)
+- [joint6_left](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j6_dot2rad.png)
+- [joint7_left](../../validation_assets/phase2_5_1/urdf_direction_reference/leftarm_zerostate_view3_leftback_j7_dot2rad.png)
 
 #### 右侧各关节的定义如下
 
@@ -645,19 +645,19 @@ ros2 topic list | rg '^/(robot_description|joint_states|tf|tf_static)$'
 
 右侧零位参考截图：
 
-- [后视图](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view1_back.png)
-- [顶视图](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view2_top.png)
-- [右后视图](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback.png)
+- [后视图](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view1_back.png)
+- [顶视图](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view2_top.png)
+- [右后视图](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback.png)
 
 右侧各关节从 `0.000` 到约 `+0.200 rad` 的右后视图：
 
-- [joint1_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j1_dot2rad.png)
-- [joint2_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j2_dot2rad.png)
-- [joint3_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j3_dot2rad.png)
-- [joint4_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j4_dot2rad.png)
-- [joint5_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j5_dot2rad.png)
-- [joint6_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j6_dot2rad.png)
-- [joint7_right](../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j7_dot2rad.png)
+- [joint1_right](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j1_dot2rad.png)
+- [joint2_right](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j2_dot2rad.png)
+- [joint3_right](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j3_dot2rad.png)
+- [joint4_right](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j4_dot2rad.png)
+- [joint5_right](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j5_dot2rad.png)
+- [joint6_right](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j6_dot2rad.png)
+- [joint7_right](../../validation_assets/phase2_5_1/urdf_direction_reference/rightarm_zerostate_view3_rightback_j7_dot2rad.png)
 
 RViz 坐标轴颜色为红色 `+X`、绿色 `+Y`、蓝色 `+Z`。对于 `URDF axis=+Z` 的关节，
 拇指指向蓝色 `+Z` 箭头；对于 `URDF axis=-Z` 的关节，拇指指向蓝色箭头的反方向。
