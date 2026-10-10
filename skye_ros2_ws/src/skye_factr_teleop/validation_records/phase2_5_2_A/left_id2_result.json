@@ -1,20 +1,20 @@
 {
   "schema": "skye_factr_teleop.phase_2_5_2.v1",
-  "started_at": "2026-10-09T16:40:24+08:00",
-  "mode": "prepare-only",
+  "started_at": "2026-10-10T13:37:27+08:00",
+  "mode": "hardware",
   "side": "left",
   "config": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml",
   "configured_port": "usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0",
-  "resolved_port": null,
+  "resolved_port": "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0",
   "baudrate": 4000000,
-  "latency_timer": null,
+  "latency_timer": 1,
   "device": {
-    "id": 1,
+    "id": 2,
     "configured_model": "XM430-W350",
     "expected_model_number": 1020,
-    "reported_model_number": null,
-    "return_delay_time": null,
-    "torque_enabled_before_test": null,
+    "reported_model_number": 1020,
+    "return_delay_time": 0,
+    "torque_enabled_before_test": false,
     "joint_sign": 1.0
   },
   "limits": {
@@ -34,7 +34,7 @@
       "Zero Goal Current",
       "Torque Enable"
     ],
-    "result": "NOT_RUN"
+    "result": "PASS"
   },
   "commands": {
     "positive": {
@@ -72,14 +72,44 @@
       ]
     }
   },
-  "command_log": [],
+  "command_log": [
+    {
+      "name": "positive",
+      "current_ma": 20.0,
+      "result": "PASS"
+    },
+    {
+      "name": "zero_after_positive",
+      "current_ma": 0.0,
+      "result": "PASS"
+    },
+    {
+      "name": "negative",
+      "current_ma": -20.0,
+      "result": "PASS"
+    },
+    {
+      "name": "zero_after_negative",
+      "current_ma": 0.0,
+      "result": "PASS"
+    }
+  ],
   "direction": {
-    "result": "NOT_RUN"
+    "result": "PASS",
+    "detail": "positive and negative current produced opposite motion",
+    "initial_position_rad": 1.6382914814618648,
+    "positive_position_rad": 1.7548740213411735,
+    "negative_position_rad": 1.402058440127476,
+    "positive_delta_rad": 0.11658253987930878,
+    "negative_delta_rad": -0.3528155812136975,
+    "signed_positive_delta_rad": 0.11658253987930878,
+    "signed_negative_delta_rad": -0.3528155812136975
   },
   "shutdown": {
-    "result": "NOT_RUN"
+    "result": "PASS",
+    "detail": "production close returned after its zero-current, Torque Disable, and port-close cleanup path"
   },
-  "result": "PREPARED",
+  "result": "PASS",
   "interrupted": false,
   "error": null
 }

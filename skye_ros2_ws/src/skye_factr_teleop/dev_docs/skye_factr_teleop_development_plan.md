@@ -543,8 +543,10 @@ PYTHONPATH=src/skye_factr_teleop \
 
 ### 2.5.3 冒烟验收记录
 
-状态：`PENDING`。本节的真实硬件记录和阶段 2.5 完成条件延期至阶段 7 任务 7.1；
-阶段 3--7 不以 `PREPARED` 参数预演记录冒充真机验收记录。
+状态：`PASS`（设备 A，2026-10-10；右侧最终 Torque Disable 为操作者现场确认）。
+
+设备 A（Thor）的真实硬件记录已于 2026-10-09--10 保存。本节汇总阶段 2.5.1
+只读结果和阶段 2.5.2 单舵机低电流结果；`PREPARED` 参数预演不计入真机验收。
 
 每侧至少记录：
 
@@ -566,21 +568,67 @@ Torque Disable 结果
 - 所有测试结束后舵机处于 Torque Disable；
 - 验收记录已保存。
 
-阶段 2.5.2 进度（2026-09-23）：
+#### 设备 A 冒烟验收记录（2026-10-10）
 
-- [x] 完成[低电流验证清单](skye_factr_teleop_phase2_5_low_current_checklist.md)第 1--3 节的静态限制核对、无硬件测试和参数预演；
-- [ ] 第 4--7 节现场确认、真实单舵机验证、通过条件判定和验收记录仍为 `PENDING`，
-  延期至阶段 7 任务 7.1；
-- 预演记录为 `PREPARED`，不计入上述真实硬件验收完成条件。
+| 侧别 | USB by-id | 只读采样 | 真实低电流结果 |
+| --- | --- | --- | --- |
+| 左 | `usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0` | [方向引导](../validation_records/phase2_5_1_A/left_guided.json)：`bus_result=PASS`、`guided_result=PASS_WITH_WARNINGS`；[连续角度](../validation_records/phase2_5_1_A/left_continuous.json)：`PASS_WITH_SKIPS_AND_WARNINGS` | [低电流清单与逐 ID 结果](skye_factr_teleop_phase2_5_low_current_checklist.md#8-设备-a-左臂实测记录2026-10-10)：ID 1--8，8/8 `PASS` |
+| 右 | `usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0` | [方向引导](../validation_records/phase2_5_1_A/right_guided.json)：`bus_result=PASS`、`guided_result=PASS_WITH_WARNINGS`；[连续角度](../validation_records/phase2_5_1_A/right_continuous.json)：`PASS_WITH_SKIPS_AND_WARNINGS` | [低电流清单与逐 ID 结果](skye_factr_teleop_phase2_5_low_current_checklist.md#9-设备-a-右臂实测记录2026-10-10)：ID 1--8，8/8 `PASS` |
 
-阶段 2.5.3 进度（2026-09-23）：
+两侧记录的波特率均为 `4,000,000`，FTDI latency timer 均为 `1`；ID 1--2
+为 XM430-W350（model 1020），ID 3--8 为 XC330-T288（model 1220）。只读记录中
+全部 ID 的型号匹配、Return Delay Time 为 `0`、测试前 Torque Enable 为关闭。
+方向引导和连续角度中的 warning、因机械及线束限制跳过的跨圈测试，保留在对应 JSON；
+它们不改变上述只读结果的通过判定。
 
-- [ ] 左右总线只读结果、XM430/XC330 单舵机低电流结果、安全关闭及本节所列现场信息
-  汇总成真机冒烟验收记录：`PENDING`，延期至阶段 7 任务 7.1；
-- [ ] 本节的阶段 2.5 完成条件：`PENDING`，以阶段 7 任务 7.1 的真实验收结果判定。
+低电流测试使用生产 `DynamixelDriver`，每次只使能目标 ID；操作者限值均为
+`50 mA`，正负脉冲各 `0.5 s`，间隔 `0.2 s`。下表给出覆盖两种型号的代表记录；
+其余 12 份结果及较低电流下的 `INCONCLUSIVE` 观察见[低电流清单](skye_factr_teleop_phase2_5_low_current_checklist.md#8-设备-a-左臂实测记录2026-10-10)。
 
-阶段 3--6 只推进无硬件实现和测试。阶段 2.5 的完整硬件完成条件延期到阶段 7
-任务 7.1 关闭；在此之前不执行阶段 7 的基础硬件运动验收。
+| 侧别 / ID | 型号 | 测试电流 | 正 / 负脉冲位移（rad） | 结果文件 |
+| --- | --- | ---: | ---: | --- |
+| 左 / 1 | XM430-W350 | ±20 mA | +0.0874 / -0.3743 | [left_id1_result.json](../validation_records/phase2_5_2_A/left_id1_result.json) |
+| 左 / 3 | XC330-T288 | ±30 mA | +1.0692 / -1.2134 | [left_id3_result.json](../validation_records/phase2_5_2_A/left_id3_result.json) |
+| 右 / 1 | XM430-W350 | ±20 mA | +0.0476 / -0.2746 | [right_id1_result.json](../validation_records/phase2_5_2_A/right_id1_result.json) |
+| 右 / 3 | XC330-T288 | ±20 mA | +0.0905 / -0.1166 | [right_id3_result.json](../validation_records/phase2_5_2_A/right_id3_result.json) |
+
+16 份真机结果的 `initialization`、`direction`、`shutdown` 及顶层 `result`
+均为 `PASS`，`error=null`；命令顺序均为正电流、零电流、负电流、零电流。
+`shutdown=PASS` 表示生产驱动的正常关闭清理路径返回成功，不能单凭此字段证明
+关机后的 Torque Enable 寄存器状态。后续保存的[左侧 Torque Disable 回读](../validation_records/phase2_5_3_A/left_torque_after_test.json)
+在 2026-10-10 14:39:06、[右侧回读](../validation_records/phase2_5_3_A/right_torque_after_test.json)
+在 14:47:41 进行；两份记录均为 `automated_result=PASS`，各侧 ID 1--8 的
+`torque_enabled=false`。左侧最后一份已保存的低电流结果始于 14:36:17；右侧
+ID 3 的最后一份结果始于 **14:48:30，晚于右侧回读**，因此右侧现有回读不能证明
+全部测试结束后的最终 Torque Disable。操作者确认：两次回读前均一直供电、
+未重启且无其它程序控制；左侧最终状态由回读确认。操作者另确认右侧在
+14:48:30 的最后一次低电流测试结束后已 Torque Disable；该最终状态为**人工现场
+确认**，没有对应的测试后寄存器回读 JSON，不能将 14:47:41 的文件当作其证据。
+
+操作者报告曾用 Ctrl+C 中断低电流测试工具，但未保存该次 JSON；现有 16 份
+低电流结果均为 `interrupted=false`，无法从记录核对中断后零电流和
+Torque Disable 的结果，且该次 `--output` 路径已无法追溯。操作者确认通信失败
+真机路径**未做**。
+2026-10-10 重新运行 `test_dynamixel_driver.py` 与 `test_low_current_check.py`，
+合计 60 项通过，其中覆盖通信失败、中断和零电流写入失败时的清理调用。
+这是软件故障注入结果，不表示真实总线失联时零电流写入一定成功。
+
+阶段完成条件核对：
+
+- [x] 左侧低电流测试到 14:39:06 回读期间一直供电、未重启且无其它控制程序；
+  ID 1--8 的 Torque Enable 均为 `false`；
+- [x] 操作者现场确认右侧最后一次低电流测试结束后 Torque Disable；最终状态
+  没有测试后的寄存器回读文件，记录类型为人工确认；
+
+根据[低电流清单第 2 节](skye_factr_teleop_phase2_5_low_current_checklist.md#2-无硬件自动测试)
+和第 6 节的通过条件，异常退出、通信失败的清理逻辑由无硬件故障注入测试验收；
+真机通信故障未测试如实保留在记录中，不要求为签收而带电断开总线。
+若今后单独执行真机异常测试，应使用独立输出文件，并在同一供电周期复核 Torque Disable。
+
+阶段 2.5 的左右总线只读、XM430/XC330 真机低电流、生产驱动使用、最终 Torque
+Disable 和验收记录均满足本节完成条件；任务 7.1 据此关闭。后续若需要机器可核查的
+右侧最终状态证据，可按[复核步骤](skye_factr_teleop_phase2_5_low_current_checklist.md#10-测试结束后复核-torque-disable)
+补存新 JSON，不改写既有记录的时间顺序。
 
 阶段 2.5 不验证 leader 重力补偿、Ruckig、同步、遥操或双臂运动。
 
@@ -677,8 +725,8 @@ return observable state/result
 - [x] 3.2 限位、重力、静摩擦、可选零空间和限流电流合成；follower 力矩与夹爪反馈
   仅保留接口，算法仍归阶段 8；
 - [x] 3.3 动力学接口隔离，纯控制测试不导入 Pinocchio；
-- [x] 3.4 单周期非阻塞 API 与 fake hardware/dynamics 测试；真实硬件运动验收仍为
-  `PENDING`，不得据此越过阶段 7 任务 7.1 门禁。
+- [x] 3.4 单周期非阻塞 API 与 fake hardware/dynamics 测试；真实硬件运动验收
+  仍按阶段 7 的顺序执行。
 
 ## 9. 阶段 4：轨迹、保持和纯状态机
 
@@ -1051,12 +1099,15 @@ Dynamixel 真实同步读取、同步写入耗时和连接硬件后的控制周�
 ## 12. 阶段 7：延期真机冒烟与基础功能分级硬件验收
 
 本阶段按 7.1 → 7.2--7.5 的顺序执行。阶段 2.5.1 已完成真实 Dynamixel
-只读验收；阶段 2.5.2 真机验证与 2.5.3 冒烟验收记录仍为 `PENDING`。
+只读验收；阶段 2.5.2 的设备 A 左右 ID 1--8 已保存真实低电流 `PASS` 记录，
+阶段 2.5.3 已汇总现有证据并通过。左侧最终 Torque Disable 有寄存器回读，右侧
+最后一次测试后的状态由操作者现场确认；异常路径软件故障注入测试通过，真机通信失败
+未测试并已记录。
 任一硬件门禁失败即停止后续硬件动作，不以 `PREPARED` 记录代替真实验收。
 
 ### 7.1 完成阶段 2.5.2 真机验证与 2.5.3 冒烟验收记录
 
-状态：`PENDING`。
+状态：`PASS`（2026-10-10，设备 A；右侧最终 Torque Disable 为人工确认）。
 
 执行[阶段 2.5.2 低电流验证清单](skye_factr_teleop_phase2_5_low_current_checklist.md)
 第 4--7 节。若 USB、接线或配置与阶段 2.5.1 记录相比已改变，先重新完成受影响侧的

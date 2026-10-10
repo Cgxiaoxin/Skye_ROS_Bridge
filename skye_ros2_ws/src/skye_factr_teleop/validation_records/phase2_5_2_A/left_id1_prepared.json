@@ -1,26 +1,26 @@
 {
   "schema": "skye_factr_teleop.phase_2_5_2.v1",
-  "started_at": "2026-10-09T16:40:28+08:00",
+  "started_at": "2026-10-10T11:38:15+08:00",
   "mode": "prepare-only",
-  "side": "right",
-  "config": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml",
-  "configured_port": "usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0",
+  "side": "left",
+  "config": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml",
+  "configured_port": "usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0",
   "resolved_port": null,
   "baudrate": 4000000,
   "latency_timer": null,
   "device": {
-    "id": 3,
-    "configured_model": "XC330-T288",
-    "expected_model_number": 1220,
+    "id": 1,
+    "configured_model": "XM430-W350",
+    "expected_model_number": 1020,
     "reported_model_number": null,
     "return_delay_time": null,
     "torque_enabled_before_test": null,
     "joint_sign": 1.0
   },
   "limits": {
-    "model_current_unit_ma": 1.0,
-    "model_rated_limit_ma": 910.0,
-    "smoke_ceiling_ma": 91.0,
+    "model_current_unit_ma": 2.69,
+    "model_rated_limit_ma": 3209.17,
+    "smoke_ceiling_ma": 100.0,
     "operator_limit_ma": 50.0,
     "test_current_ma": 20.0,
     "pulse_seconds": 0.5,
@@ -39,12 +39,12 @@
   "commands": {
     "positive": {
       "current_ma": 20.0,
-      "raw": 20,
+      "raw": 7,
       "encoded": [
-        20,
+        7,
         0
       ],
-      "effective_current_ma": 20.0
+      "effective_current_ma": 18.83
     },
     "zero_after_positive": {
       "current_ma": 0.0,
@@ -56,12 +56,12 @@
     },
     "negative": {
       "current_ma": -20.0,
-      "raw": -20,
+      "raw": -7,
       "encoded": [
-        236,
+        249,
         255
       ],
-      "effective_current_ma": -20.0
+      "effective_current_ma": -18.83
     },
     "zero_after_negative": {
       "current_ma": 0.0,

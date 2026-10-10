@@ -1,0 +1,115 @@
+{
+  "schema": "skye_factr_teleop.phase_2_5_2.v1",
+  "started_at": "2026-10-10T13:57:53+08:00",
+  "mode": "hardware",
+  "side": "right",
+  "config": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml",
+  "configured_port": "usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0",
+  "resolved_port": "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0",
+  "baudrate": 4000000,
+  "latency_timer": 1,
+  "device": {
+    "id": 1,
+    "configured_model": "XM430-W350",
+    "expected_model_number": 1020,
+    "reported_model_number": 1020,
+    "return_delay_time": 0,
+    "torque_enabled_before_test": false,
+    "joint_sign": 1.0
+  },
+  "limits": {
+    "model_current_unit_ma": 2.69,
+    "model_rated_limit_ma": 3209.17,
+    "smoke_ceiling_ma": 100.0,
+    "operator_limit_ma": 50.0,
+    "test_current_ma": 20.0,
+    "pulse_seconds": 0.5,
+    "settle_seconds": 0.2,
+    "min_direction_delta_rad": 0.001
+  },
+  "initialization": {
+    "expected_sequence": [
+      "Torque Disable",
+      "Current Control Mode",
+      "Zero Goal Current",
+      "Torque Enable"
+    ],
+    "result": "PASS"
+  },
+  "commands": {
+    "positive": {
+      "current_ma": 20.0,
+      "raw": 7,
+      "encoded": [
+        7,
+        0
+      ],
+      "effective_current_ma": 18.83
+    },
+    "zero_after_positive": {
+      "current_ma": 0.0,
+      "raw": 0,
+      "encoded": [
+        0,
+        0
+      ]
+    },
+    "negative": {
+      "current_ma": -20.0,
+      "raw": -7,
+      "encoded": [
+        249,
+        255
+      ],
+      "effective_current_ma": -18.83
+    },
+    "zero_after_negative": {
+      "current_ma": 0.0,
+      "raw": 0,
+      "encoded": [
+        0,
+        0
+      ]
+    }
+  },
+  "command_log": [
+    {
+      "name": "positive",
+      "current_ma": 20.0,
+      "result": "PASS"
+    },
+    {
+      "name": "zero_after_positive",
+      "current_ma": 0.0,
+      "result": "PASS"
+    },
+    {
+      "name": "negative",
+      "current_ma": -20.0,
+      "result": "PASS"
+    },
+    {
+      "name": "zero_after_negative",
+      "current_ma": 0.0,
+      "result": "PASS"
+    }
+  ],
+  "direction": {
+    "result": "PASS",
+    "detail": "positive and negative current produced opposite motion",
+    "initial_position_rad": 1.5125050568552423,
+    "positive_position_rad": 1.560058461279697,
+    "negative_position_rad": 1.2854759002481673,
+    "positive_delta_rad": 0.04755340442445477,
+    "negative_delta_rad": -0.2745825610315298,
+    "signed_positive_delta_rad": 0.04755340442445477,
+    "signed_negative_delta_rad": -0.2745825610315298
+  },
+  "shutdown": {
+    "result": "PASS",
+    "detail": "production close returned after its zero-current, Torque Disable, and port-close cleanup path"
+  },
+  "result": "PASS",
+  "interrupted": false,
+  "error": null
+}
