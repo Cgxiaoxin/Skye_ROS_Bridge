@@ -45,6 +45,7 @@ class Hardware(FakeDynamixelIO):
         super().__init__(np.zeros(8), np.zeros(8), torque_enabled=False)
         self.open_calls = []
         self.close_calls = 0
+        self.present_currents_ma = np.zeros(8)
 
     def open(self, *, enable_torque=True):
         self.open_calls.append(enable_torque)
@@ -145,6 +146,7 @@ def make_node(context, monkeypatch, tmp_path):
                 setattr(node, name, Recorder())
             if gravity_test is not None:
                 node._test_current_pub = Recorder()
+                node._test_present_current_pub = Recorder()
         return SimpleNamespace(node=node, hardware=hardware, trajectories=trajectories,
                                clock=clock, publishers=pubs)
 
@@ -193,15 +195,20 @@ def test_gravity_test_node_has_isolated_interface_and_stops(make_node, side):
     assert rig.trajectories == []
     assert rig.hardware.open_calls == [False]
     assert not rig.hardware.torque_enabled
+    assert f"/leader_arm/{side}/gravity_test_present_current_ma" in {
+        pub.topic_name for pub in rig.publishers
+    }
 
     node._on_gravity_test(String(data="switch_gravity_test"))
     assert node.core.mode == ControlMode.GRAVITY_TEST
     assert rig.hardware.torque_enabled
+    rig.hardware.present_currents_ma[5] = -3.0
     rig.clock.now += 1.0
     node._tick()
     assert rig.hardware.last_currents_ma[5] * node.core.joint_signs[5] > 0
     np.testing.assert_array_equal(np.delete(rig.hardware.last_currents_ma, 5), np.zeros(7))
     assert node._test_current_pub.messages[-1].data[5] * node.core.joint_signs[5] > 0
+    assert node._test_present_current_pub.messages[-1].data[5] == -3.0
     assert not node._command_pub.messages
     assert not node._target_pub.messages
     node._on_stop(String(data="switch_stop"))

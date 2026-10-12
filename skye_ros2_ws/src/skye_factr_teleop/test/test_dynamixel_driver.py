@@ -27,11 +27,14 @@ def test_control_table_constants_match_protocol_2_layout():
     assert driver_module.ADDR_TORQUE_ENABLE == 64
     assert driver_module.ADDR_GOAL_CURRENT == 102
     assert driver_module.LEN_GOAL_CURRENT == 2
+    assert driver_module.ADDR_PRESENT_CURRENT == 126
+    assert driver_module.LEN_PRESENT_CURRENT == 2
     assert driver_module.ADDR_PRESENT_VELOCITY == 128
     assert driver_module.LEN_PRESENT_VELOCITY == 4
     assert driver_module.ADDR_PRESENT_POSITION == 132
     assert driver_module.LEN_PRESENT_POSITION == 4
     assert driver_module.LEN_SYNC_STATE == 8
+    assert driver_module.LEN_SYNC_STATE_WITH_CURRENT == 10
     assert driver_module.CURRENT_CONTROL_MODE == 0
     assert driver_module.MODEL_NUMBERS["XM430-W350"] == 1020
     assert driver_module.MODEL_NUMBERS["XC330-T288"] == 1220
@@ -48,6 +51,12 @@ def test_control_table_constants_match_protocol_2_layout():
 )
 def test_uint32_to_int32(raw, expected):
     assert driver_module.uint32_to_int32(raw) == expected
+
+
+@pytest.mark.parametrize("raw, expected", [(0, 0), (0x7FFF, 32767),
+                                             (0x8000, -32768), (0xFFFF, -1)])
+def test_uint16_to_int16(raw, expected):
+    assert driver_module.uint16_to_int16(raw) == expected
 
 
 @pytest.mark.parametrize(
@@ -288,12 +297,13 @@ def driver_factory(fake_sdk, tmp_path):
     port = tmp_path / "ttyUSB-test"
     port.touch()
 
-    def make_driver():
+    def make_driver(*, read_present_current=False):
         return driver_module.DynamixelDriver(
             ids=IDS,
             servo_types=SERVO_TYPES,
             port=str(port),
             baudrate=4_000_000,
+            read_present_current=read_present_current,
         )
 
     return make_driver
@@ -589,6 +599,27 @@ def test_read_state_decodes_signed_registers_and_converts_units(
     assert positions.tolist() == pytest.approx([math.pi, -math.pi])
     velocity_scale = 0.229 * 2.0 * math.pi / 60.0
     assert velocities.tolist() == pytest.approx([-velocity_scale, 10 * velocity_scale])
+
+
+def test_read_state_can_capture_signed_present_current_in_same_transaction(
+    driver_factory, fake_sdk
+):
+    driver = driver_factory(read_present_current=True)
+    assert ("GroupSyncRead", 126, 10) in fake_sdk.events
+    assert driver.present_currents_ma is None
+    driver.open()
+    fake_sdk.read_data.update({(1, 126, 2): 0xFFFD, (2, 126, 2): 6})
+    fake_sdk.events.clear()
+
+    driver.read_state()
+
+    assert driver.present_currents_ma.tolist() == pytest.approx([-8.07, 6.0])
+    sample = driver.present_currents_ma
+    sample[0] = 0.0
+    assert driver.present_currents_ma[0] == pytest.approx(-8.07)
+    assert fake_sdk.events.count(("read.txRxPacket",)) == 1
+    assert ("read.getData", 1, 126, 2) in fake_sdk.events
+    assert ("read.getData", 2, 126, 2) in fake_sdk.events
 
 
 def test_write_currents_sync_writes_every_id_and_always_clears_params(

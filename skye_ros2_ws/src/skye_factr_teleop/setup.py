@@ -53,6 +53,8 @@ setup(
             "skye_factr_teleop.readonly_check:main",
             "skye_factr_dynamixel_low_current_check = "
             "skye_factr_teleop.low_current_check:main",
+            "skye_factr_gravity_test_recorder = "
+            "skye_factr_teleop.gravity_test_recorder:main",
         ],
     },
 )

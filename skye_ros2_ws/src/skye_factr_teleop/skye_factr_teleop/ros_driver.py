@@ -100,10 +100,11 @@ def validate_joint_state(
     return JointSample(position, stamp, received_at)
 
 
-def _hardware_factory(config):
+def _hardware_factory(config, *, read_present_current=False):
     return DynamixelDriver(
         range(1, 9), config.dynamixel.servo_types,
         config.dynamixel.dynamixel_port, baudrate=config.dynamixel.baudrate,
+        read_present_current=read_present_current,
     )
 
 
@@ -195,10 +196,15 @@ class SkyeFactrTeleopNode(Node):
         self._current_pub = self.create_publisher(JointState, "/leader_arm/current_state", state_qos())
         self._target_pub = self.create_publisher(JointState, "/leader_arm/target_joint_state", state_qos())
         self._command_pub = self.create_publisher(JointState, "/joint_control", command_qos())
-        self._test_current_pub = None
+        self._test_current_pub = self._test_present_current_pub = None
         if self._gravity_test_only:
             self._test_current_pub = self.create_publisher(
                 Float64MultiArray, f"/leader_arm/{self.side}/gravity_test_current_ma",
+                state_qos(),
+            )
+            self._test_present_current_pub = self.create_publisher(
+                Float64MultiArray,
+                f"/leader_arm/{self.side}/gravity_test_present_current_ma",
                 state_qos(),
             )
         self.create_subscription(String, "/mode/switch_stop", self._on_stop, event_qos())
@@ -218,7 +224,10 @@ class SkyeFactrTeleopNode(Node):
         make_trajectory = None if self._gravity_test_only else (trajectory_factory or self._make_ruckig_trajectory)
         if not self._gravity_test_only and trajectory_factory is None:
             make_trajectory()  # Check Ruckig before opening the hardware.
-        self._hardware = (hardware_factory or _hardware_factory)(self.config)
+        self._hardware = (hardware_factory(self.config) if hardware_factory is not None
+                          else _hardware_factory(
+                              self.config, read_present_current=self._gravity_test_only,
+                          ))
         self._hardware.open(enable_torque=False)
         self.core = ControlCore(
             self.config, self._hardware, dynamics, self._offsets,
@@ -375,6 +384,12 @@ class SkyeFactrTeleopNode(Node):
             self._command_pub.publish(self._joint_message(result.state.arm_position))
         if self._test_current_pub is not None:
             self._test_current_pub.publish(Float64MultiArray(data=result.physical_current_ma.tolist()))
+            present_current = _vector(
+                self._hardware.present_currents_ma, 8, "present current",
+            )
+            self._test_present_current_pub.publish(
+                Float64MultiArray(data=present_current.tolist())
+            )
         self._publish_state()
 
     def _fault(self, exc):

@@ -1,0 +1,95 @@
+{
+  "date_utc": "2026-10-12T09:20:02.094336+00:00",
+  "operator": "lyy",
+  "side": "left",
+  "config_path": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml",
+  "usb_by_id": "usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0",
+  "urdf_package": "skye_factr_description",
+  "urdf": "urdf/m6left_isomorphism.urdf",
+  "gravity_mode": "position_only",
+  "joint_id": 4,
+  "servo_model": "XC330-T288",
+  "configured_gravity_gain": 0.6,
+  "gain_scale": 0.2,
+  "current_limit_ma": 30.0,
+  "ramp_seconds": 2.0,
+  "max_duration_seconds": 10.0,
+  "trace_path": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_2_1_A/left_id4_run1.trace.jsonl",
+  "process_exit": "PENDING",
+  "torque_disable_readback_path": null,
+  "state_events": [
+    {
+      "time_s": 2.552218594999431,
+      "state": "IDLE"
+    },
+    {
+      "time_s": 5.111042720000114,
+      "state": "GRAVITY_TEST"
+    },
+    {
+      "time_s": 15.122494441002345,
+      "state": "IDLE"
+    }
+  ],
+  "start_position_rad": [
+    0.035281558121369745,
+    -0.04601942363656923,
+    -1.5615924420675826,
+    0.5553010452146021,
+    1.4526798061277022,
+    0.2561747915769021,
+    -0.6611457195787114
+  ],
+  "end_position_rad": [
+    0.035281558121369745,
+    -0.06289321230331128,
+    -1.5462526341887264,
+    -0.13192234775816514,
+    1.5631264228554684,
+    0.2561747915769021,
+    -1.2547962844904545
+  ],
+  "post_position_rad": [
+    0.035281558121369745,
+    -0.06289321230331128,
+    -1.5462526341887264,
+    -0.1227184630308513,
+    1.5631264228554684,
+    0.2561747915769021,
+    -1.2547962844904545
+  ],
+  "test_duration_s": 10.011451721002231,
+  "current_samples": 4987,
+  "target_peak_command_ma": 29.800642641229864,
+  "other_ids_peak_command_ma": 0.0,
+  "present_current_samples": 4987,
+  "target_present_current_min_ma": -32.0,
+  "target_present_current_max_ma": 0.0,
+  "other_ids_peak_abs_present_current_ma": 0.0,
+  "final_zero_command_observed": true,
+  "max_abs_velocity_rad_s": [
+    0.07194247176720626,
+    0.047961647844804174,
+    0.11990411961201043,
+    0.815348013361671,
+    0.23980823922402086,
+    0.047961647844804174,
+    0.5995205980600522
+  ],
+  "max_position_step_rad": [
+    0.003067961575771286,
+    0.0015339807878856498,
+    0.0015339807878858025,
+    0.0030679615757713274,
+    0.0015339807878858025,
+    0.001533980787885636,
+    0.003067961575771383
+  ],
+  "operator_force_effect": "less",
+  "operator_motion_observation": "none",
+  "operator_end_method": "timeout",
+  "operator_note": "",
+  "issues": [],
+  "assessment": "PENDING_SHUTDOWN_CHECK",
+  "assessment_note": "PASS requires normal process exit and separate Torque Disable readback"
+}

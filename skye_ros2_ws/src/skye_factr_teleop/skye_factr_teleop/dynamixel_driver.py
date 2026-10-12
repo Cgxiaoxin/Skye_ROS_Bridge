@@ -29,11 +29,14 @@ ADDR_OPERATING_MODE = 11
 ADDR_TORQUE_ENABLE = 64
 ADDR_GOAL_CURRENT = 102
 LEN_GOAL_CURRENT = 2
+ADDR_PRESENT_CURRENT = 126
+LEN_PRESENT_CURRENT = 2
 ADDR_PRESENT_VELOCITY = 128
 LEN_PRESENT_VELOCITY = 4
 ADDR_PRESENT_POSITION = 132
 LEN_PRESENT_POSITION = 4
 LEN_SYNC_STATE = LEN_PRESENT_VELOCITY + LEN_PRESENT_POSITION
+LEN_SYNC_STATE_WITH_CURRENT = LEN_PRESENT_CURRENT + LEN_SYNC_STATE
 
 TORQUE_DISABLE = 0
 TORQUE_ENABLE = 1
@@ -145,6 +148,16 @@ def uint32_to_int32(value: int) -> int:
     if not 0 <= value <= 0xFFFFFFFF:
         raise ValueError("32-bit register value must be in 0..0xFFFFFFFF")
     return value - 0x100000000 if value & 0x80000000 else value
+
+
+def uint16_to_int16(value: int) -> int:
+    """Interpret an unsigned 16-bit register value as two's-complement."""
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise TypeError("16-bit register value must be an integer")
+    value = int(value)
+    if not 0 <= value <= 0xFFFF:
+        raise ValueError("16-bit register value must be in 0..0xFFFF")
+    return value - 0x10000 if value & 0x8000 else value
 
 
 def encode_goal_current(value: int) -> list[int]:
@@ -326,6 +339,7 @@ class DynamixelDriver(DynamixelIO):
         port: str,
         baudrate: int = DEFAULT_BAUDRATE,
         sync_read_attempts: int = DEFAULT_SYNC_READ_ATTEMPTS,
+        *, read_present_current: bool = False,
     ) -> None:
         self._ids = _validate_ids(ids)
         if len(servo_types) != len(self._ids):
@@ -344,11 +358,15 @@ class DynamixelDriver(DynamixelIO):
             raise TypeError("sync_read_attempts must be an integer")
         if sync_read_attempts <= 0:
             raise ValueError("sync_read_attempts must be positive")
+        if type(read_present_current) is not bool:
+            raise TypeError("read_present_current must be a bool")
 
         self._configured_port = port
         self._port = _serial_port_candidate(port)
         self._baudrate = int(baudrate)
         self._sync_read_attempts = int(sync_read_attempts)
+        self._read_present_current = read_present_current
+        self._present_currents_ma: np.ndarray | None = None
         self._lock = RLock()
         self._port_open = False
         self._is_open = False
@@ -362,8 +380,8 @@ class DynamixelDriver(DynamixelIO):
         self._sync_read = GroupSyncRead(
             self._port_handler,
             self._packet_handler,
-            ADDR_PRESENT_VELOCITY,
-            LEN_SYNC_STATE,
+            ADDR_PRESENT_CURRENT if read_present_current else ADDR_PRESENT_VELOCITY,
+            LEN_SYNC_STATE_WITH_CURRENT if read_present_current else LEN_SYNC_STATE,
         )
         self._sync_write_current = GroupSyncWrite(
             self._port_handler,
@@ -376,6 +394,13 @@ class DynamixelDriver(DynamixelIO):
     def torque_enabled(self) -> bool:
         with self._lock:
             return self._torque_enabled
+
+    @property
+    def present_currents_ma(self) -> np.ndarray | None:
+        """Latest measured eight-ID current sample, when enabled for this driver."""
+        with self._lock:
+            return (None if self._present_currents_ma is None
+                    else self._present_currents_ma.copy())
 
     @property
     def is_open(self) -> bool:
@@ -534,7 +559,19 @@ class DynamixelDriver(DynamixelIO):
 
             positions = np.empty(len(self._ids), dtype=float)
             velocities = np.empty(len(self._ids), dtype=float)
+            currents = np.empty(len(self._ids), dtype=float) if self._read_present_current else None
             for index, dxl_id in enumerate(self._ids):
+                if currents is not None:
+                    current_raw = self._read_sync_value_locked(
+                        dxl_id,
+                        ADDR_PRESENT_CURRENT,
+                        LEN_PRESENT_CURRENT,
+                        "read present current",
+                    )
+                    currents[index] = (
+                        uint16_to_int16(current_raw)
+                        * get_servo_spec(self._servo_types[index]).current_unit_ma
+                    )
                 velocity_raw = self._read_sync_value_locked(
                     dxl_id,
                     ADDR_PRESENT_VELOCITY,
@@ -553,6 +590,7 @@ class DynamixelDriver(DynamixelIO):
                 positions[index] = position_ticks_to_radians(
                     uint32_to_int32(position_raw)
                 )
+            self._present_currents_ma = currents
             return positions, velocities
 
     def write_currents(self, currents_ma: Sequence[float]) -> None:
