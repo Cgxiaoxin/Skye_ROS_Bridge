@@ -32,13 +32,17 @@
 
 ```bash
 cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+
 source /opt/ros/humble/setup.bash
 colcon build --packages-up-to skye_factr_teleop --symlink-install
+
 source install/setup.bash
 ros2 pkg executables skye_factr_teleop
 ```
 
-确认最后一条命令列出 `skye_factr_teleop_driver`。新开的启动或监视终端也须执行：
+确认最后一条命令列出 `skye_factr_teleop_driver`。
+
+新开的启动或监视终端也须执行：
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -67,17 +71,34 @@ pgrep -af 'factr_teleop|skye_factr_teleop|dynamixel' || true
 在**启动测试节点之前**，另开终端启动记录器。它只订阅四个监视话题，
 不发布模式请求、不操作舵机；现有的启动、`switch_gravity_test`、`switch_stop`
 和测试后 Torque Disable 回读步骤仍按本清单执行。每轮一个 ID 和一个输出文件；
-命令参数必须与该轮 launch 参数一致。左臂 ID 1 示例：
+命令参数必须与该轮 launch 参数一致。
+
+左臂 ID 1 示例：
 
 ```bash
 source /opt/ros/humble/setup.bash
 source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+
 ros2 run skye_factr_teleop skye_factr_gravity_test_recorder -- \
   --side left --joint-id 1 --operator 'lyy' \
   --config /home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
   --gain-scale 0.1 --current-limit-ma 20 \
   --ramp-seconds 2 --max-duration-seconds 10 \
   --output /home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_2_1_A/left_id1_run1.json
+```
+
+右臂 ID 1 示例：
+
+```bash
+source /opt/ros/humble/setup.bash
+source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+
+ros2 run skye_factr_teleop skye_factr_gravity_test_recorder -- \
+  --side right --joint-id 1 --operator 'lyy' \
+  --config /home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml \
+  --gain-scale 0.1 --current-limit-ma 20 \
+  --ramp-seconds 2 --max-duration-seconds 10 \
+  --output /home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_2_1_A/right_id1_run1.json
 ```
 
 返回 `IDLE` 后，记录器自动结束采样，只问操作者三个短答案：
@@ -102,11 +123,16 @@ ros2 run skye_factr_teleop skye_factr_gravity_test_recorder -- \
 
 ### 2.1 左臂
 
-先列出 USB by-id，核对左臂实体标签与 YAML 中的 `dynamixel_port` 均对应
-`FTBEO9L1`，再解析实际 tty：
+先列出 USB by-id：
 
 ```bash
 find /dev/serial/by-id -maxdepth 1 -type l -printf '%p -> %l\n' | sort
+```
+
+核对左臂实体标签与 YAML 中的 `dynamixel_port` 均对应
+`FTBEO9L1`，再解析实际 tty：
+
+```bash
 USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0
 TTY_PATH=$(readlink -f "$USB_BY_ID")
 test -c "$TTY_PATH"
@@ -124,6 +150,9 @@ cat "/sys/bus/usb-serial/devices/${TTY_NAME}/latency_timer"
 确认回读为 `1`，再启动左臂 ID 1、20 mA 上限的测试：
 
 ```bash
+source /opt/ros/humble/setup.bash
+source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+
 ros2 launch skye_factr_teleop gravity_test_m6_left.launch.py \
   config_path:=/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
   joint_id:=1 \
@@ -133,7 +162,7 @@ ros2 launch skye_factr_teleop gravity_test_m6_left.launch.py \
   max_duration_seconds:=10.0
 ```
 
-在三个终端分别监视：
+在三个终端分别监视 当前操作状态、目标电流、当前关节状态：
 
 ```bash
 ros2 topic echo /teleop/state std_msgs/msg/String
@@ -143,23 +172,28 @@ ros2 topic echo /teleop/state std_msgs/msg/String
 ros2 topic echo /leader_arm/left/gravity_test_current_ma std_msgs/msg/Float64MultiArray
 ```
 
-需要现场查看实际电流时，另开终端：
+```bash
+ros2 topic echo /leader_arm/current_state sensor_msgs/msg/JointState
+```
+
+若要现场查看实际电流时，另开终端：
 
 ```bash
 ros2 topic echo /leader_arm/left/gravity_test_present_current_ma std_msgs/msg/Float64MultiArray
 ```
 
-```bash
-ros2 topic echo /leader_arm/current_state sensor_msgs/msg/JointState
-```
-
 ### 2.2 右臂
 
-先列出 USB by-id，核对右臂实体标签与 YAML 中的 `dynamixel_port` 均对应
-`FTBEO8WL`，再解析实际 tty：
+先列出 USB by-id：
 
 ```bash
 find /dev/serial/by-id -maxdepth 1 -type l -printf '%p -> %l\n' | sort
+```
+
+核对右臂实体标签与 YAML 中的 `dynamixel_port` 均对应
+`FTBEO8WL`，再解析实际 tty：
+
+```bash
 USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0
 TTY_PATH=$(readlink -f "$USB_BY_ID")
 test -c "$TTY_PATH"
@@ -177,6 +211,9 @@ cat "/sys/bus/usb-serial/devices/${TTY_NAME}/latency_timer"
 确认回读为 `1`，再启动右臂 ID 1、20 mA 上限的测试：
 
 ```bash
+source /opt/ros/humble/setup.bash
+source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+
 ros2 launch skye_factr_teleop gravity_test_m6_right.launch.py \
   config_path:=/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml \
   joint_id:=1 \
@@ -196,19 +233,20 @@ ros2 topic echo /teleop/state std_msgs/msg/String
 ros2 topic echo /leader_arm/right/gravity_test_current_ma std_msgs/msg/Float64MultiArray
 ```
 
+```bash
+ros2 topic echo /leader_arm/current_state sensor_msgs/msg/JointState
+```
+
 需要现场查看实际电流时，另开终端：
 
 ```bash
 ros2 topic echo /leader_arm/right/gravity_test_present_current_ma std_msgs/msg/Float64MultiArray
 ```
 
-```bash
-ros2 topic echo /leader_arm/current_state sensor_msgs/msg/JointState
-```
-
 ## 3. 逐关节重力补偿检查
 
 确认姿态处于关节安全范围并扶稳小臂后，仅向当前启动的一侧发送一次显式请求。
+
 左臂：
 
 ```bash
@@ -231,7 +269,8 @@ ros2 topic pub --once /mode/right/switch_gravity_test std_msgs/msg/String '{data
    反向牵引或其它关节异常动作。2.5.1 的只读 `joint_signs` 结果沿用，
    不重复手动方向引导。本轮不做变速移动测试。
 4. `max_duration_seconds` 到期后状态回到 `IDLE`，命令电流归零、Torque Disable。
-   在任一时刻均可先发送 `switch_stop` 结束本轮。
+
+在任一时刻均可先发送 `switch_stop` 结束本轮：
 
 ```bash
 ros2 topic pub --once /mode/switch_stop std_msgs/msg/String '{data: switch_stop}'
@@ -271,10 +310,13 @@ ros2 topic pub --once /mode/switch_stop std_msgs/msg/String '{data: switch_stop}
 小臂仍被支撑；保持本轮的舵机供电，不断电重启、不拔插 USB，也不要启动其它
 占用串口的控制程序。随后立即执行：
 
+左臂：
+
 ```bash
 cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
+
 ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
   --side left \
   --config src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
@@ -282,8 +324,23 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
   --output src/skye_factr_teleop/validation_records/phase7_2_1_A/left_id1_run1_torque_disable.json
 ```
 
-终端应显示 `automated result: PASS`。可再用下面的命令核对 JSON 确实包含
-ID 1--8，且每个 `torque_enabled` 均为 `false`：
+右臂：
+
+```bash
+cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
+  --side right \
+  --config src/skye_factr_teleop/config/grav_comp_m6_right.yaml \
+  --frames 2 --interval 0 \
+  --output src/skye_factr_teleop/validation_records/phase7_2_1_A/right_id1_run1_torque_disable.json
+```
+
+终端应显示 `automated result: PASS`。这步中，程序会把 torque_enabled 写入 JSON，但它的 PASS 判定没有检查这些值，因此不保证八个舵机都已失能。
+
+可再用下面的命令核对 JSON 确实包含 ID 1--8，且每个 `torque_enabled` 均为 `false`：
 
 ```bash
 python3 - <<'PY'
