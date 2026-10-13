@@ -23,6 +23,9 @@ $$
 
 其中 `g_fric` 对应 `static_friction_comp.gain`，`v_enable` 对应 `static_friction_comp.enable_speed`。`s_i` 由 `dither_positive[i]` 决定，初始为 `+1`。低速时计算下一方向标志：
 
+静摩擦输出由 `static_friction_comp.enable` 独立控制；旧 YAML 省略该字段时沿用
+`joint_gravity_comp.enable` 的值。`GRAVITY_TEST` 始终只输出重力项。
+
 $$
 s_i^{\mathrm{next}}=
 \begin{cases}

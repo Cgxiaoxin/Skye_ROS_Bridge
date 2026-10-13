@@ -78,6 +78,7 @@ class NullSpaceConfig:
 
 @dataclass(frozen=True)
 class StaticFrictionConfig:
+    enable: bool
     enable_speed: tuple[float, ...]
     gain: tuple[float, ...]
 
@@ -268,12 +269,13 @@ def _controller(value: Any) -> ControllerConfig:
         "sync_hold_control",
     }, path)
     frequency = _positive(_req(data, "frequency", path), f"{path}.frequency")
+    gravity = _joint_gravity_comp(_req(data, "joint_gravity_comp", path))
     return ControllerConfig(
         frequency,
         _force_feedback_control(_req(data, "force_feedback_control", path)),
-        _joint_gravity_comp(_req(data, "joint_gravity_comp", path)),
+        gravity,
         _null_space(_req(data, "null_space_regulation", path)),
-        _static_friction(_req(data, "static_friction_comp", path)),
+        _static_friction(_req(data, "static_friction_comp", path), gravity.enable),
         _limit_barrier_control(_req(data, "limit_barrier_control", path)),
         _sync_hold_control(_req(data, "sync_hold_control", path)),
     )
@@ -366,11 +368,12 @@ def _null_space(value: Any) -> NullSpaceConfig:
     )
 
 
-def _static_friction(value: Any) -> StaticFrictionConfig:
+def _static_friction(value: Any, legacy_enable: bool) -> StaticFrictionConfig:
     path = "controller.static_friction_comp"
     data = _map(value, path)
-    _only(data, {"enable_speed", "gain"}, path)
+    _only(data, {"enable", "enable_speed", "gain"}, path)
     return StaticFrictionConfig(
+        _bool(data.get("enable", legacy_enable), f"{path}.enable"),
         _nonnegative_vec(_req(data, "enable_speed", path), 7, f"{path}.enable_speed"),
         _nonnegative_vec(_req(data, "gain", path), 7, f"{path}.gain"),
     )

@@ -134,8 +134,8 @@ def test_left_and_right_configs_load_and_preserve_differences():
     assert left.dynamixel.baudrate == 4_000_000
     assert left.controller.joint_gravity_comp.dynamics.leader_urdf_package == "skye_factr_description"
     assert not Path(left.controller.joint_gravity_comp.dynamics.leader_urdf).is_absolute()
-    assert left.controller.joint_gravity_comp.mode == "position_velocity"
-    assert right.controller.joint_gravity_comp.mode == "position_velocity"
+    assert left.controller.joint_gravity_comp.mode == "position_only"
+    assert right.controller.joint_gravity_comp.mode == "position_only"
     assert left.controller.limit_barrier_control.gripper.kp == 0.301658022
     assert right.controller.limit_barrier_control.gripper.kp == 1.03561658022
     assert left.controller.sync_hold_control.gripper_setpoint == 0.55
@@ -247,6 +247,34 @@ def test_scalar_and_per_joint_gains_normalize_to_tuples():
     assert config.controller.force_feedback_control.joint.gain == tuple(float(i) for i in range(7))
     assert config.controller.null_space_regulation.kp == (0.1,) * 7
     assert config.controller.static_friction_comp.enable_speed == (0.05,) * 7
+
+
+@pytest.mark.parametrize("gravity_enabled, friction_enabled", [
+    (False, False), (False, True), (True, False), (True, True),
+])
+def test_friction_enable_is_independent_of_gravity(gravity_enabled, friction_enabled):
+    document = _document()
+    document["controller"]["joint_gravity_comp"]["enable"] = gravity_enabled
+    document["controller"]["static_friction_comp"]["enable"] = friction_enabled
+    config = TeleopConfig.from_mapping(document)
+    assert config.controller.joint_gravity_comp.enable is gravity_enabled
+    assert config.controller.static_friction_comp.enable is friction_enabled
+
+
+@pytest.mark.parametrize("gravity_enabled", [False, True])
+def test_legacy_friction_enable_follows_gravity(gravity_enabled):
+    document = _document()
+    document["controller"]["joint_gravity_comp"]["enable"] = gravity_enabled
+    document["controller"]["static_friction_comp"].pop("enable")
+    config = TeleopConfig.from_mapping(document)
+    assert config.controller.static_friction_comp.enable is gravity_enabled
+
+
+def test_friction_enable_rejects_non_boolean():
+    document = _document()
+    document["controller"]["static_friction_comp"]["enable"] = 1
+    with pytest.raises(ConfigError, match="static_friction_comp.enable must be a boolean"):
+        TeleopConfig.from_mapping(document)
 
 
 def test_arm_and_gripper_hold_dimensions_are_distinct():

@@ -147,6 +147,28 @@ def test_cycle_shares_velocity_dependent_compensation_with_stiction(gravity_enab
     assert first.friction_torque[-1] == 0
 
 
+@pytest.mark.parametrize("gravity_enabled, friction_enabled", [
+    (False, False), (False, True), (True, False), (True, True),
+])
+def test_default_control_terms_are_independent(gravity_enabled, friction_enabled):
+    config = load_config(CONFIG)
+    config = replace(config, controller=replace(
+        config.controller,
+        joint_gravity_comp=replace(config.controller.joint_gravity_comp, enable=gravity_enabled),
+        static_friction_comp=replace(config.controller.static_friction_comp, enable=friction_enabled),
+    ))
+    hardware = FakeDynamixelIO(np.zeros(8), np.zeros(8), torque_enabled=True)
+    core = ControlCore(config, hardware, FakeDynamics(), np.zeros(8), 100.0)
+    assert core.terms.gravity is gravity_enabled
+    assert core.terms.static_friction is friction_enabled
+
+    result = core.step()
+    expected_gravity = np.arange(1, 8) * config.controller.joint_gravity_comp.gain
+    expected_friction = np.abs(expected_gravity) * config.controller.static_friction_comp.gain
+    np.testing.assert_allclose(result.gravity_torque[:7], expected_gravity if gravity_enabled else 0)
+    np.testing.assert_allclose(result.friction_torque[:7], expected_friction if friction_enabled else 0)
+
+
 def test_position_only_preserves_joint_limit_and_nullspace_damping():
     core, hardware, dynamics = _core(
         terms=ControlTerms(True, True, False, True), gravity_mode="position_only",

@@ -268,12 +268,12 @@ class ControlCore:
             [get_servo_spec(model).current_limit_ma for model in config.dynamixel.servo_types],
         )
         # 显式传入 terms 时，优先使用该对象，实现各控制项独立开关。
-        # 未传入时，按配置生成开关；静摩擦跟随重力开关，保持上游默认行为。
+        # 未传入时，按配置分别生成各控制项开关。
         # 此处显式指定各字段，因此修改 ControlTerms 类的字段默认值不会影响此分支。
         self.terms = terms or ControlTerms(
             joint_limits=config.controller.limit_barrier_control.enable,
             gravity=config.controller.joint_gravity_comp.enable,
-            static_friction=config.controller.joint_gravity_comp.enable,
+            static_friction=config.controller.static_friction_comp.enable,
             nullspace=config.controller.null_space_regulation.enable,
         )
         self._dither_positive = np.ones(ARM_JOINT_COUNT, dtype=bool)
