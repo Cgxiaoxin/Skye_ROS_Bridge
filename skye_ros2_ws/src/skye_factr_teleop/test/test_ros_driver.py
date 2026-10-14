@@ -101,13 +101,13 @@ def make_node(context, monkeypatch, tmp_path):
     nodes = []
 
     def make(side="left", *, parameters=None, config_path_override=None,
-             hardware=None, record_publishers=True, gravity_test=None, **kwargs):
+             hardware=None, record_publishers=True, gravity_test=None, limit_test=None, **kwargs):
         source = Path(__file__).parents[1] / "config" / f"grav_comp_m6_{side}.yaml"
         document = yaml.safe_load(source.read_text(encoding="utf-8"))
         document["dynamixel"].update({
             "joint_offsets": [0.0] * 8, "current_limit_ma": [50.0] * 8,
         })
-        if gravity_test is None:
+        if gravity_test is None and limit_test is None:
             document["controller"]["sync_hold_control"]["ruckig"].update({
                 "max_velocity": [0.5] * 8, "max_acceleration": [1.0] * 8,
                 "max_jerk": [4.0] * 8,
@@ -131,6 +131,10 @@ def make_node(context, monkeypatch, tmp_path):
             overrides.append(Parameter("gravity_test_only", value=True))
             overrides.extend(Parameter(f"gravity_test_{key}", value=value)
                              for key, value in gravity_test.items())
+        if limit_test is not None:
+            overrides.append(Parameter("limit_test_only", value=True))
+            overrides.extend(Parameter(f"limit_test_{key}", value=value)
+                             for key, value in limit_test.items())
         node = module.SkyeFactrTeleopNode(
             side, context=context, use_global_arguments=False,
             parameter_overrides=overrides,
@@ -144,9 +148,11 @@ def make_node(context, monkeypatch, tmp_path):
         if record_publishers:
             for name in ("_state_pub", "_current_pub", "_target_pub", "_command_pub"):
                 setattr(node, name, Recorder())
-            if gravity_test is not None:
+            if gravity_test is not None or limit_test is not None:
                 node._test_current_pub = Recorder()
                 node._test_present_current_pub = Recorder()
+            if limit_test is not None:
+                node._test_gripper_pub = Recorder()
         return SimpleNamespace(node=node, hardware=hardware, trajectories=trajectories,
                                clock=clock, publishers=pubs)
 
@@ -233,6 +239,50 @@ def test_gravity_test_destroy_disables_torque(make_node):
     })
     rig.node._on_gravity_test(String(data="switch_gravity_test"))
     assert rig.hardware.torque_enabled
+    rig.node.destroy_node()
+    assert not rig.hardware.torque_enabled
+    np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_limit_test_node_isolated_and_stops(make_node, side):
+    rig = make_node(side, limit_test={
+        "joint_id": 1, "gain_scale": 0.5, "current_limit_ma": 20.0,
+        "ramp_seconds": 2.0, "max_duration_seconds": 5.0,
+    })
+    node = rig.node
+    assert {sub.topic_name for sub in node.subscriptions} == {
+        f"/mode/{side}/switch_limit_test", "/mode/switch_stop",
+    }
+    assert rig.trajectories == []
+    assert not rig.hardware.torque_enabled
+    assert f"/leader_arm/{side}/limit_test_gripper_state" in {
+        pub.topic_name for pub in rig.publishers
+    }
+    node._on_limit_test(String(data="switch_limit_test"))
+    assert node.core.mode == ControlMode.LIMIT_TEST
+    rig.clock.now += 1
+    node._tick()
+    assert not node._command_pub.messages
+    assert not node._target_pub.messages
+    assert len(node._test_gripper_pub.messages[-1].data) == 2
+    node._on_stop(String(data="switch_stop"))
+    assert node.core.mode == ControlMode.IDLE
+    assert not rig.hardware.torque_enabled
+    np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))
+    node._on_limit_test(String(data="switch_limit_test"))
+    rig.clock.now += 5
+    node._tick()
+    assert node.core.last_transition.reason == "limit_test_timeout"
+    assert not rig.hardware.torque_enabled
+
+
+def test_limit_test_destroy_disables_torque(make_node):
+    rig = make_node(limit_test={
+        "joint_id": 8, "gain_scale": 0.5, "current_limit_ma": 20.0,
+        "ramp_seconds": 2.0, "max_duration_seconds": 5.0,
+    })
+    rig.node._on_limit_test(String(data="switch_limit_test"))
     rig.node.destroy_node()
     assert not rig.hardware.torque_enabled
     np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))

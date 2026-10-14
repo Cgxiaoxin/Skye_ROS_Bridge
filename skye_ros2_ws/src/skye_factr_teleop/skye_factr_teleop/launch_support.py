@@ -12,7 +12,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 from .config import ConfigError, load_config
-from .control_core import GravityTestSettings
+from .control_core import GravityTestSettings, LimitTestSettings
 
 
 def _existing_file(value, share, argument):
@@ -134,4 +134,63 @@ def gravity_test_launch_description(side):
         DeclareLaunchArgument("ramp_seconds", default_value=""),
         DeclareLaunchArgument("max_duration_seconds", default_value=""),
         OpaqueFunction(function=_gravity_test_setup, kwargs={"side": side}),
+    ])
+
+
+def _limit_test_setup(context, *, side):
+    share = Path(get_package_share_directory("skye_factr_teleop"))
+    config_path = _existing_file(
+        LaunchConfiguration("config_path").perform(context), share, "config_path",
+    )
+    try:
+        config = load_config(config_path)
+        if config.dynamixel.joint_offsets is None or config.dynamixel.current_limit_ma is None:
+            raise ValueError("calibrated joint_offsets and current_limit_ma are required")
+        if side not in Path(config.controller.joint_gravity_comp.dynamics.leader_urdf).stem:
+            raise ValueError("selected side does not match leader URDF")
+        if not config.controller.limit_barrier_control.enable:
+            raise ValueError("limit barrier must be enabled")
+        settings = LimitTestSettings(
+            joint_id=int(LaunchConfiguration("joint_id").perform(context)),
+            gain_scale=float(LaunchConfiguration("gain_scale").perform(context)),
+            current_limit_ma=float(LaunchConfiguration("current_limit_ma").perform(context)),
+            ramp_seconds=float(LaunchConfiguration("ramp_seconds").perform(context)),
+            max_duration_seconds=float(LaunchConfiguration("max_duration_seconds").perform(context)),
+        )
+        if settings.current_limit_ma > min(config.dynamixel.current_limit_ma):
+            raise ValueError("limit test current cap exceeds configured limit")
+        barrier = config.controller.limit_barrier_control
+        kp = barrier.gripper.kp if settings.joint_id == 8 else barrier.joint.kp
+        if kp <= 0:
+            raise ValueError("limit test requires positive position gain")
+    except (ConfigError, ValueError) as exc:
+        raise RuntimeError(f"limit test configuration invalid: {exc}") from exc
+    return [Node(
+        package="skye_factr_teleop",
+        executable="skye_factr_teleop_driver",
+        name=f"skye_factr_teleop_{side}",
+        namespace="",
+        arguments=["--side", side],
+        parameters=[{
+            "config_path": config_path,
+            "limit_test_only": True,
+            "limit_test_joint_id": settings.joint_id,
+            "limit_test_gain_scale": settings.gain_scale,
+            "limit_test_current_limit_ma": settings.current_limit_ma,
+            "limit_test_ramp_seconds": settings.ramp_seconds,
+            "limit_test_max_duration_seconds": settings.max_duration_seconds,
+        }],
+        output="screen",
+    )]
+
+
+def limit_test_launch_description(side):
+    return LaunchDescription([
+        DeclareLaunchArgument("config_path", default_value=""),
+        DeclareLaunchArgument("joint_id", default_value=""),
+        DeclareLaunchArgument("gain_scale", default_value=""),
+        DeclareLaunchArgument("current_limit_ma", default_value=""),
+        DeclareLaunchArgument("ramp_seconds", default_value=""),
+        DeclareLaunchArgument("max_duration_seconds", default_value=""),
+        OpaqueFunction(function=_limit_test_setup, kwargs={"side": side}),
     ])

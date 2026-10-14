@@ -23,7 +23,7 @@ from std_msgs.msg import Float64MultiArray, String
 
 from .config import load_config
 from .state_machine import ControlMode
-from .control_core import ControlCore, GravityTestSettings
+from .control_core import ControlCore, GravityTestSettings, LimitTestSettings
 from .dynamics import PinocchioDynamics
 from .trajectory import RuckigTrajectory
 from .dynamixel_driver import DynamixelDriver
@@ -148,11 +148,15 @@ class SkyeFactrTeleopNode(Node):
     def _configure(self):
         config_path = self._parameter("config_path", "")
         self._gravity_test_only = self._parameter("gravity_test_only", False)
+        self._limit_test_only = self._parameter("limit_test_only", False)
         if type(self._gravity_test_only) is not bool:
             raise ValueError("gravity_test_only must be a bool")
+        if type(self._limit_test_only) is not bool or (self._gravity_test_only and self._limit_test_only):
+            raise ValueError("exactly one test mode may be selected")
+        self._test_only = self._gravity_test_only or self._limit_test_only
         self.config = load_config(
             resolve_config_path(config_path, self.side),
-            require_runtime=not self._gravity_test_only,
+            require_runtime=not self._test_only,
         )
         runtime = self.config.runtime
         self._gravity_test = None
@@ -174,9 +178,32 @@ class SkyeFactrTeleopNode(Node):
             ]
             if not self.config.controller.joint_gravity_comp.enable or joint_gain <= 0:
                 raise ValueError("gravity test requires a positive enabled joint gain")
+        self._limit_test = None
+        if self._limit_test_only:
+            if (self.config.dynamixel.joint_offsets is None
+                    or self.config.dynamixel.current_limit_ma is None):
+                raise ValueError("limit test requires joint_offsets and current_limit_ma")
+            self._limit_test = LimitTestSettings(
+                joint_id=self._parameter("limit_test_joint_id", 0),
+                gain_scale=self._parameter("limit_test_gain_scale", 0.0),
+                current_limit_ma=self._parameter("limit_test_current_limit_ma", 0.0),
+                ramp_seconds=self._parameter("limit_test_ramp_seconds", 0.0),
+                max_duration_seconds=self._parameter("limit_test_max_duration_seconds", 0.0),
+            )
+            if self._limit_test.current_limit_ma > min(self.config.dynamixel.current_limit_ma):
+                raise ValueError("limit test current cap exceeds configured limit")
+            if not self.config.controller.limit_barrier_control.enable:
+                raise ValueError("limit test requires enabled limit barrier")
+            if self.side not in Path(
+                    self.config.controller.joint_gravity_comp.dynamics.leader_urdf).stem:
+                raise ValueError("limit test side does not match leader URDF")
+            barrier = self.config.controller.limit_barrier_control
+            kp = barrier.gripper.kp if self._limit_test.joint_id == 8 else barrier.joint.kp
+            if kp <= 0:
+                raise ValueError("limit test requires positive position gain")
         self._offsets = np.asarray(self.config.dynamixel.joint_offsets)
         self._current_limit = self.config.dynamixel.current_limit_ma
-        if not self._gravity_test_only:
+        if not self._test_only:
             self._limits = {
                 name: np.asarray(getattr(self.config.controller.sync_hold_control.ruckig, name))
                 for name in ("max_velocity", "max_acceleration", "max_jerk")
@@ -197,14 +224,21 @@ class SkyeFactrTeleopNode(Node):
         self._target_pub = self.create_publisher(JointState, "/leader_arm/target_joint_state", state_qos())
         self._command_pub = self.create_publisher(JointState, "/joint_control", command_qos())
         self._test_current_pub = self._test_present_current_pub = None
-        if self._gravity_test_only:
+        if self._test_only:
+            name = "gravity_test" if self._gravity_test_only else "limit_test"
             self._test_current_pub = self.create_publisher(
-                Float64MultiArray, f"/leader_arm/{self.side}/gravity_test_current_ma",
+                Float64MultiArray, f"/leader_arm/{self.side}/{name}_current_ma",
                 state_qos(),
             )
             self._test_present_current_pub = self.create_publisher(
                 Float64MultiArray,
-                f"/leader_arm/{self.side}/gravity_test_present_current_ma",
+                f"/leader_arm/{self.side}/{name}_present_current_ma",
+                state_qos(),
+            )
+        self._test_gripper_pub = None
+        if self._limit_test_only:
+            self._test_gripper_pub = self.create_publisher(
+                Float64MultiArray, f"/leader_arm/{self.side}/limit_test_gripper_state",
                 state_qos(),
             )
         self.create_subscription(String, "/mode/switch_stop", self._on_stop, event_qos())
@@ -213,6 +247,11 @@ class SkyeFactrTeleopNode(Node):
                 String, f"/mode/{self.side}/switch_gravity_test",
                 self._on_gravity_test, event_qos(),
             )
+        elif self._limit_test_only:
+            self.create_subscription(
+                String, f"/mode/{self.side}/switch_limit_test",
+                self._on_limit_test, event_qos(),
+            )
         else:
             self.create_subscription(JointState, "/joint_state", self._on_follower, state_qos())
             self.create_subscription(JointState, "/joint_move", self._on_joint_move, state_qos())
@@ -220,19 +259,20 @@ class SkyeFactrTeleopNode(Node):
             self.create_subscription(String, "/mode/switch_teleop", self._on_teleop, event_qos())
 
     def _start_control(self, *, hardware_factory, dynamics_factory, trajectory_factory):
-        dynamics = (dynamics_factory or _make_pinocchio_dynamics)(self.config)
-        make_trajectory = None if self._gravity_test_only else (trajectory_factory or self._make_ruckig_trajectory)
-        if not self._gravity_test_only and trajectory_factory is None:
+        dynamics = None if self._limit_test_only else (dynamics_factory or _make_pinocchio_dynamics)(self.config)
+        make_trajectory = None if self._test_only else (trajectory_factory or self._make_ruckig_trajectory)
+        if not self._test_only and trajectory_factory is None:
             make_trajectory()  # Check Ruckig before opening the hardware.
         self._hardware = (hardware_factory(self.config) if hardware_factory is not None
                           else _hardware_factory(
-                              self.config, read_present_current=self._gravity_test_only,
+                              self.config, read_present_current=self._test_only,
                           ))
         self._hardware.open(enable_torque=False)
         self.core = ControlCore(
             self.config, self._hardware, dynamics, self._offsets,
             self._current_limit, trajectory_factory=make_trajectory,
             gravity_test=self._gravity_test, now=self._monotonic(),
+            limit_test=self._limit_test,
         )
         self._publish_state()
         self._steady_clock = Clock(clock_type=ClockType.STEADY_TIME)
@@ -306,6 +346,18 @@ class SkyeFactrTeleopNode(Node):
         try:
             self._hardware.set_torque_enabled(True)
             self.core.handle("switch_gravity_test", now=self._monotonic())
+            self._publish_state()
+        except Exception as exc:
+            self._fault(exc)
+
+    def _on_limit_test(self, message):
+        if self._closed or message.data != "switch_limit_test":
+            return
+        if self.core.mode != ControlMode.IDLE:
+            return
+        try:
+            self._hardware.set_torque_enabled(True)
+            self.core.handle("switch_limit_test", now=self._monotonic())
             self._publish_state()
         except Exception as exc:
             self._fault(exc)
@@ -390,6 +442,10 @@ class SkyeFactrTeleopNode(Node):
             self._test_present_current_pub.publish(
                 Float64MultiArray(data=present_current.tolist())
             )
+        if self._test_gripper_pub is not None:
+            self._test_gripper_pub.publish(Float64MultiArray(data=[
+                result.state.gripper_position, result.state.gripper_velocity,
+            ]))
         self._publish_state()
 
     def _fault(self, exc):

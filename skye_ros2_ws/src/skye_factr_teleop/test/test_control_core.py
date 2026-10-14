@@ -13,7 +13,7 @@ from conftest import FakeDynamixelIO
 from skye_factr_teleop.config import load_config
 from skye_factr_teleop.control_core import (
     ControlCore, ControlTerms, GravityTestSettings, LeaderState, gravity_compensation,
-    joint_limit_barrier, nullspace_regulation,
+    joint_limit_barrier, LimitTestSettings, nullspace_regulation,
     static_friction_compensation, transform_leader_state,
 )
 from skye_factr_teleop.state_machine import ControlMode
@@ -68,8 +68,18 @@ def test_joint_limit_barrier_including_gripper_and_margin():
         state, [-2] * 7, [2] * 7, 2, 0.5, -1, 1,
         margin=0.1, gripper_kp=3, gripper_kd=0.25,
     )
-    np.testing.assert_allclose(result[:3], [-0.6, -0.4, 0])
+    np.testing.assert_allclose(result[:3], [-0.6, 0.1, 0])
     assert result[-1] == pytest.approx(-0.725)
+
+
+def test_limit_barrier_damping_never_reverses_recovery():
+    state = LeaderState(np.array([-1.95, 1.95, 0, 0, 0, 0, 0]),
+                        np.array([10.0, -10.0, 0, 0, 0, 0, 0]), -1.1, 10.0)
+    torque = joint_limit_barrier(
+        state, [-2] * 7, [2] * 7, 2, 0.5, -1, 1,
+        margin=0.1, gripper_kp=3, gripper_kd=0.25,
+    )
+    assert torque[0] > 0 and torque[1] < 0 and torque[7] > 0
 
 
 def test_gravity_and_stiction_fixed_outputs_and_no_input_mutation():
@@ -246,6 +256,55 @@ def test_gravity_test_isolates_one_joint_ramps_and_times_out():
     assert not expired.wrote_current
     assert not hardware.torque_enabled
     np.testing.assert_array_equal(hardware.last_currents_ma, np.zeros(8))
+
+
+@pytest.mark.parametrize("joint_id,position,direction", [
+    (1, -2.95, 1), (1, 2.95, -1), (8, -0.1, 1), (8, 0.6, -1),
+])
+def test_limit_test_isolated_ramped_clipped_and_stopped(joint_id, position, direction):
+    core, hardware, dynamics = _core(limit=50)
+    core.limit_test = LimitTestSettings(joint_id, 0.5, 20, 2, 5)
+    raw = np.zeros(8)
+    raw[joint_id - 1] = position * core.joint_signs[joint_id - 1]
+    hardware.inject_state(raw, np.zeros(8))
+    dynamics.gravity = lambda q, dq: (_ for _ in ()).throw(AssertionError("dynamics called"))
+    core.handle("switch_limit_test", now=0)
+    first = core.step(now=1)
+    assert first.mode == ControlMode.LIMIT_TEST
+    assert first.joint_limit_torque[joint_id - 1] * direction > 0
+    np.testing.assert_array_equal(np.delete(first.logical_torque, joint_id - 1), np.zeros(7))
+    assert not np.any(first.gravity_torque)
+    assert not np.any(first.friction_torque)
+    assert not np.any(first.tracking_torque)
+    assert abs(first.physical_current_ma[joint_id - 1]) <= 10
+    full = core.step(now=2)
+    assert abs(full.joint_limit_torque[joint_id - 1]) == pytest.approx(
+        2 * abs(first.joint_limit_torque[joint_id - 1]))
+    assert abs(full.physical_current_ma[joint_id - 1]) <= 20
+    core.step(now=5)
+    assert core.mode == ControlMode.IDLE
+    assert core.last_transition.reason == "limit_test_timeout"
+    assert not hardware.torque_enabled
+    np.testing.assert_array_equal(hardware.last_currents_ma, np.zeros(8))
+
+
+def test_limit_test_inside_safe_interval_has_zero_output():
+    core, hardware, _ = _core(limit=50)
+    core.limit_test = LimitTestSettings(1, 0.5, 20, 2, 5)
+    core.handle("switch_limit_test", now=0)
+    result = core.step(now=2)
+    np.testing.assert_array_equal(result.logical_torque, np.zeros(8))
+    np.testing.assert_array_equal(hardware.last_currents_ma, np.zeros(8))
+
+
+@pytest.mark.parametrize("values", [
+    (0, 0.5, 20, 2, 5), (9, 0.5, 20, 2, 5),
+    (1, 1.1, 20, 2, 5), (1, 0.5, 51, 2, 5),
+    (1, 0.5, 20, 0.5, 5), (1, 0.5, 20, 2, 31),
+])
+def test_limit_test_settings_reject_unsafe_values(values):
+    with pytest.raises(ValueError, match="limit test"):
+        LimitTestSettings(*values)
 
 
 @pytest.mark.parametrize("values", [

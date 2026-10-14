@@ -18,6 +18,7 @@ def _machine_in(state):
         "SYNCED": ("switch_sync", "trajectory_complete", "sync_complete"),
         "TELEOP": ("switch_sync", "trajectory_complete", "sync_complete", "switch_teleop"),
         "GRAVITY_TEST": ("switch_gravity_test",),
+        "LIMIT_TEST": ("switch_limit_test",),
     }
     for now, event in enumerate(events[state], start=1):
         result = machine.handle(event, now=float(now))
@@ -61,6 +62,12 @@ def _machine_in(state):
         ("GRAVITY_TEST", "switch_teleop", "GRAVITY_TEST", "rejected"),
         ("GRAVITY_TEST", "gravity_test_timeout", "IDLE", "accepted"),
         ("GRAVITY_TEST", "switch_stop", "IDLE", "accepted"),
+        ("IDLE", "switch_limit_test", "LIMIT_TEST", "accepted"),
+        ("LIMIT_TEST", "switch_limit_test", "LIMIT_TEST", "ignored"),
+        ("LIMIT_TEST", "switch_sync", "LIMIT_TEST", "rejected"),
+        ("LIMIT_TEST", "switch_teleop", "LIMIT_TEST", "rejected"),
+        ("LIMIT_TEST", "limit_test_timeout", "IDLE", "accepted"),
+        ("LIMIT_TEST", "switch_stop", "IDLE", "accepted"),
     ],
 )
 def test_transition_contract(initial, event, expected, outcome):
@@ -121,6 +128,7 @@ def test_base_control_mode_values():
     assert sm.ControlMode.TELEOP.value == 3
     assert sm.ControlMode.HOLD_SETTLING.value == 4
     assert sm.ControlMode.GRAVITY_TEST.value == 6
+    assert sm.ControlMode.LIMIT_TEST.value == 7
 
 
 @pytest.mark.parametrize(
@@ -138,6 +146,8 @@ def test_base_control_mode_values():
         ("TELEOP", "switch_stop", ("stop_motion", "clear_sync")),
         ("IDLE", "switch_gravity_test", ("clear_sync", "start_gravity_test")),
         ("GRAVITY_TEST", "gravity_test_timeout", ("stop_motion", "clear_sync")),
+        ("IDLE", "switch_limit_test", ("clear_sync", "start_limit_test")),
+        ("LIMIT_TEST", "limit_test_timeout", ("stop_motion", "clear_sync")),
     ],
 )
 def test_ordered_control_actions(initial, event, actions):

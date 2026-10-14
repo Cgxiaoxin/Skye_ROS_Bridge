@@ -55,6 +55,8 @@ setup(
             "skye_factr_teleop.low_current_check:main",
             "skye_factr_gravity_test_recorder = "
             "skye_factr_teleop.gravity_test_recorder:main",
+            "skye_factr_limit_test_recorder = "
+            "skye_factr_teleop.limit_test_recorder:main",
         ],
     },
 )

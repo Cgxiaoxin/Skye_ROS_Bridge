@@ -57,11 +57,12 @@ def expand_launch(monkeypatch, tmp_path):
         return []
 
     monkeypatch.setattr(ExecuteProcess, "execute", capture_process)
-    def expand(kind, *, gravity_test=False, **arguments):
+    def expand(kind, *, gravity_test=False, limit_test=False, **arguments):
         context = LaunchContext()
         context.launch_configurations.update(arguments)
-        launch_name = (f"gravity_test_m6_{kind}.launch.py" if gravity_test
-                       else f"start_teleop_m6_{kind}.launch.py")
+        launch_name = (f"gravity_test_m6_{kind}.launch.py" if gravity_test else
+                       f"limit_test_m6_{kind}.launch.py" if limit_test else
+                       f"start_teleop_m6_{kind}.launch.py")
         path = PACKAGE_ROOT / "launch" / launch_name
         description = runpy.run_path(str(path))["generate_launch_description"]()
         for action in description.entities:
@@ -214,6 +215,32 @@ def test_gravity_launch_rejects_cap_above_test_limit(expand_launch):
             "left", gravity_test=True,
             config_path=str(PACKAGE_ROOT / "config/grav_comp_m6_left.yaml"),
             joint_id="1", gain_scale="0.5", current_limit_ma="51",
+            ramp_seconds="2", max_duration_seconds="5",
+        )
+    assert not expand_launch.captured
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_limit_launch_accepts_calibration_without_ruckig_limits(expand_launch, side):
+    config = PACKAGE_ROOT / "config" / f"grav_comp_m6_{side}.yaml"
+    node, command, _, parameters = expand_launch(
+        side, limit_test=True, config_path=str(config), joint_id="8",
+        gain_scale="0.5", current_limit_ma="20", ramp_seconds="2",
+        max_duration_seconds="5",
+    )[0]
+    assert command[command.index("--side") + 1] == side
+    values = parameters[0][node.node_name]["ros__parameters"]
+    assert values["limit_test_only"] is True
+    assert values["limit_test_joint_id"] == 8
+    assert values["limit_test_current_limit_ma"] == 20.0
+
+
+def test_limit_launch_rejects_invalid_id_before_process(expand_launch):
+    with pytest.raises(RuntimeError, match="joint_id must be 1..8"):
+        expand_launch(
+            "left", limit_test=True,
+            config_path=str(PACKAGE_ROOT / "config/grav_comp_m6_left.yaml"),
+            joint_id="9", gain_scale="0.5", current_limit_ma="20",
             ramp_seconds="2", max_duration_seconds="5",
         )
     assert not expand_launch.captured

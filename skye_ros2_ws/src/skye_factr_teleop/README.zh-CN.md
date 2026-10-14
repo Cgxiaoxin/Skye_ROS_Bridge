@@ -150,6 +150,12 @@ ros2 topic pub --once /mode/switch_stop std_msgs/msg/String '{data: switch_stop}
 `GRAVITY_TEST`。参数、监视话题、停止条件和真机记录格式见
 [7.2 验收清单](dev_docs/checklist/phase7_2_gravity_test_checklist.md)。
 
+限位屏障使用独立的 `limit_test_m6_left.launch.py` 或
+`limit_test_m6_right.launch.py`；`/mode/{side}/switch_limit_test` 仅输出所选
+ID 1--8 的限位项，并限制电流、渐增与通电时间。启动参数、记录器、上下边界
+和失能回读步骤见[限位屏障清单](dev_docs/checklist/phase7_2_limit_test_checklist.md)。
+软件入口已准备，左右真机限位验收尚未完成。
+
 不启动硬件节点也可查看 launch 参数：
 
 ```bash

@@ -49,6 +49,27 @@ class GravityTestSettings:
         if self.max_duration_seconds <= self.ramp_seconds:
             raise ValueError("gravity test duration must exceed ramp time")
 
+
+@dataclass(frozen=True)
+class LimitTestSettings:
+    joint_id: int
+    gain_scale: float
+    current_limit_ma: float
+    ramp_seconds: float
+    max_duration_seconds: float
+
+    def __post_init__(self) -> None:
+        if type(self.joint_id) is not int or not 1 <= self.joint_id <= MOTOR_COUNT:
+            raise ValueError("limit test joint_id must be 1..8")
+        for name in ("gain_scale", "current_limit_ma", "ramp_seconds", "max_duration_seconds"):
+            value = getattr(self, name)
+            if not np.isfinite(value) or value <= 0:
+                raise ValueError(f"limit test {name} must be finite and positive")
+        if self.gain_scale > 1 or self.current_limit_ma > 50:
+            raise ValueError("limit test gain scale must be <= 1 and current cap <= 50 mA")
+        if self.ramp_seconds < 1 or not self.ramp_seconds < self.max_duration_seconds <= 30:
+            raise ValueError("limit test requires ramp >= 1 second and ramp < duration <= 30 seconds")
+
 @dataclass(frozen=True)
 class LeaderState:
     arm_position: np.ndarray
@@ -174,7 +195,11 @@ def joint_limit_barrier(
     result = np.zeros(MOTOR_COUNT)
     outside = (q < minimum) | (q > maximum)
     bound = np.clip(q, minimum, maximum)
-    result[:ARM_JOINT_COUNT] = np.where(outside, -gain_p * (q - bound) - gain_d * dq, 0.0)
+    # Damping opposes motion toward the limit; inward motion must not reverse recovery.
+    outward_velocity = np.where(q < minimum, np.minimum(dq, 0), np.maximum(dq, 0))
+    result[:ARM_JOINT_COUNT] = np.where(
+        outside, -gain_p * (q - bound) - gain_d * outward_velocity, 0.0,
+    )
     grip = _scalar(state.gripper_position, "gripper_position")
     grip_vel = _scalar(state.gripper_velocity, "gripper_velocity")
     grip_min = _scalar(gripper_lower, "gripper_lower")
@@ -184,7 +209,9 @@ def joint_limit_barrier(
     if grip_min >= grip_max or min(grip_gain_p, grip_gain_d) < 0:
         raise ValueError("invalid gripper limits or gains")
     if grip < grip_min or grip > grip_max:
-        result[-1] = -grip_gain_p * (grip - np.clip(grip, grip_min, grip_max)) - grip_gain_d * grip_vel
+        outward_grip_velocity = min(grip_vel, 0) if grip < grip_min else max(grip_vel, 0)
+        result[-1] = (-grip_gain_p * (grip - np.clip(grip, grip_min, grip_max))
+                      - grip_gain_d * outward_grip_velocity)
     return result
 
 def gravity_compensation(
@@ -252,6 +279,7 @@ class ControlCore:
         terms: ControlTerms | None = None,
         *, trajectory_factory: Callable[[], TrajectoryIO] | None = None,
         gravity_test: GravityTestSettings | None = None,
+        limit_test: LimitTestSettings | None = None,
         now: float = 0.0,
     ) -> None:
         self.config, self.hardware, self.dynamics = config, hardware, dynamics
@@ -281,6 +309,7 @@ class ControlCore:
         self._machine = StateMachine(now=self._now)
         self._trajectory_factory = trajectory_factory
         self.gravity_test = gravity_test
+        self.limit_test = limit_test
         self._trajectory: TrajectoryIO | None = None
         self._target: np.ndarray | None = None
         self._hold_integral = np.zeros(MOTOR_COUNT)
@@ -317,6 +346,10 @@ class ControlCore:
             limit = self.current_limit_ma
             if self.mode == ControlMode.GRAVITY_TEST:
                 limit = np.minimum(limit, self.gravity_test.current_limit_ma)
+            elif self.mode == ControlMode.LIMIT_TEST:
+                ramp = min(1.0, (self._now - self._machine.entered_at)
+                           / self.limit_test.ramp_seconds)
+                limit = np.minimum(limit, self.limit_test.current_limit_ma * ramp)
             currents = np.clip(currents, -limit, limit)
             wrote = bool(self.hardware.torque_enabled)
             if wrote:
@@ -360,7 +393,7 @@ class ControlCore:
             self._time(now)
             if event in (Event.SYNC_COMPLETE, Event.SYNC_TIMEOUT,
                          Event.TRAJECTORY_COMPLETE, Event.SETTLE_TIMEOUT,
-                         Event.GRAVITY_TEST_TIMEOUT):
+                         Event.GRAVITY_TEST_TIMEOUT, Event.LIMIT_TEST_TIMEOUT):
                 raise ValueError("trajectory events are internal to step()")
             result = self._machine.handle(event, now=self._now)
             self._apply_actions(result, follower_position, gripper_setpoint)
@@ -403,6 +436,11 @@ class ControlCore:
                 >= self.gravity_test.max_duration_seconds):
             self._trajectory_event(Event.GRAVITY_TEST_TIMEOUT)
             self._zero_and_disable()
+        if (self.mode == ControlMode.LIMIT_TEST
+                and self._now - self._machine.entered_at
+                >= self.limit_test.max_duration_seconds):
+            self._trajectory_event(Event.LIMIT_TEST_TIMEOUT)
+            self._zero_and_disable()
         if (self.mode == ControlMode.TELEOP_SYNCING
                 and self._now - self._machine.entered_at
                 >= self.config.controller.sync_hold_control.ruckig.trajectory_timeout):
@@ -435,6 +473,23 @@ class ControlCore:
                     state.arm_position, state.arm_velocity, self.dynamics, gain,
                     mode=ctrl.joint_gravity_comp.mode,
                 )
+                return _TorqueCalculation(
+                    limit, gravity, friction, nullspace, tracking,
+                    target, target_velocity, next_flags,
+                )
+            if self.mode == ControlMode.LIMIT_TEST:
+                settings = self.limit_test
+                barrier = ctrl.limit_barrier_control
+                joint, gripper = barrier.joint, barrier.gripper
+                index = settings.joint_id - 1
+                ramp = min(1.0, (self._now - self._machine.entered_at) / settings.ramp_seconds)
+                only = joint_limit_barrier(
+                    state, joint.limit_min, joint.limit_max, joint.kp, joint.kd,
+                    gripper.limit_min, gripper.limit_max,
+                    margin=joint.safety_margin, gripper_kp=gripper.kp,
+                    gripper_kd=gripper.kd,
+                )
+                limit[index] = only[index] * settings.gain_scale * ramp
                 return _TorqueCalculation(
                     limit, gravity, friction, nullspace, tracking,
                     target, target_velocity, next_flags,
@@ -592,6 +647,10 @@ class ControlCore:
             elif action == Action.START_GRAVITY_TEST:
                 if self.gravity_test is None or not self.hardware.torque_enabled:
                     raise RuntimeError("gravity test requires settings and enabled torque")
+                self._last_step_at = self._now
+            elif action == Action.START_LIMIT_TEST:
+                if self.limit_test is None or not self.hardware.torque_enabled:
+                    raise RuntimeError("limit test requires settings and enabled torque")
                 self._last_step_at = self._now
 
     def _clear_sync(self) -> None:

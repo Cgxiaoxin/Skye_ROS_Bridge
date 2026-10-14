@@ -129,6 +129,13 @@ Stage 7.2 uses the separate `gravity_test_m6_left.launch.py` or
 test; see the [stage 7.2 checklist](dev_docs/checklist/phase7_2_gravity_test_checklist.md)
 for parameters, current telemetry, and stop checks.
 
+The separate `limit_test_m6_left.launch.py` and `limit_test_m6_right.launch.py`
+entries accept IDs 1–8 and `/mode/{side}/switch_limit_test`. They output only
+the selected limit barrier term with a 50 mA maximum trial cap, a ramp, and a
+timeout. See the [limit checklist](dev_docs/checklist/phase7_2_limit_test_checklist.md)
+for the calibrated configuration, recorder, boundary checks, and Torque Disable
+readback. The software entry is ready; real-hardware limit validation is pending.
+
 Incoming JointState messages require seven finite positions; velocity/effort
 must be empty or contain seven finite values. Names must be exactly
 `l_j1..l_j7` or `r_j1..r_j7` in order, unless empty names are explicitly allowed.

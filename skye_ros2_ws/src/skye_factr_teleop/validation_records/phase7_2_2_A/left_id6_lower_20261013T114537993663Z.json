@@ -1,0 +1,56 @@
+{
+  "date_utc": "2026-10-13T11:46:05.980438+00:00",
+  "operator": "lyy",
+  "side": "left",
+  "joint_id": 6,
+  "servo_model": "XC330-T288",
+  "boundary": "lower",
+  "effective_lower_rad": -0.8,
+  "effective_upper_rad": 0.8,
+  "config_path": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml",
+  "usb_by_id": "usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0",
+  "gain_scale": 1.0,
+  "current_limit_ma": 20.0,
+  "ramp_seconds": 2.0,
+  "max_duration_seconds": 10.0,
+  "trace_path": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_2_2_A/left_id6_lower_20261013T114537993663Z.trace.jsonl",
+  "process_exit": "normal",
+  "torque_disable_readback_path": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_2_2_A/left_id6_lower_20261013T114537993663Z_torque_disable.json",
+  "state_events": [
+    {
+      "time_s": 2.3647488729984616,
+      "state": "IDLE"
+    },
+    {
+      "time_s": 5.403069293002773,
+      "state": "LIMIT_TEST"
+    },
+    {
+      "time_s": 15.417584407005052,
+      "state": "IDLE"
+    }
+  ],
+  "position_min_rad": -0.03681553890925539,
+  "position_max_rad": 0.9802137234589247,
+  "max_abs_velocity_rad_s": 0.9352521329736815,
+  "command_samples": 4991,
+  "target_peak_command_ma": 20.0,
+  "other_ids_peak_command_ma": 0.0,
+  "present_current_samples": 4991,
+  "target_present_current_min_ma": 0.0,
+  "target_present_current_max_ma": 22.0,
+  "correct_sign_samples": 0,
+  "wrong_sign_samples": 3181,
+  "final_zero_command_observed": true,
+  "operator_observation": "inward",
+  "operator_end_method": "timeout",
+  "operator_note": "",
+  "issues": [
+    "no inward nonzero command observed",
+    "outward nonzero command observed"
+  ],
+  "assessment": "FAIL",
+  "assessment_note": "PASS requires normal process exit and separate Torque Disable readback",
+  "torque_disable_ids_disabled": true,
+  "torque_disable_side_matches": true
+}
