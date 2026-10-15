@@ -12,7 +12,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 from .config import ConfigError, load_config
-from .control_core import GravityTestSettings, LimitTestSettings
+from .control_core import GravityTestSettings, LimitTestSettings, FrictionTestSettings
 
 
 def _existing_file(value, share, argument):
@@ -193,4 +193,70 @@ def limit_test_launch_description(side):
         DeclareLaunchArgument("ramp_seconds", default_value=""),
         DeclareLaunchArgument("max_duration_seconds", default_value=""),
         OpaqueFunction(function=_limit_test_setup, kwargs={"side": side}),
+    ])
+
+
+def _friction_test_setup(context, *, side):
+    share = Path(get_package_share_directory("skye_factr_teleop"))
+    config_path = _existing_file(
+        LaunchConfiguration("config_path").perform(context), share, "config_path",
+    )
+    try:
+        config = load_config(config_path)
+        if config.dynamixel.joint_offsets is None or config.dynamixel.current_limit_ma is None:
+            raise ValueError("calibrated joint_offsets and current_limit_ma are required")
+        if side not in Path(config.controller.joint_gravity_comp.dynamics.leader_urdf).stem:
+            raise ValueError("selected side does not match leader URDF")
+        enabled_text = LaunchConfiguration("enabled").perform(context).lower()
+        if enabled_text not in ("true", "false"):
+            raise ValueError("enabled must be true or false")
+        settings = FrictionTestSettings(
+            joint_id=int(LaunchConfiguration("joint_id").perform(context)),
+            gain_scale=float(LaunchConfiguration("gain_scale").perform(context)),
+            current_limit_ma=float(LaunchConfiguration("current_limit_ma").perform(context)),
+            ramp_seconds=float(LaunchConfiguration("ramp_seconds").perform(context)),
+            max_duration_seconds=float(LaunchConfiguration("max_duration_seconds").perform(context)),
+            enabled=enabled_text == "true",
+        )
+        if settings.current_limit_ma > min(config.dynamixel.current_limit_ma):
+            raise ValueError("friction test current cap exceeds configured limit")
+        index = settings.joint_id - 1
+        if (config.controller.joint_gravity_comp.gain[index] <= 0
+                or config.controller.static_friction_comp.gain[index] <= 0
+                or config.controller.static_friction_comp.enable_speed[index] <= 0):
+            raise ValueError("selected joint gravity/friction gain and speed threshold must be positive")
+        if not config.controller.static_friction_comp.enable:
+            raise ValueError("static friction must be enabled in the configuration")
+    except (ConfigError, ValueError) as exc:
+        raise RuntimeError(f"friction test configuration invalid: {exc}") from exc
+    return [Node(
+        package="skye_factr_teleop",
+        executable="skye_factr_teleop_driver",
+        name=f"skye_factr_teleop_{side}",
+        namespace="",
+        arguments=["--side", side],
+        parameters=[{
+            "config_path": config_path,
+            "friction_test_only": True,
+            "friction_test_joint_id": settings.joint_id,
+            "friction_test_gain_scale": settings.gain_scale,
+            "friction_test_current_limit_ma": settings.current_limit_ma,
+            "friction_test_ramp_seconds": settings.ramp_seconds,
+            "friction_test_max_duration_seconds": settings.max_duration_seconds,
+            "friction_test_enabled": settings.enabled,
+        }],
+        output="screen",
+    )]
+
+
+def friction_test_launch_description(side):
+    return LaunchDescription([
+        DeclareLaunchArgument("config_path", default_value=""),
+        DeclareLaunchArgument("joint_id", default_value=""),
+        DeclareLaunchArgument("gain_scale", default_value=""),
+        DeclareLaunchArgument("current_limit_ma", default_value=""),
+        DeclareLaunchArgument("ramp_seconds", default_value=""),
+        DeclareLaunchArgument("max_duration_seconds", default_value=""),
+        DeclareLaunchArgument("enabled", default_value="false", choices=["true", "false"]),
+        OpaqueFunction(function=_friction_test_setup, kwargs={"side": side}),
     ])

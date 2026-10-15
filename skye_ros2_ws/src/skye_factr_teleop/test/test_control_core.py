@@ -13,7 +13,7 @@ from conftest import FakeDynamixelIO
 from skye_factr_teleop.config import load_config
 from skye_factr_teleop.control_core import (
     ControlCore, ControlTerms, GravityTestSettings, LeaderState, gravity_compensation,
-    joint_limit_barrier, LimitTestSettings, nullspace_regulation,
+    joint_limit_barrier, LimitTestSettings, FrictionTestSettings, nullspace_regulation,
     static_friction_compensation, transform_leader_state,
 )
 from skye_factr_teleop.state_machine import ControlMode
@@ -295,6 +295,99 @@ def test_limit_test_inside_safe_interval_has_zero_output():
     result = core.step(now=2)
     np.testing.assert_array_equal(result.logical_torque, np.zeros(8))
     np.testing.assert_array_equal(hardware.last_currents_ma, np.zeros(8))
+
+
+def test_friction_test_isolated_alternating_speed_gated_and_stopped():
+    core, hardware, _ = _core(limit=50)
+    core.friction_test = FrictionTestSettings(6, 0.5, 20, 2, 5)
+    core.handle("switch_friction_test", now=0)
+    first = core.step(now=1)
+    reference = 6 * core.config.controller.joint_gravity_comp.gain[5]
+    amplitude = reference * core.config.controller.static_friction_comp.gain[5]
+    assert first.friction_torque[5] == pytest.approx(amplitude * 0.5 * 0.5)
+    np.testing.assert_array_equal(np.delete(first.logical_torque, 5), np.zeros(7))
+    assert not np.any(first.gravity_torque)
+    assert not np.any(first.joint_limit_torque)
+    assert not np.any(first.nullspace_torque)
+    assert not np.any(first.tracking_torque)
+    assert abs(first.physical_current_ma[5]) <= 10
+    second = core.step(now=2)
+    assert second.friction_torque[5] == pytest.approx(-amplitude * 0.5)
+    assert abs(second.physical_current_ma[5]) <= 20
+
+    velocity = np.zeros(8)
+    velocity[5] = core.config.controller.static_friction_comp.enable_speed[5]
+    hardware.inject_state(np.zeros(8), velocity * core.joint_signs)
+    gated = core.step(now=3)
+    np.testing.assert_array_equal(gated.logical_torque, np.zeros(8))
+    expired = core.step(now=5)
+    assert expired.mode == ControlMode.IDLE
+    assert core.last_transition.reason == "friction_test_timeout"
+    assert not hardware.torque_enabled
+    np.testing.assert_array_equal(hardware.last_currents_ma, np.zeros(8))
+
+
+def test_friction_test_disabled_control_has_zero_output():
+    core, hardware, dynamics = _core(limit=50)
+    core.friction_test = FrictionTestSettings(1, 0.5, 20, 2, 5, enabled=False)
+    dynamics.gravity = lambda q, dq: pytest.fail("disabled run called dynamics")
+    core.handle("switch_friction_test", now=0)
+    result = core.step(now=2)
+    np.testing.assert_array_equal(result.logical_torque, np.zeros(8))
+    np.testing.assert_array_equal(hardware.last_currents_ma, np.zeros(8))
+
+
+def test_friction_test_switches_off_on_without_extending_timeout():
+    core, hardware, _ = _core(limit=50)
+    core.friction_test = FrictionTestSettings(1, 0.5, 20, 2, 5, enabled=False)
+    core.handle("switch_friction_test", now=0)
+    assert not core.friction_test_enabled
+    assert not np.any(core.step(now=1).logical_torque)
+    assert core.set_friction_test_enabled(True, now=2)
+    assert core.friction_test_enabled
+    assert not np.any(hardware.last_currents_ma)  # An explicit zero precedes the new phase.
+    first = core.step(now=3)
+    assert first.friction_torque[0] > 0
+    assert abs(first.physical_current_ma[0]) <= 10
+    assert core.set_friction_test_enabled(False, now=3.1)
+    np.testing.assert_array_equal(hardware.last_currents_ma, np.zeros(8))
+    assert not np.any(core.step(now=3.2).logical_torque)
+    assert core.set_friction_test_enabled(True, now=3.3)
+    assert core.step(now=3.4).friction_torque[0] > 0  # Sign and ramp reset.
+    assert core.step(now=5).mode == ControlMode.IDLE
+    assert not hardware.torque_enabled
+    assert core.last_transition.reason == "friction_test_timeout"
+
+
+def test_friction_switch_requires_active_test():
+    core, hardware, _ = _core(limit=50)
+    core.friction_test = FrictionTestSettings(1, 0.5, 20, 2, 5, enabled=False)
+    with pytest.raises(ValueError, match="FRICTION_TEST"):
+        core.set_friction_test_enabled(True, now=1)
+    assert not hardware.torque_enabled
+
+
+def test_friction_test_allows_300_seconds_without_extending_on_switch():
+    core, hardware, _ = _core(limit=50)
+    core.friction_test = FrictionTestSettings(1, 0.5, 20, 2, 300, enabled=False)
+    core.handle("switch_friction_test", now=0)
+    assert core.step(now=299).mode == ControlMode.FRICTION_TEST
+    assert core.set_friction_test_enabled(True, now=299)
+    assert core.step(now=299.5).mode == ControlMode.FRICTION_TEST
+    assert core.step(now=300).mode == ControlMode.IDLE
+    assert not hardware.torque_enabled
+    assert core.last_transition.reason == "friction_test_timeout"
+
+
+@pytest.mark.parametrize("values", [
+    (0, 0.5, 20, 2, 5), (8, 0.5, 20, 2, 5),
+    (1, 1.1, 20, 2, 5), (1, 0.5, 51, 2, 5),
+    (1, 0.5, 20, 0.5, 5), (1, 0.5, 20, 2, 301),
+    (1, 0.5, 20, 2, 5, 1),
+])
+def test_friction_test_settings_reject_unsafe_values(values):
+    with pytest.raises(ValueError, match="friction test"):
+        FrictionTestSettings(*values)
 
 
 @pytest.mark.parametrize("values", [

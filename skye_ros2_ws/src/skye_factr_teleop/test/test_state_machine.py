@@ -19,6 +19,7 @@ def _machine_in(state):
         "TELEOP": ("switch_sync", "trajectory_complete", "sync_complete", "switch_teleop"),
         "GRAVITY_TEST": ("switch_gravity_test",),
         "LIMIT_TEST": ("switch_limit_test",),
+        "FRICTION_TEST": ("switch_friction_test",),
     }
     for now, event in enumerate(events[state], start=1):
         result = machine.handle(event, now=float(now))
@@ -68,6 +69,12 @@ def _machine_in(state):
         ("LIMIT_TEST", "switch_teleop", "LIMIT_TEST", "rejected"),
         ("LIMIT_TEST", "limit_test_timeout", "IDLE", "accepted"),
         ("LIMIT_TEST", "switch_stop", "IDLE", "accepted"),
+        ("IDLE", "switch_friction_test", "FRICTION_TEST", "accepted"),
+        ("FRICTION_TEST", "switch_friction_test", "FRICTION_TEST", "ignored"),
+        ("FRICTION_TEST", "switch_sync", "FRICTION_TEST", "rejected"),
+        ("FRICTION_TEST", "switch_teleop", "FRICTION_TEST", "rejected"),
+        ("FRICTION_TEST", "friction_test_timeout", "IDLE", "accepted"),
+        ("FRICTION_TEST", "switch_stop", "IDLE", "accepted"),
     ],
 )
 def test_transition_contract(initial, event, expected, outcome):
@@ -129,6 +136,7 @@ def test_base_control_mode_values():
     assert sm.ControlMode.HOLD_SETTLING.value == 4
     assert sm.ControlMode.GRAVITY_TEST.value == 6
     assert sm.ControlMode.LIMIT_TEST.value == 7
+    assert sm.ControlMode.FRICTION_TEST.value == 8
 
 
 @pytest.mark.parametrize(
@@ -148,6 +156,8 @@ def test_base_control_mode_values():
         ("GRAVITY_TEST", "gravity_test_timeout", ("stop_motion", "clear_sync")),
         ("IDLE", "switch_limit_test", ("clear_sync", "start_limit_test")),
         ("LIMIT_TEST", "limit_test_timeout", ("stop_motion", "clear_sync")),
+        ("IDLE", "switch_friction_test", ("clear_sync", "start_friction_test")),
+        ("FRICTION_TEST", "friction_test_timeout", ("stop_motion", "clear_sync")),
     ],
 )
 def test_ordered_control_actions(initial, event, actions):

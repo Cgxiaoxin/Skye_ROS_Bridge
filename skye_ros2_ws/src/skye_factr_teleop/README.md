@@ -136,6 +136,18 @@ timeout. See the [limit checklist](dev_docs/checklist/phase7_2_limit_test_checkl
 for the calibrated configuration, recorder, boundary checks, and Torque Disable
 readback. The software entry is ready; real-hardware limit validation is pending.
 
+The separate `friction_test_m6_left.launch.py` and
+`friction_test_m6_right.launch.py` entries accept arm IDs 1–7 and
+`/mode/{side}/switch_friction_test`. They output only the selected static-friction
+term. The default starts with zero output; an interactive terminal tool switches
+between `off` and `on` on Enter within one time-limited run. Separate
+`ros2 topic echo` terminals show mode, phase, joint state, and commanded current. One
+additional terminal updates the selected joint's absolute commanded current
+in place. The recorder saves raw command and measured-current samples. See the
+[friction checklist](dev_docs/checklist/phase7_2_friction_test_checklist.md)
+for the paired run, recording, and Torque Disable readback. Hardware validation
+is pending.
+
 Incoming JointState messages require seven finite positions; velocity/effort
 must be empty or contain seven finite values. Names must be exactly
 `l_j1..l_j7` or `r_j1..r_j7` in order, unless empty names are explicitly allowed.

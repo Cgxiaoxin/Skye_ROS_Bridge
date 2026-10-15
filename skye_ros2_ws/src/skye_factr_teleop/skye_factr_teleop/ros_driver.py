@@ -23,7 +23,7 @@ from std_msgs.msg import Float64MultiArray, String
 
 from .config import load_config
 from .state_machine import ControlMode
-from .control_core import ControlCore, GravityTestSettings, LimitTestSettings
+from .control_core import ControlCore, GravityTestSettings, LimitTestSettings, FrictionTestSettings
 from .dynamics import PinocchioDynamics
 from .trajectory import RuckigTrajectory
 from .dynamixel_driver import DynamixelDriver
@@ -132,6 +132,7 @@ class SkyeFactrTeleopNode(Node):
         # True from follower synchronization through teleop; joint_move does not set it.
         self._follower_session_active = False
         self._published_state = None
+        self._published_friction_phase = None
         try:
             self._configure()
             self._create_ros_interfaces()
@@ -149,11 +150,16 @@ class SkyeFactrTeleopNode(Node):
         config_path = self._parameter("config_path", "")
         self._gravity_test_only = self._parameter("gravity_test_only", False)
         self._limit_test_only = self._parameter("limit_test_only", False)
+        self._friction_test_only = self._parameter("friction_test_only", False)
         if type(self._gravity_test_only) is not bool:
             raise ValueError("gravity_test_only must be a bool")
-        if type(self._limit_test_only) is not bool or (self._gravity_test_only and self._limit_test_only):
+        if (type(self._limit_test_only) is not bool
+                or type(self._friction_test_only) is not bool
+                or sum((self._gravity_test_only, self._limit_test_only,
+                        self._friction_test_only)) > 1):
             raise ValueError("exactly one test mode may be selected")
-        self._test_only = self._gravity_test_only or self._limit_test_only
+        self._test_only = (self._gravity_test_only or self._limit_test_only
+                           or self._friction_test_only)
         self.config = load_config(
             resolve_config_path(config_path, self.side),
             require_runtime=not self._test_only,
@@ -201,6 +207,31 @@ class SkyeFactrTeleopNode(Node):
             kp = barrier.gripper.kp if self._limit_test.joint_id == 8 else barrier.joint.kp
             if kp <= 0:
                 raise ValueError("limit test requires positive position gain")
+        self._friction_test = None
+        if self._friction_test_only:
+            if (self.config.dynamixel.joint_offsets is None
+                    or self.config.dynamixel.current_limit_ma is None):
+                raise ValueError("friction test requires joint_offsets and current_limit_ma")
+            self._friction_test = FrictionTestSettings(
+                joint_id=self._parameter("friction_test_joint_id", 0),
+                gain_scale=self._parameter("friction_test_gain_scale", 0.0),
+                current_limit_ma=self._parameter("friction_test_current_limit_ma", 0.0),
+                ramp_seconds=self._parameter("friction_test_ramp_seconds", 0.0),
+                max_duration_seconds=self._parameter("friction_test_max_duration_seconds", 0.0),
+                enabled=self._parameter("friction_test_enabled", True),
+            )
+            if self._friction_test.current_limit_ma > min(self.config.dynamixel.current_limit_ma):
+                raise ValueError("friction test current cap exceeds configured limit")
+            if self.side not in Path(
+                    self.config.controller.joint_gravity_comp.dynamics.leader_urdf).stem:
+                raise ValueError("friction test side does not match leader URDF")
+            index = self._friction_test.joint_id - 1
+            if (self.config.controller.joint_gravity_comp.gain[index] <= 0
+                    or self.config.controller.static_friction_comp.gain[index] <= 0
+                    or self.config.controller.static_friction_comp.enable_speed[index] <= 0):
+                raise ValueError("friction test requires positive selected joint gains and speed threshold")
+            if not self.config.controller.static_friction_comp.enable:
+                raise ValueError("friction test requires enabled static friction in configuration")
         self._offsets = np.asarray(self.config.dynamixel.joint_offsets)
         self._current_limit = self.config.dynamixel.current_limit_ma
         if not self._test_only:
@@ -225,7 +256,8 @@ class SkyeFactrTeleopNode(Node):
         self._command_pub = self.create_publisher(JointState, "/joint_control", command_qos())
         self._test_current_pub = self._test_present_current_pub = None
         if self._test_only:
-            name = "gravity_test" if self._gravity_test_only else "limit_test"
+            name = ("gravity_test" if self._gravity_test_only else
+                    "limit_test" if self._limit_test_only else "friction_test")
             self._test_current_pub = self.create_publisher(
                 Float64MultiArray, f"/leader_arm/{self.side}/{name}_current_ma",
                 state_qos(),
@@ -236,6 +268,11 @@ class SkyeFactrTeleopNode(Node):
                 state_qos(),
             )
         self._test_gripper_pub = None
+        self._friction_phase_pub = None
+        if self._friction_test_only:
+            self._friction_phase_pub = self.create_publisher(
+                String, f"/leader_arm/{self.side}/friction_test_phase", latched_state_qos(),
+            )
         if self._limit_test_only:
             self._test_gripper_pub = self.create_publisher(
                 Float64MultiArray, f"/leader_arm/{self.side}/limit_test_gripper_state",
@@ -251,6 +288,15 @@ class SkyeFactrTeleopNode(Node):
             self.create_subscription(
                 String, f"/mode/{self.side}/switch_limit_test",
                 self._on_limit_test, event_qos(),
+            )
+        elif self._friction_test_only:
+            self.create_subscription(
+                String, f"/mode/{self.side}/switch_friction_test",
+                self._on_friction_test, event_qos(),
+            )
+            self.create_subscription(
+                String, f"/mode/{self.side}/friction_test_output",
+                self._on_friction_output, event_qos(),
             )
         else:
             self.create_subscription(JointState, "/joint_state", self._on_follower, state_qos())
@@ -273,8 +319,10 @@ class SkyeFactrTeleopNode(Node):
             self._current_limit, trajectory_factory=make_trajectory,
             gravity_test=self._gravity_test, now=self._monotonic(),
             limit_test=self._limit_test,
+            friction_test=self._friction_test,
         )
         self._publish_state()
+        self._publish_friction_phase()
         self._steady_clock = Clock(clock_type=ClockType.STEADY_TIME)
         self._timer = self.create_timer(
             1 / self.config.controller.frequency, self._tick, clock=self._steady_clock,
@@ -295,6 +343,7 @@ class SkyeFactrTeleopNode(Node):
             if result.mode == ControlMode.IDLE:
                 self._follower_session_active = False
             self._publish_cycle(result)
+            self._publish_friction_phase()
         except Exception as exc:
             self._fault(exc)
 
@@ -362,6 +411,31 @@ class SkyeFactrTeleopNode(Node):
         except Exception as exc:
             self._fault(exc)
 
+    def _on_friction_test(self, message):
+        if self._closed or message.data != "switch_friction_test":
+            return
+        if self.core.mode != ControlMode.IDLE:
+            return
+        try:
+            self._hardware.set_torque_enabled(True)
+            self.core.handle("switch_friction_test", now=self._monotonic())
+            self._publish_state()
+            self._publish_friction_phase()
+        except Exception as exc:
+            self._fault(exc)
+
+    def _on_friction_output(self, message):
+        if self._closed or message.data not in ("on", "off"):
+            return
+        if self.core.mode != ControlMode.FRICTION_TEST:
+            return
+        try:
+            self.core.set_friction_test_enabled(message.data == "on", now=self._monotonic())
+            self._publish_state()
+            self._publish_friction_phase()
+        except Exception as exc:
+            self._fault(exc)
+
     def _on_joint_move(self, message):
         if self._closed:
             return
@@ -406,6 +480,7 @@ class SkyeFactrTeleopNode(Node):
             self._follower_session_active = False
             self.core.stop()
             self._publish_state()
+            self._publish_friction_phase()
         except Exception as exc:
             self._fault(exc)
 
@@ -423,6 +498,15 @@ class SkyeFactrTeleopNode(Node):
         if state != self._published_state and self.context.ok():
             self._state_pub.publish(String(data=state))
             self._published_state = state
+
+    def _publish_friction_phase(self):
+        if self._friction_phase_pub is None or not self.context.ok():
+            return
+        phase = ("idle" if self.core.mode != ControlMode.FRICTION_TEST else
+                 "on" if self.core.friction_test_enabled else "off")
+        if phase != self._published_friction_phase:
+            self._friction_phase_pub.publish(String(data=phase))
+            self._published_friction_phase = phase
 
     def _publish_cycle(self, result):
         self._current_pub.publish(self._joint_message(

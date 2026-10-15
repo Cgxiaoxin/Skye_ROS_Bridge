@@ -101,13 +101,14 @@ def make_node(context, monkeypatch, tmp_path):
     nodes = []
 
     def make(side="left", *, parameters=None, config_path_override=None,
-             hardware=None, record_publishers=True, gravity_test=None, limit_test=None, **kwargs):
+             hardware=None, record_publishers=True, gravity_test=None, limit_test=None,
+             friction_test=None, **kwargs):
         source = Path(__file__).parents[1] / "config" / f"grav_comp_m6_{side}.yaml"
         document = yaml.safe_load(source.read_text(encoding="utf-8"))
         document["dynamixel"].update({
             "joint_offsets": [0.0] * 8, "current_limit_ma": [50.0] * 8,
         })
-        if gravity_test is None and limit_test is None:
+        if gravity_test is None and limit_test is None and friction_test is None:
             document["controller"]["sync_hold_control"]["ruckig"].update({
                 "max_velocity": [0.5] * 8, "max_acceleration": [1.0] * 8,
                 "max_jerk": [4.0] * 8,
@@ -135,6 +136,10 @@ def make_node(context, monkeypatch, tmp_path):
             overrides.append(Parameter("limit_test_only", value=True))
             overrides.extend(Parameter(f"limit_test_{key}", value=value)
                              for key, value in limit_test.items())
+        if friction_test is not None:
+            overrides.append(Parameter("friction_test_only", value=True))
+            overrides.extend(Parameter(f"friction_test_{key}", value=value)
+                             for key, value in friction_test.items())
         node = module.SkyeFactrTeleopNode(
             side, context=context, use_global_arguments=False,
             parameter_overrides=overrides,
@@ -148,7 +153,7 @@ def make_node(context, monkeypatch, tmp_path):
         if record_publishers:
             for name in ("_state_pub", "_current_pub", "_target_pub", "_command_pub"):
                 setattr(node, name, Recorder())
-            if gravity_test is not None or limit_test is not None:
+            if gravity_test is not None or limit_test is not None or friction_test is not None:
                 node._test_current_pub = Recorder()
                 node._test_present_current_pub = Recorder()
             if limit_test is not None:
@@ -283,6 +288,75 @@ def test_limit_test_destroy_disables_torque(make_node):
         "ramp_seconds": 2.0, "max_duration_seconds": 5.0,
     })
     rig.node._on_limit_test(String(data="switch_limit_test"))
+    rig.node.destroy_node()
+    assert not rig.hardware.torque_enabled
+    np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_friction_test_node_isolated_and_stops(make_node, side):
+    settings = {"joint_id": 1, "gain_scale": 0.5, "current_limit_ma": 20.0,
+                "ramp_seconds": 2.0, "max_duration_seconds": 5.0, "enabled": True}
+    rig = make_node(side, friction_test=settings)
+    node = rig.node
+    assert {sub.topic_name for sub in node.subscriptions} == {
+        f"/mode/{side}/switch_friction_test",
+        f"/mode/{side}/friction_test_output", "/mode/switch_stop",
+    }
+    assert rig.trajectories == []
+    assert not rig.hardware.torque_enabled
+    assert f"/leader_arm/{side}/friction_test_current_ma" in {
+        pub.topic_name for pub in rig.publishers
+    }
+    node._on_friction_test(String(data="switch_friction_test"))
+    assert node.core.mode == ControlMode.FRICTION_TEST
+    assert node._published_friction_phase == "on"
+    rig.clock.now += 1
+    node._tick()
+    assert not node._command_pub.messages
+    assert not node._target_pub.messages
+    assert abs(rig.hardware.last_currents_ma[0]) <= 10
+    np.testing.assert_array_equal(rig.hardware.last_currents_ma[1:], np.zeros(7))
+    node._on_stop(String(data="switch_stop"))
+    assert node.core.mode == ControlMode.IDLE
+    assert not rig.hardware.torque_enabled
+    np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))
+    node._on_friction_test(String(data="switch_friction_test"))
+    rig.clock.now += 5
+    node._tick()
+    assert node.core.last_transition.reason == "friction_test_timeout"
+    assert not rig.hardware.torque_enabled
+
+
+def test_friction_test_node_toggles_with_one_launch(make_node):
+    rig = make_node(friction_test={
+        "joint_id": 1, "gain_scale": 0.5, "current_limit_ma": 20.0,
+        "ramp_seconds": 2.0, "max_duration_seconds": 5.0, "enabled": False,
+    })
+    node = rig.node
+    node._on_friction_test(String(data="switch_friction_test"))
+    assert node._published_friction_phase == "off"
+    rig.clock.now += 1
+    node._tick()
+    np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))
+    node._on_friction_output(String(data="on"))
+    assert node._published_friction_phase == "on"
+    rig.clock.now += 1
+    node._tick()
+    assert rig.hardware.last_currents_ma[0] != 0
+    node._on_friction_output(String(data="off"))
+    assert node._published_friction_phase == "off"
+    np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))
+    node._on_stop(String(data="switch_stop"))
+    assert node._published_friction_phase == "idle"
+
+
+def test_friction_test_destroy_disables_torque(make_node):
+    rig = make_node(friction_test={
+        "joint_id": 1, "gain_scale": 0.1, "current_limit_ma": 20.0,
+        "ramp_seconds": 2.0, "max_duration_seconds": 5.0, "enabled": False,
+    })
+    rig.node._on_friction_test(String(data="switch_friction_test"))
     rig.node.destroy_node()
     assert not rig.hardware.torque_enabled
     np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))

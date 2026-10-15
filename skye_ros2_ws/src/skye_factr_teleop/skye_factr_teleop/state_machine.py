@@ -22,6 +22,7 @@ class ControlMode(IntEnum):
     TELEPOSE = 5  # Reserved; no transition into this mode in the base machine.
     GRAVITY_TEST = 6
     LIMIT_TEST = 7
+    FRICTION_TEST = 8
 
 
 class Event(str, Enum):
@@ -32,6 +33,8 @@ class Event(str, Enum):
     GRAVITY_TEST_TIMEOUT = "gravity_test_timeout"
     SWITCH_LIMIT_TEST = "switch_limit_test"
     LIMIT_TEST_TIMEOUT = "limit_test_timeout"
+    SWITCH_FRICTION_TEST = "switch_friction_test"
+    FRICTION_TEST_TIMEOUT = "friction_test_timeout"
     SYNC_COMPLETE = "sync_complete"
     SYNC_TIMEOUT = "sync_timeout"
     TRAJECTORY_COMPLETE = "trajectory_complete"
@@ -55,6 +58,7 @@ class Action(str, Enum):
     START_TELEOP = "start_teleop"
     START_GRAVITY_TEST = "start_gravity_test"
     START_LIMIT_TEST = "start_limit_test"
+    START_FRICTION_TEST = "start_friction_test"
 
 
 @dataclass(frozen=True)
@@ -145,6 +149,22 @@ class StateMachine:
         if event == Event.LIMIT_TEST_TIMEOUT and self.state == ControlMode.LIMIT_TEST:
             return self._result(
                 "accepted", state=ControlMode.IDLE, reason="limit_test_timeout",
+                actions=(Action.STOP_MOTION, Action.CLEAR_SYNC), now=now,
+            )
+
+        if event == Event.SWITCH_FRICTION_TEST:
+            if self.state == ControlMode.IDLE:
+                return self._result(
+                    "accepted", state=ControlMode.FRICTION_TEST,
+                    actions=(Action.CLEAR_SYNC, Action.START_FRICTION_TEST), now=now,
+                )
+            if self.state == ControlMode.FRICTION_TEST:
+                return self._result("ignored", reason="already_testing", now=now)
+            return self._result("rejected", reason="stop_required", now=now)
+
+        if event == Event.FRICTION_TEST_TIMEOUT and self.state == ControlMode.FRICTION_TEST:
+            return self._result(
+                "accepted", state=ControlMode.IDLE, reason="friction_test_timeout",
                 actions=(Action.STOP_MOTION, Action.CLEAR_SYNC), now=now,
             )
 

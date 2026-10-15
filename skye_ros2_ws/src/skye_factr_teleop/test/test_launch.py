@@ -57,11 +57,12 @@ def expand_launch(monkeypatch, tmp_path):
         return []
 
     monkeypatch.setattr(ExecuteProcess, "execute", capture_process)
-    def expand(kind, *, gravity_test=False, limit_test=False, **arguments):
+    def expand(kind, *, gravity_test=False, limit_test=False, friction_test=False, **arguments):
         context = LaunchContext()
         context.launch_configurations.update(arguments)
         launch_name = (f"gravity_test_m6_{kind}.launch.py" if gravity_test else
                        f"limit_test_m6_{kind}.launch.py" if limit_test else
+                       f"friction_test_m6_{kind}.launch.py" if friction_test else
                        f"start_teleop_m6_{kind}.launch.py")
         path = PACKAGE_ROOT / "launch" / launch_name
         description = runpy.run_path(str(path))["generate_launch_description"]()
@@ -242,5 +243,34 @@ def test_limit_launch_rejects_invalid_id_before_process(expand_launch):
             config_path=str(PACKAGE_ROOT / "config/grav_comp_m6_left.yaml"),
             joint_id="9", gain_scale="0.5", current_limit_ma="20",
             ramp_seconds="2", max_duration_seconds="5",
+        )
+    assert not expand_launch.captured
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+@pytest.mark.parametrize("enabled", ["true", "false"])
+@pytest.mark.parametrize("duration", ["5", "300"])
+def test_friction_launch_accepts_test_and_control_run(expand_launch, side, enabled, duration):
+    config = PACKAGE_ROOT / "config" / f"grav_comp_m6_{side}.yaml"
+    node, command, _, parameters = expand_launch(
+        side, friction_test=True, config_path=str(config), joint_id="6",
+        gain_scale="0.5", current_limit_ma="20", ramp_seconds="2",
+        max_duration_seconds=duration, enabled=enabled,
+    )[0]
+    assert command[command.index("--side") + 1] == side
+    values = parameters[0][node.node_name]["ros__parameters"]
+    assert values["friction_test_only"] is True
+    assert values["friction_test_joint_id"] == 6
+    assert values["friction_test_enabled"] is (enabled == "true")
+    assert values["friction_test_max_duration_seconds"] == float(duration)
+
+
+def test_friction_launch_rejects_gripper_id(expand_launch):
+    with pytest.raises(RuntimeError, match="joint_id must be 1..7"):
+        expand_launch(
+            "left", friction_test=True,
+            config_path=str(PACKAGE_ROOT / "config/grav_comp_m6_left.yaml"),
+            joint_id="8", gain_scale="0.5", current_limit_ma="20",
+            ramp_seconds="2", max_duration_seconds="5", enabled="true",
         )
     assert not expand_launch.captured

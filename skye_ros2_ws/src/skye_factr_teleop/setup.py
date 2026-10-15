@@ -57,6 +57,12 @@ setup(
             "skye_factr_teleop.gravity_test_recorder:main",
             "skye_factr_limit_test_recorder = "
             "skye_factr_teleop.limit_test_recorder:main",
+            "skye_factr_friction_test_recorder = "
+            "skye_factr_teleop.friction_test_recorder:main",
+            "skye_factr_friction_test_monitor = "
+            "skye_factr_teleop.friction_test_monitor:main",
+            "skye_factr_friction_test_switch = "
+            "skye_factr_teleop.friction_test_switch:main",
         ],
     },
 )

@@ -70,6 +70,30 @@ class LimitTestSettings:
         if self.ramp_seconds < 1 or not self.ramp_seconds < self.max_duration_seconds <= 30:
             raise ValueError("limit test requires ramp >= 1 second and ramp < duration <= 30 seconds")
 
+
+@dataclass(frozen=True)
+class FrictionTestSettings:
+    joint_id: int
+    gain_scale: float
+    current_limit_ma: float
+    ramp_seconds: float
+    max_duration_seconds: float
+    enabled: bool = True
+
+    def __post_init__(self) -> None:
+        if type(self.joint_id) is not int or not 1 <= self.joint_id <= ARM_JOINT_COUNT:
+            raise ValueError("friction test joint_id must be 1..7")
+        if type(self.enabled) is not bool:
+            raise ValueError("friction test enabled must be a bool")
+        for name in ("gain_scale", "current_limit_ma", "ramp_seconds", "max_duration_seconds"):
+            value = getattr(self, name)
+            if not np.isfinite(value) or value <= 0:
+                raise ValueError(f"friction test {name} must be finite and positive")
+        if self.gain_scale > 1 or self.current_limit_ma > 50:
+            raise ValueError("friction test gain scale must be <= 1 and current cap <= 50 mA")
+        if self.ramp_seconds < 1 or not self.ramp_seconds < self.max_duration_seconds <= 300:
+            raise ValueError("friction test requires ramp >= 1 second and ramp < duration <= 300 seconds")
+
 @dataclass(frozen=True)
 class LeaderState:
     arm_position: np.ndarray
@@ -280,6 +304,7 @@ class ControlCore:
         *, trajectory_factory: Callable[[], TrajectoryIO] | None = None,
         gravity_test: GravityTestSettings | None = None,
         limit_test: LimitTestSettings | None = None,
+        friction_test: FrictionTestSettings | None = None,
         now: float = 0.0,
     ) -> None:
         self.config, self.hardware, self.dynamics = config, hardware, dynamics
@@ -310,6 +335,9 @@ class ControlCore:
         self._trajectory_factory = trajectory_factory
         self.gravity_test = gravity_test
         self.limit_test = limit_test
+        self.friction_test = friction_test
+        self._friction_test_enabled = friction_test.enabled if friction_test else False
+        self._friction_phase_entered_at = self._now
         self._trajectory: TrajectoryIO | None = None
         self._target: np.ndarray | None = None
         self._hold_integral = np.zeros(MOTOR_COUNT)
@@ -328,6 +356,33 @@ class ControlCore:
     @property
     def hold_integral(self) -> np.ndarray:
         return self._hold_integral.copy()
+
+    @property
+    def friction_test_enabled(self) -> bool:
+        return self._friction_test_enabled
+
+    def set_friction_test_enabled(self, enabled: bool, *, now: float) -> bool:
+        """Switch the isolated test term without extending the energization deadline."""
+        try:
+            self._time(now)
+            if type(enabled) is not bool or self.mode != ControlMode.FRICTION_TEST:
+                raise ValueError("friction output switch requires FRICTION_TEST and a bool")
+            if not self.hardware.torque_enabled:
+                raise RuntimeError("friction output switch requires enabled torque")
+            if self._now - self._machine.entered_at >= self.friction_test.max_duration_seconds:
+                self._trajectory_event(Event.FRICTION_TEST_TIMEOUT)
+                self._zero_and_disable()
+                return False
+            if enabled == self._friction_test_enabled:
+                return False
+            self.hardware.write_currents(np.zeros(MOTOR_COUNT))
+            self._friction_test_enabled = enabled
+            self._friction_phase_entered_at = self._now
+            self._dither_positive.fill(True)
+            return True
+        except Exception:
+            self.stop()
+            raise
 
     def step(self, *, now: float | None = None) -> CycleResult:
         """Run one cycle; any fault attempts zero current and torque disable."""
@@ -350,6 +405,10 @@ class ControlCore:
                 ramp = min(1.0, (self._now - self._machine.entered_at)
                            / self.limit_test.ramp_seconds)
                 limit = np.minimum(limit, self.limit_test.current_limit_ma * ramp)
+            elif self.mode == ControlMode.FRICTION_TEST:
+                ramp = min(1.0, (self._now - self._friction_phase_entered_at)
+                           / self.friction_test.ramp_seconds)
+                limit = np.minimum(limit, self.friction_test.current_limit_ma * ramp)
             currents = np.clip(currents, -limit, limit)
             wrote = bool(self.hardware.torque_enabled)
             if wrote:
@@ -393,7 +452,8 @@ class ControlCore:
             self._time(now)
             if event in (Event.SYNC_COMPLETE, Event.SYNC_TIMEOUT,
                          Event.TRAJECTORY_COMPLETE, Event.SETTLE_TIMEOUT,
-                         Event.GRAVITY_TEST_TIMEOUT, Event.LIMIT_TEST_TIMEOUT):
+                         Event.GRAVITY_TEST_TIMEOUT, Event.LIMIT_TEST_TIMEOUT,
+                         Event.FRICTION_TEST_TIMEOUT):
                 raise ValueError("trajectory events are internal to step()")
             result = self._machine.handle(event, now=self._now)
             self._apply_actions(result, follower_position, gripper_setpoint)
@@ -440,6 +500,11 @@ class ControlCore:
                 and self._now - self._machine.entered_at
                 >= self.limit_test.max_duration_seconds):
             self._trajectory_event(Event.LIMIT_TEST_TIMEOUT)
+            self._zero_and_disable()
+        if (self.mode == ControlMode.FRICTION_TEST
+                and self._now - self._machine.entered_at
+                >= self.friction_test.max_duration_seconds):
+            self._trajectory_event(Event.FRICTION_TEST_TIMEOUT)
             self._zero_and_disable()
         if (self.mode == ControlMode.TELEOP_SYNCING
                 and self._now - self._machine.entered_at
@@ -490,6 +555,27 @@ class ControlCore:
                     gripper_kd=gripper.kd,
                 )
                 limit[index] = only[index] * settings.gain_scale * ramp
+                return _TorqueCalculation(
+                    limit, gravity, friction, nullspace, tracking,
+                    target, target_velocity, next_flags,
+                )
+            if self.mode == ControlMode.FRICTION_TEST:
+                settings = self.friction_test
+                if self._friction_test_enabled:
+                    index = settings.joint_id - 1
+                    reference = gravity_compensation(
+                        state.arm_position, state.arm_velocity, self.dynamics,
+                        ctrl.joint_gravity_comp.gain,
+                        mode=ctrl.joint_gravity_comp.mode,
+                    )
+                    only, next_flags = static_friction_compensation(
+                        state.arm_velocity, reference,
+                        ctrl.static_friction_comp.enable_speed,
+                        ctrl.static_friction_comp.gain, self._dither_positive,
+                    )
+                    ramp = min(1.0, (self._now - self._friction_phase_entered_at)
+                               / settings.ramp_seconds)
+                    friction[index] = only[index] * settings.gain_scale * ramp
                 return _TorqueCalculation(
                     limit, gravity, friction, nullspace, tracking,
                     target, target_velocity, next_flags,
@@ -651,6 +737,13 @@ class ControlCore:
             elif action == Action.START_LIMIT_TEST:
                 if self.limit_test is None or not self.hardware.torque_enabled:
                     raise RuntimeError("limit test requires settings and enabled torque")
+                self._last_step_at = self._now
+            elif action == Action.START_FRICTION_TEST:
+                if self.friction_test is None or not self.hardware.torque_enabled:
+                    raise RuntimeError("friction test requires settings and enabled torque")
+                self._friction_test_enabled = self.friction_test.enabled
+                self._friction_phase_entered_at = self._now
+                self._dither_positive.fill(True)
                 self._last_step_at = self._now
 
     def _clear_sync(self) -> None:

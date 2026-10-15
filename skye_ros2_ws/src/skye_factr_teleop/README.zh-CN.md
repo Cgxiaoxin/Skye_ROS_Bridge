@@ -156,6 +156,14 @@ ID 1--8 的限位项，并限制电流、渐增与通电时间。启动参数、
 和失能回读步骤见[限位屏障清单](dev_docs/checklist/phase7_2_limit_test_checklist.md)。
 软件入口已准备，左右真机限位验收尚未完成。
 
+静摩擦补偿使用 `friction_test_m6_left.launch.py` 或
+`friction_test_m6_right.launch.py`，通过 `/mode/{side}/switch_friction_test`
+只测试所选臂关节 ID 1--7。默认从 `enabled=false` 的零输出阶段开始，
+可通过交互切换工具在同一次启动内按回车切换 `on`/`off`；
+现场可在独立终端分别用 `ros2 topic echo` 查看模式、阶段、关节状态和命令电流；另有一个终端在同一行实时刷新所选关节命令电流绝对值。记录器保存命令与实际回读电流的逐帧数据。参数、配对记录和 Torque Disable 回读步骤见
+[静摩擦清单](dev_docs/checklist/phase7_2_friction_test_checklist.md)。
+软件入口已准备，左右真机结果待完成。
+
 不启动硬件节点也可查看 launch 参数：
 
 ```bash
