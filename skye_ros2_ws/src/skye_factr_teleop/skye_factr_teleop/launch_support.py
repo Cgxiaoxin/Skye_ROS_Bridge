@@ -10,6 +10,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 from .config import ConfigError, load_config
 from .control_core import GravityTestSettings, LimitTestSettings, FrictionTestSettings
@@ -52,7 +53,11 @@ def _launch_setup(context, *, sides):
             name=f"skye_factr_teleop_{side}",
             namespace="",
             arguments=["--side", side],
-            parameters=[{"config_path": config}],
+            parameters=[{
+                "config_path": config,
+                "sync_diagnostics": ParameterValue(
+                    LaunchConfiguration("sync_diagnostics"), value_type=bool),
+            }],
             remappings=[
                 ("/joint_state", f"/gento/{side}_joint_states"),
                 ("/joint_control", f"/gento/{side}_joint_control"),
@@ -72,11 +77,15 @@ def leader_launch_description(sides):
         "robot_profile", default_value="thor", choices=["thor", "orin"],
         description="Select the packaged leader hardware/control configuration",
     )]
+    actions.append(DeclareLaunchArgument(
+        "sync_diagnostics", default_value="false", choices=["true", "false"],
+        description="Publish eight-axis cycle diagnostics and read present current",
+    ))
     for side in sides:
         actions.append(DeclareLaunchArgument(
             f"{side}_config", default_value="",
             description=(f"{side} unified control YAML with measured dynamixel calibration; "
-                         "empty selects the robot_profile template (which lacks calibration); "
+                         "empty selects the robot_profile configuration; "
                          "absolute or relative to the package share"),
         ))
     actions.append(OpaqueFunction(function=_launch_setup, kwargs={"sides": sides}))

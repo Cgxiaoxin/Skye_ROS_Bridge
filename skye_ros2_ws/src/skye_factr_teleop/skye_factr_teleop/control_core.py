@@ -115,6 +115,7 @@ class CycleResult:
     friction_torque: np.ndarray
     nullspace_torque: np.ndarray
     logical_torque: np.ndarray
+    unclipped_current_ma: np.ndarray
     physical_current_ma: np.ndarray
     wrote_current: bool
     tracking_torque: np.ndarray
@@ -409,6 +410,7 @@ class ControlCore:
                 ramp = min(1.0, (self._now - self._friction_phase_entered_at)
                            / self.friction_test.ramp_seconds)
                 limit = np.minimum(limit, self.friction_test.current_limit_ma * ramp)
+            unclipped_currents = currents.copy()
             currents = np.clip(currents, -limit, limit)
             wrote = bool(self.hardware.torque_enabled)
             if wrote:
@@ -421,6 +423,7 @@ class ControlCore:
                 friction_torque=torques.friction,
                 nullspace_torque=torques.nullspace,
                 logical_torque=logical,
+                unclipped_current_ma=unclipped_currents,
                 physical_current_ma=currents,
                 wrote_current=wrote,
                 tracking_torque=torques.tracking,

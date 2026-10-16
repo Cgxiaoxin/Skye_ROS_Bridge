@@ -3,8 +3,7 @@
 # Thor: leader device A.
 name: grav_comp_m6_right # 主遥操未使用；仅辅助检查程序核对名称
 
-# 遥操标定模板：设备 A 的 joint_offsets 已确认为全 0；current_limit_ma 为低电流验证值；Ruckig 上限须填入本侧试验值。
-# null 是占位符，不能用于启动。
+# 设备 A 首轮同步试验配置：joint_offsets 已确认为全 0，电流与轨迹上限须结合真机响应复核。
 
 dynamixel:
   dynamixel_port: usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0 # 遥操设备A（Thor）
@@ -69,10 +68,10 @@ controller:
       gravity_comp_gain: [0.15, 0.15, 0.50, 0.60, 0.3, 0.3, 0.3]
       kp: [0.35, 0.35, 0.50, 0.50, 0.35, 0.35, 0.35, 0.35]
       kd: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
-      # 遥操启动必填：按主臂逻辑 8 轴顺序填写实测轨迹上限。
-      # max_velocity: [null, null, null, null, null, null, null, null]  # rad/s
-      # max_acceleration: [null, null, null, null, null, null, null, null]  # rad/s²
-      # max_jerk: [null, null, null, null, null, null, null, null]  # rad/s³
+      # 首轮小幅走位试验初值，尚未完成同步真机验收；顺序 J1..J7、夹爪。
+      max_velocity: [0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10]  # rad/s
+      max_acceleration: [0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20]  # rad/s²
+      max_jerk: [1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]  # rad/s³
       trajectory_timeout: 10.0
     hold:
       gravity_comp_gain: [0.15, 0.15, 0.50, 0.60, 0.3, 0.3, 0.3]

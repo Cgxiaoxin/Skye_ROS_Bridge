@@ -7,12 +7,12 @@ teleoperation.
 
 The package includes validated YAML configuration, the production Dynamixel
 adapter, a ROS-free single-cycle control core, the single-arm ROS driver, and
-left/right/dual-arm launch files. The low-current hardware smoke check remains
-pending in development-plan stage 7.
+left/right/dual-arm launch files. Hardware acceptance progress is tracked in
+[development-plan stage 7](dev_docs/skye_factr_teleop_development_plan.md).
 
 ## Configuration
 
-The uncalibrated Thor M6 control templates are installed as
+The Thor/device-A initial synchronization trial configurations are installed as
 `config/grav_comp_m6_left.yaml` and `config/grav_comp_m6_right.yaml`. Load and
 validate either file with `skye_factr_teleop.config.load_config`. Returned nested
 dataclasses and numeric tuples are immutable.
@@ -54,13 +54,14 @@ acceptance is complete.
 Select the arm with executable argument `--side left|right` (default `left`).
 Default node names are `skye_factr_teleop_left` and `skye_factr_teleop_right`;
 standard ROS node-name remapping is supported. Supply one YAML file with
-the calibrated offsets and motion limits for that arm. The only ROS parameter
-is the read-only `config_path`; the selected YAML holds the complete per-arm
-configuration:
+the calibrated offsets and motion limits for that arm. The read-only
+`config_path` selects the per-arm YAML; optional `sync_diagnostics` enables
+cycle telemetry:
 
 | Parameter | Meaning/default |
 |---|---|
 | `config_path` | Absolute YAML path, or path relative to the package share; empty selects `config/grav_comp_m6_<side>.yaml` |
+| `sync_diagnostics` | Read-only ROS bool, default false; publish cycle diagnostics and read present current |
 | `dynamixel.joint_offsets` | Required: eight calibrated physical-servo offsets in rad, including gripper |
 | `dynamixel.current_limit_ma` | Required: eight positive current ceilings in physical servo ID 1..8 order, in mA; each must stay within its model limit |
 | `controller.sync_hold_control.ruckig.max_velocity`, `max_acceleration`, `max_jerk` | Required for teleop: eight positive limits each, in logical leader order, rad/s, rad/s², rad/s³ |
@@ -68,13 +69,11 @@ configuration:
 | `runtime.future_tolerance` | Allowed future header timestamp skew, seconds; default `0.05` |
 | `runtime.allow_unnamed_joint_states` | Default `false`; if true, empty names mean fixed J1..J7 order |
 
-Copy the matching Thor or Orin YAML to a per-device file. The eight `joint_offsets`
-are preset to `0.0`; verify Present Position with Dynamixel Wizard at the leader
-URDF zero pose for joints 1–7 and at the defined gripper zero for servo 8. The
-eight `current_limit_ma` values are preset to `50.0 mA` for low-current validation
-only; measure and adjust each servo's limit before regular teleoperation. Fill the
-three limit arrays under the existing `controller.sync_hold_control.ruckig` mapping.
-The packaged YAML files still omit these trajectory limits and cannot start teleoperation:
+Device A has confirmed zero offsets and a `0.4 rad` gripper target. Its packaged
+Thor YAML now supplies eight-axis trial limits of `0.1 rad/s`, `0.2 rad/s²`,
+and `1.0 rad/s³`, retaining the `50 mA` current caps. These are initial trial
+settings awaiting synchronization hardware acceptance. Orin/device B still
+requires its trajectory limits to be supplied. The general configuration shape is:
 
 ```yaml
 dynamixel:
@@ -201,7 +200,8 @@ directory. No environment or Python module search paths are changed.
 | Argument | Meaning |
 |---|---|
 | `robot_profile` | `thor`: `config/grav_comp_m6_<side>.yaml`; `orin`: `config/orin/grav_comp_m6_<side>.yaml` |
-| `left_config`, `right_config` | Per-arm unified YAML path; empty selects the profile template, which lacks calibration and fails teleop startup |
+| `left_config`, `right_config` | Per-arm unified YAML path; empty selects the profile configuration (Thor: device-A trial values; Orin: trajectory limits still required) |
+| `sync_diagnostics` | Default false; enable eight-axis cycle telemetry and present-current reads for trials |
 
 Each config path accepts an absolute path or a path relative to the package
 share. A single-arm launch declares only that arm's config. In a dual-arm
@@ -445,8 +445,8 @@ The real `RuckigTrajectory` adapter lazily imports the baseline Python package
 including `pass_to_input` after each update. Fake trajectory tests need no
 Ruckig installation.
 
-The existing YAML does not define trajectory velocity, acceleration, or jerk
-limits. Supply explicit, positive eight-axis limits in rad/s, rad/s² and rad/s³
+Device-A YAML supplies initial trial limits. Direct core users must supply
+explicit, positive eight-axis limits in rad/s, rad/s² and rad/s³
 through a factory; no hardware motion limits are inferred from PD gains:
 
 ```python
@@ -550,3 +550,26 @@ acceptance remain stages 5 and 7 respectively.
 
 Apache-2.0. See [LICENSE](LICENSE) and
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Single-arm joint_move trials without a follower
+
+See the [device-A trial checklist](dev_docs/checklist/phase7_3_sync_trial_checklist.md)
+for the left-first workflow, command examples, logging and independent torque-disable
+readback. Launch with `sync_diagnostics:=true` to publish one JSON `std_msgs/String`
+per cycle on `/leader_arm/{side}/sync_diagnostics` (BEST_EFFORT/VOLATILE). It includes
+all eight measured/reference positions and velocities, individual torque terms,
+physical currents before/after clipping, present currents, cycle timing and sequence
+numbers. Cached torque state does not replace hardware register readback.
+
+`ros2 run skye_factr_teleop skye_factr_sync_trial move --help` describes relative
+single-joint and absolute seven-joint targets. Default operation previews only;
+`--execute` publishes once after fresh-IDLE, configured-bound and trajectory-duration
+checks. `--start` supplies an eight-axis offline start pose and cannot execute motion.
+The gripper always uses the configured setpoint. Motion uses the existing controller.
+
+The `record` subcommand writes raw `.trace.jsonl` and a `.json` summary with the
+configuration, per-phase errors/current peaks/clipping counts, cycle timing,
+transition current differences, missing samples and follower-command count.
+`RECORDED` is software observation, not hardware PASS. Recorder timeout or exit
+never stops the controller; use `/mode/switch_stop`. Restart the driver after editing
+configuration, and give all tools that same file.

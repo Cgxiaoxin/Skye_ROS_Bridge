@@ -4,6 +4,7 @@
 """Task 5.1: actual rclpy nodes with injected devices; no robot access."""
 
 from dataclasses import replace
+import json
 from pathlib import Path
 from types import SimpleNamespace
 import os
@@ -102,7 +103,7 @@ def make_node(context, monkeypatch, tmp_path):
 
     def make(side="left", *, parameters=None, config_path_override=None,
              hardware=None, record_publishers=True, gravity_test=None, limit_test=None,
-             friction_test=None, **kwargs):
+             friction_test=None, diagnostics=False, use_default_factory=False, **kwargs):
         source = Path(__file__).parents[1] / "config" / f"grav_comp_m6_{side}.yaml"
         document = yaml.safe_load(source.read_text(encoding="utf-8"))
         document["dynamixel"].update({
@@ -128,6 +129,7 @@ def make_node(context, monkeypatch, tmp_path):
             return trajectory
 
         overrides = [Parameter("config_path", value=str(config_path_override or config_path))]
+        overrides.append(Parameter("sync_diagnostics", value=diagnostics))
         if gravity_test is not None:
             overrides.append(Parameter("gravity_test_only", value=True))
             overrides.extend(Parameter(f"gravity_test_{key}", value=value)
@@ -143,7 +145,7 @@ def make_node(context, monkeypatch, tmp_path):
         node = module.SkyeFactrTeleopNode(
             side, context=context, use_global_arguments=False,
             parameter_overrides=overrides,
-            hardware_factory=lambda config: hardware,
+            hardware_factory=None if use_default_factory else lambda config: hardware,
             dynamics_factory=lambda config: FakeDynamics(),
             trajectory_factory=factory, monotonic=lambda: clock.now, **kwargs,
         )
@@ -153,6 +155,8 @@ def make_node(context, monkeypatch, tmp_path):
         if record_publishers:
             for name in ("_state_pub", "_current_pub", "_target_pub", "_command_pub"):
                 setattr(node, name, Recorder())
+            if diagnostics:
+                node._diagnostic_pub = Recorder()
             if gravity_test is not None or limit_test is not None or friction_test is not None:
                 node._test_current_pub = Recorder()
                 node._test_present_current_pub = Recorder()
@@ -549,6 +553,7 @@ def test_missing_ruckig_limits_fail_before_hardware_open(make_node, tmp_path):
     template = Path(__file__).parents[1] / "config/grav_comp_m6_left.yaml"
     document = yaml.safe_load(template.read_text())
     document["dynamixel"].update({"joint_offsets": [0.0] * 8, "current_limit_ma": [50.0] * 8})
+    document["controller"]["sync_hold_control"]["ruckig"].pop("max_velocity")
     config = tmp_path / "without_limits.yaml"
     config.write_text(yaml.safe_dump(document))
     with pytest.raises(ValueError, match="ruckig.max_velocity is required"):
@@ -793,3 +798,132 @@ def test_dual_ros_graph_types_remaps_and_isolation(make_node, context):
         executor.remove_node(probe)
         executor.shutdown()
         probe.destroy_node()
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_sync_diagnostics_cover_motion_hold_clipping_and_stop(make_node, side):
+    from skye_factr_teleop.sync_trial import TrialSummary, move_message
+    rig = make_node(side, diagnostics=True)
+    node = rig.node
+    node._tick()
+    idle = json.loads(node._diagnostic_pub.messages[-1].data)
+    assert idle["mode"] == "IDLE" and not idle["torque_enabled_cached"]
+    assert idle["cycle_dt_s"] is None
+    stamp = packet(side).header.stamp
+    node._on_joint_move(move_message(side, [0.1] * 7 + [0.4], stamp))
+    rig.clock.now += 0.002
+    node._tick()
+    moving = json.loads(node._diagnostic_pub.messages[-1].data)
+    assert moving["mode"] == "TELEOP_SYNCING"
+    assert moving["cycle_dt_s"] == pytest.approx(0.002)
+    assert len(moving["position_rad"]) == len(moving["current_before_clip_ma"]) == 8
+    np.testing.assert_allclose(moving["current_after_clip_ma"],
+                               np.clip(moving["current_before_clip_ma"], -50, 50))
+    np.testing.assert_allclose(moving["current_after_clip_ma"], rig.hardware.last_currents_ma)
+    np.testing.assert_allclose(moving["logical_torque_nm"], sum(
+        np.asarray(moving[name + "_torque_nm"])
+        for name in ("gravity", "tracking", "friction", "joint_limit", "nullspace")))
+    rig.trajectories[0].finished = True
+    rig.clock.now += 0.002
+    node._tick()
+    settle(rig, follower=False)
+    assert node.core.mode == ControlMode.SYNCED
+    node._on_teleop(String(data="switch_teleop"))
+    assert node.core.mode == ControlMode.SYNCED
+    node._on_stop(None)
+    rig.clock.now += 0.002
+    node._tick()
+    summary = TrialSummary()
+    for msg in node._diagnostic_pub.messages:
+        summary.observe(json.loads(msg.data))
+    assert summary.result()["states"] == ["IDLE", "TELEOP_SYNCING", "HOLD_SETTLING", "SYNCED", "IDLE"]
+    assert summary.result()["idle_zero_output_and_cached_disable_observed"]
+    assert not rig.hardware.torque_enabled
+    np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))
+    assert node.core.hold_integral.tolist() == [0.0] * 8
+    assert node.core._target is None
+    assert not node._command_pub.messages
+
+
+def test_diagnostics_are_optional_and_enable_present_current_reads(make_node, monkeypatch):
+    rig = make_node()
+    assert rig.node._diagnostic_pub is None
+    calls = []
+    hardware = Hardware()
+    monkeypatch.setattr(module, "_hardware_factory", lambda config, **kw: calls.append(kw) or hardware)
+    make_node(diagnostics=True, use_default_factory=True, hardware=hardware)
+    assert calls == [{"read_present_current": True}]
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_trial_cli_over_ros_with_fake_hardware(make_node, side, tmp_path, monkeypatch):
+    """Exercise discovery, stamped publication, recording and stop through DDS."""
+    from rclpy.executors import SingleThreadedExecutor
+    rig = make_node(side, diagnostics=True, record_publishers=False,
+                    cli_args=["--ros-args", "-r", f"/joint_move:=/{side}_joint_move",
+                              "-r", f"/joint_control:=/gento/{side}_joint_control"])
+    node = rig.node
+    monkeypatch.setattr(node, "_ros_now", lambda: node.get_clock().now().nanoseconds * 1e-9)
+    executor = SingleThreadedExecutor(context=node.context)
+    executor.add_node(node)
+    config_path = node.get_parameter("config_path").value
+    output = tmp_path / f"{side}_trial.json"
+    env = dict(os.environ, ROS_DOMAIN_ID="193", ROS_LOCALHOST_ONLY="1")
+    base = ["/usr/bin/python3", "-m", "skye_factr_teleop.sync_trial"]
+    shared = ["--side", side, "--config", config_path]
+    processes = []
+
+    def spawn(arguments):
+        process = subprocess.Popen(base + arguments, env=env, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, text=True)
+        processes.append(process)
+        return process
+
+    def spin_until(condition, timeout=10):
+        deadline = time.monotonic() + timeout
+        while not condition() and time.monotonic() < deadline:
+            rig.clock.now = time.monotonic()
+            if node.core._target is not None:
+                rig.hardware.inject_state(node.core._target * node.core.joint_signs, np.zeros(8))
+                rig.trajectories[-1].finished = True
+            executor.spin_once(timeout_sec=0.005)
+        assert condition(), "ROS trial test timed out"
+
+    try:
+        recorder = spawn(["record", *shared, "--output", str(output),
+                          "--operator", "automated-fake-hardware", "--duration", "20"])
+        spin_until(lambda: node._diagnostic_pub.get_subscription_count() > 0)
+        preview = spawn(["move", *shared, "--joint-id", "1", "--delta", "0.05"])
+        spin_until(lambda: preview.poll() is not None)
+        preview_text = preview.communicate()[0]
+        assert preview.returncode == 0, preview_text
+        assert "Preview only" in preview_text
+        assert not rig.hardware.torque_enabled
+        command = spawn(["move", *shared, "--joint-id", "1", "--delta", "0.05", "--execute"])
+        spin_until(lambda: command.poll() is not None)
+        command_text = command.communicate()[0]
+        assert command.returncode == 0, command_text
+        assert "Observed mode:" in command_text
+        spin_until(lambda: node.core.mode == ControlMode.SYNCED)
+        stop = node.create_publisher(String, "/mode/switch_stop", module.event_qos())
+        spin_until(lambda: stop.get_subscription_count() > 0)
+        stop.publish(String(data="switch_stop"))
+        spin_until(lambda: recorder.poll() is not None)
+        recorder_text = recorder.communicate()[0]
+        assert recorder.returncode == 0, recorder_text
+        record = json.loads(output.read_text())
+        assert record["assessment"] == "RECORDED"
+        assert record["synced_observed"]
+        assert record["follower_command_count"] == 0
+        assert record["side"] == side
+        assert record["config"]["controller"]["sync_hold_control"]["gripper_setpoint"] == 0.4
+        assert output.with_suffix(".trace.jsonl").stat().st_size > 0
+        assert not rig.hardware.torque_enabled
+        np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.terminate()
+                process.communicate(timeout=5)
+        executor.remove_node(node)
+        executor.shutdown()

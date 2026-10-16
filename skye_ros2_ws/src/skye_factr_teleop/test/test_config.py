@@ -41,11 +41,14 @@ def _calibrated_document():
     return document
 
 
-def test_teleop_requires_trajectory_limits_but_readonly_tools_can_load_template(tmp_path):
+def test_device_a_trial_config_and_explicit_calibration_load(tmp_path):
     assert load_config(LEFT_CONFIG).dynamixel.joint_offsets == (0.0,) * 8
     assert load_config(LEFT_CONFIG).dynamixel.current_limit_ma == (50.0,) * 8
-    with pytest.raises(ConfigError, match="ruckig.max_velocity is required"):
-        load_config(LEFT_CONFIG, require_runtime=True)
+    for path in (LEFT_CONFIG, RIGHT_CONFIG):
+        trial = load_config(path, require_runtime=True)
+        assert trial.controller.sync_hold_control.ruckig.max_velocity == (0.1,) * 8
+        assert trial.controller.sync_hold_control.ruckig.max_acceleration == (0.2,) * 8
+        assert trial.controller.sync_hold_control.ruckig.max_jerk == (1.0,) * 8
     config = load_config(_write(tmp_path, _calibrated_document()), require_runtime=True)
     assert config.dynamixel.joint_offsets == (0.0,) * 8
     assert config.dynamixel.current_limit_ma == (50.0,) * 8
@@ -138,7 +141,7 @@ def test_left_and_right_configs_load_and_preserve_differences():
     assert right.controller.joint_gravity_comp.mode == "position_only"
     assert left.controller.limit_barrier_control.gripper.kp == 0.301658022
     assert right.controller.limit_barrier_control.gripper.kp == 1.03561658022
-    assert left.controller.sync_hold_control.gripper_setpoint == 0.55
+    assert left.controller.sync_hold_control.gripper_setpoint == 0.4
 
 
 @pytest.mark.parametrize("mode", ["position_velocity", "position_only"])

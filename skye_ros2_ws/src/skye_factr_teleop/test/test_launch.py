@@ -105,7 +105,9 @@ def test_launch_profiles_sides_and_remaps(expand_launch, profile, kind, sides):
         if profile == "orin":
             config_dir /= "orin"
         config = config_dir / f"grav_comp_m6_{side}.yaml"
-        assert parameters[0][node.node_name]["ros__parameters"] == {"config_path": str(config)}
+        assert parameters[0][node.node_name]["ros__parameters"] == {
+            "config_path": str(config), "sync_diagnostics": False,
+        }
         loaded = load_config(config, require_runtime=True)
         assert loaded.dynamixel.current_limit_ma == (50.0,) * 8
         assert loaded.controller.force_feedback_control.joint.dynamics.follower_joint_offset == (0 if side == "left" else 7)
@@ -138,7 +140,7 @@ def test_relative_config_path_uses_package_share(expand_launch):
 @pytest.mark.parametrize("arguments,match", [
     ({"robot_profile": "invalid"}, "is not valid"),
     ({"left_config": "missing.yaml"}, "left_config file does not exist"),
-    ({"left_config": str(PACKAGE_ROOT / "config/grav_comp_m6_left.yaml")}, "ruckig.max_velocity is required"),
+    ({"left_config": str(PACKAGE_ROOT / "config/orin/grav_comp_m6_left.yaml")}, "ruckig.max_velocity is required"),
 ])
 def test_invalid_arguments_never_start_processes(expand_launch, arguments, match):
     with pytest.raises(RuntimeError, match=match):
@@ -165,6 +167,7 @@ def test_dual_rejects_missing_right_current_limit_before_starting_left(expand_la
 def test_dual_rejects_missing_right_ruckig_limit_before_starting_left(expand_launch):
     document = yaml.safe_load((PACKAGE_ROOT / "config/grav_comp_m6_right.yaml").read_text())
     document["dynamixel"].update({"joint_offsets": [0.0] * 8, "current_limit_ma": [50.0] * 8})
+    document["controller"]["sync_hold_control"]["ruckig"].pop("max_velocity")
     bad = expand_launch.share / "right_without_limits.yaml"
     bad.write_text(yaml.safe_dump(document))
     with pytest.raises(RuntimeError, match="right_config invalid: .*ruckig.max_velocity is required"):
@@ -191,8 +194,8 @@ def test_profile_configuration_matches_leader_devices_and_preserves_gains():
     assert not right.controller.limit_barrier_control.enable
     assert (thor_left.controller.limit_barrier_control.joint.limit_min[-1]
             == left.controller.limit_barrier_control.joint.limit_min[-1] == -0.8)
-    assert (thor_right.controller.limit_barrier_control.joint.limit_min[-1]
-            == right.controller.limit_barrier_control.joint.limit_min[-1] == -0.5)
+    assert thor_right.controller.limit_barrier_control.joint.limit_min[-1] == -0.8
+    assert right.controller.limit_barrier_control.joint.limit_min[-1] == -0.5
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
@@ -274,3 +277,8 @@ def test_friction_launch_rejects_gripper_id(expand_launch):
             ramp_seconds="2", max_duration_seconds="5", enabled="true",
         )
     assert not expand_launch.captured
+
+
+def test_sync_diagnostics_launch_parameter_is_typed_bool(expand_launch):
+    node, _, _, parameters = expand_launch("left", sync_diagnostics="true")[0]
+    assert parameters[0][node.node_name]["ros__parameters"]["sync_diagnostics"] is True

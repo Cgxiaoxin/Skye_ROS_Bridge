@@ -5,6 +5,7 @@
 
 import argparse
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import sys
 import time
@@ -133,6 +134,8 @@ class SkyeFactrTeleopNode(Node):
         self._follower_session_active = False
         self._published_state = None
         self._published_friction_phase = None
+        self._diagnostic_sequence = 0
+        self._previous_cycle_time = None
         try:
             self._configure()
             self._create_ros_interfaces()
@@ -148,6 +151,9 @@ class SkyeFactrTeleopNode(Node):
 
     def _configure(self):
         config_path = self._parameter("config_path", "")
+        self._sync_diagnostics = self._parameter("sync_diagnostics", False)
+        if type(self._sync_diagnostics) is not bool:
+            raise ValueError("sync_diagnostics must be a bool")
         self._gravity_test_only = self._parameter("gravity_test_only", False)
         self._limit_test_only = self._parameter("limit_test_only", False)
         self._friction_test_only = self._parameter("friction_test_only", False)
@@ -254,6 +260,11 @@ class SkyeFactrTeleopNode(Node):
         self._current_pub = self.create_publisher(JointState, "/leader_arm/current_state", state_qos())
         self._target_pub = self.create_publisher(JointState, "/leader_arm/target_joint_state", state_qos())
         self._command_pub = self.create_publisher(JointState, "/joint_control", command_qos())
+        self._diagnostic_pub = None
+        if self._sync_diagnostics and not self._test_only:
+            self._diagnostic_pub = self.create_publisher(
+                String, f"/leader_arm/{self.side}/sync_diagnostics", command_qos(),
+            )
         self._test_current_pub = self._test_present_current_pub = None
         if self._test_only:
             name = ("gravity_test" if self._gravity_test_only else
@@ -311,7 +322,8 @@ class SkyeFactrTeleopNode(Node):
             make_trajectory()  # Check Ruckig before opening the hardware.
         self._hardware = (hardware_factory(self.config) if hardware_factory is not None
                           else _hardware_factory(
-                              self.config, read_present_current=self._test_only,
+                              self.config, read_present_current=(
+                                  self._test_only or self._sync_diagnostics),
                           ))
         self._hardware.open(enable_torque=False)
         self.core = ControlCore(
@@ -339,10 +351,12 @@ class SkyeFactrTeleopNode(Node):
                 self.get_logger().warning("Follower state expired; stopping")
                 self._on_stop(None)
                 return
-            result = self.core.step(now=self._monotonic())
+            cycle_time = self._monotonic()
+            result = self.core.step(now=cycle_time)
             if result.mode == ControlMode.IDLE:
                 self._follower_session_active = False
             self._publish_cycle(result)
+            self._publish_diagnostics(result, cycle_time)
             self._publish_friction_phase()
         except Exception as exc:
             self._fault(exc)
@@ -535,6 +549,23 @@ class SkyeFactrTeleopNode(Node):
     def _fault(self, exc):
         self.get_logger().error(f"Control stopped after failure: {exc}")
         self.shutdown_control()
+
+    def _publish_diagnostics(self, result, cycle_time):
+        if self._diagnostic_pub is None:
+            return
+        from .sync_trial import cycle_packet
+
+        packet = cycle_packet(
+            result, side=self.side, sequence=self._diagnostic_sequence,
+            stamp_s=self._ros_now(), monotonic_s=cycle_time,
+            cycle_dt_s=(None if self._previous_cycle_time is None else
+                        cycle_time - self._previous_cycle_time),
+            torque_enabled_cached=self._hardware.torque_enabled,
+            present_current_ma=self._hardware.present_currents_ma,
+        )
+        self._diagnostic_pub.publish(String(data=json.dumps(packet, allow_nan=False)))
+        self._diagnostic_sequence += 1
+        self._previous_cycle_time = cycle_time
 
     def shutdown_control(self):
         """Attempt every cleanup step, even if zeroing/disable/publish fails."""

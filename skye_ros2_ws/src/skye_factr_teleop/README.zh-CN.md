@@ -4,11 +4,11 @@
 
 这是一个基于 ROS 2 Humble `ament_python` 的 Skye/M6 FACTR 风格主臂遥操包。
 
-包内包含经过校验的 YAML 配置、正式使用的 Dynamixel 适配器、不依赖 ROS 的单周期控制核心、单臂 ROS 驱动节点，以及左臂、右臂和双臂 launch 文件。开发计划阶段 7 的低电流硬件冒烟检查仍待完成。
+包内包含经过校验的 YAML 配置、正式使用的 Dynamixel 适配器、不依赖 ROS 的单周期控制核心、单臂 ROS 驱动节点，以及左臂、右臂和双臂 launch 文件。硬件验收进度见[开发计划阶段 7](dev_docs/skye_factr_teleop_development_plan.md)。
 
 ## 配置
 
-Thor M6 未标定的控制模板安装在 `config/grav_comp_m6_left.yaml` 和 `config/grav_comp_m6_right.yaml`。可以用 `skye_factr_teleop.config.load_config` 加载并校验其中任一文件。返回的嵌套 dataclass 和数值元组不可修改。
+Thor／设备 A 的首轮同步试验配置安装在 `config/grav_comp_m6_left.yaml` 和 `config/grav_comp_m6_right.yaml`。可以用 `skye_factr_teleop.config.load_config` 加载并校验其中任一文件。返回的嵌套 dataclass 和数值元组不可修改。
 
 Thor 搭配遥操作设备 A，Orin 搭配遥操作设备 B；Orin 配置安装在 `config/orin/` 下。两套配置分别使用对应设备的舵机端口和物理方向，原有的各自增益与臂关节限位屏障设置保持不变。新包尚未对这两种配对完成真机验收。这些配置描述主臂硬件，而不是从臂关节方向的语义映射。
 
@@ -33,11 +33,12 @@ ros2 run skye_factr_teleop skye_factr_teleop_driver --help
 
 ## 任务 5.1：ROS 驱动节点
 
-使用可执行程序参数 `--side left|right` 选择侧别，默认 `left`。默认节点名分别为 `skye_factr_teleop_left` 和 `skye_factr_teleop_right`，也支持标准 ROS 节点名重映射。每侧提供一份包含控制配置、标定偏移和运动上限的 YAML。唯一的 ROS 参数是启动后只读的 `config_path`：
+使用可执行程序参数 `--side left|right` 选择侧别，默认 `left`。默认节点名分别为 `skye_factr_teleop_left` 和 `skye_factr_teleop_right`，也支持标准 ROS 节点名重映射。每侧提供一份包含控制配置、标定偏移和运动上限的 YAML。通过启动后只读的 `config_path` 选择 YAML，可选的 `sync_diagnostics` 用于开启逐周期诊断：
 
 | 参数 | 含义／默认值 |
 |---|---|
 | `config_path` | YAML 绝对路径或相对于包 share 目录的路径；留空时使用 `config/grav_comp_m6_<side>.yaml` |
+| `sync_diagnostics` | 只读 ROS bool，默认 false；开启逐周期诊断和实际电流读取 |
 | `dynamixel.joint_offsets` | 必填：8 个物理舵机的标定偏移，单位 rad，包含夹爪 |
 | `dynamixel.current_limit_ma` | 必填：按物理舵机 ID 1..8 排列的 8 个正数电流上限，单位 mA，逐项不得超过对应型号上限 |
 | `controller.sync_hold_control.ruckig.max_velocity`、`max_acceleration`、`max_jerk` | 遥操必填：按主臂逻辑关节顺序排列的 8 个正数上限，单位分别为 rad/s、rad/s²、rad/s³ |
@@ -45,7 +46,10 @@ ros2 run skye_factr_teleop skye_factr_teleop_driver --help
 | `runtime.future_tolerance` | 消息头时间戳允许超前的秒数；默认 `0.05` |
 | `runtime.allow_unnamed_joint_states` | 默认 `false`；设为 true 后，无名称消息按固定 J1..J7 顺序解释 |
 
-复制对应的 Thor 或 Orin YAML 作为每台设备的独立文件。`joint_offsets` 已预填 8 个 `0.0`；须使用 Dynamixel Wizard 核实主臂 7 轴在 URDF 零姿态、夹爪在其定义零位时的 Present Position。`current_limit_ma` 已按物理舵机 ID 1..8 预填 8 个 `50.0 mA`，仅供低电流验证，正式遥操须逐轴实测后调整。`controller.sync_hold_control.ruckig` 下的三个轨迹上限仍需填写，包内模板不能直接用于遥操启动：
+设备 A 的八轴 offset 已确认为 0，夹爪目标为 `0.4 rad`。Thor 两侧配置现已填入
+`0.1 rad/s`、`0.2 rad/s²`、`1.0 rad/s³` 的八轴试验上限，电流上限保留 `50 mA`。
+这些是首轮小幅试验初值，同步真机验收仍待完成。Orin／设备 B 的轨迹上限仍需填写。
+配置结构示例如下：
 
 ```yaml
 dynamixel:
@@ -108,7 +112,8 @@ python3 -m pytest -q test/test_ros_driver.py test/test_dynamics.py test/test_dyn
 | 参数 | 含义 |
 |---|---|
 | `robot_profile` | `thor`：`config/grav_comp_m6_<side>.yaml`；`orin`：`config/orin/grav_comp_m6_<side>.yaml` |
-| `left_config`、`right_config` | 每侧合并后 YAML 的路径；留空时使用 profile 模板，但模板缺少标定，不能直接启动遥操 |
+| `left_config`、`right_config` | 每侧合并后 YAML 的路径；留空时使用 profile 配置（Thor 为设备 A 试验初值，Orin 仍需填写轨迹上限） |
+| `sync_diagnostics` | 默认 false；试验时开启八轴逐周期诊断及实际电流读取 |
 
 每侧配置路径支持绝对路径或相对于包 share 目录的路径。单臂 launch 只声明该侧配置；双臂 launch 在启动任一节点前检查两侧文件及必填运行值。launch 不会代填未经标定的偏移、电流或运动上限。
 
@@ -287,7 +292,7 @@ python3 -m pytest -q test/test_state_machine.py
 
 实际的 `RuckigTrajectory` 适配器会按需导入基线 Python 包 `ruckig==0.19.4`。它遵循官方的[在线更新示例](https://docs.ruckig.com/md_pages_2example__01.html)，每次更新后调用 `pass_to_input`。假轨迹测试不需要安装 Ruckig。
 
-现有 YAML 没有定义轨迹的速度、加速度或加加速度上限。须通过工厂函数明确提供 8 轴正数上限，单位分别为 rad/s、rad/s² 和 rad/s³；不能从 PD 增益推断硬件运动上限：
+设备 A 的 YAML 已定义首轮试验上限；直接使用控制核心时，须通过工厂函数明确提供 8 轴正数上限，单位分别为 rad/s、rad/s² 和 rad/s³；不能从 PD 增益推断硬件运动上限：
 
 ```python
 from skye_factr_teleop.control_core import ControlCore
@@ -339,3 +344,20 @@ python3 -m pytest -q test/test_state_trajectory_integration.py test/test_sync_ho
 ## 许可证
 
 Apache-2.0。详见 [LICENSE](LICENSE) 和 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 无大臂时的单臂走位试验
+
+按[设备 A 同步试验清单](dev_docs/checklist/phase7_3_sync_trial_checklist.md)先左臂后右臂。
+启动增加 `sync_diagnostics:=true`，每周期在 `/leader_arm/{side}/sync_diagnostics`
+发布一条 JSON `std_msgs/String`（BEST_EFFORT/VOLATILE），包含八轴实测与参考状态、
+各力矩项、裁剪前后物理命令电流、实际电流、周期时间和序号。缓存 torque 状态不能代替寄存器回读。
+
+`ros2 run skye_factr_teleop skye_factr_sync_trial move --help` 提供相对单关节和绝对七轴目标。
+默认仅预览；加 `--execute` 才在新鲜 IDLE、配置范围与轨迹时长检查通过后发送一次目标。
+`--start` 指定八轴虚拟起点，执行离线预览，不能发送运动命令。夹爪始终使用配置目标。
+
+`record` 子命令保存 `.trace.jsonl` 逐帧记录和 `.json` 汇总，包含配置、分阶段误差、
+电流峰值与裁剪次数、周期统计、切换电流变化、丢帧和 follower 命令计数。
+`RECORDED` 只表示软件观察到运动和停止，不等于硬件 PASS。
+记录器超时或退出不会停止控制节点；停止使用 `/mode/switch_stop`。
+修改配置后须重启节点，节点和工具使用同一配置文件。

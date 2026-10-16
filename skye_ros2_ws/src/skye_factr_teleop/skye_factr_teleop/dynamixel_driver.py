@@ -620,6 +620,13 @@ class DynamixelDriver(DynamixelIO):
                 self._torque_enabled = False
                 return
 
+            # A signal can interrupt an SDK packet operation after it sets
+            # is_using, leaving the flag set when the call unwinds. All driver
+            # I/O holds this lock, so no packet operation remains in flight.
+            # Clear the stale flag before the safety writes below.
+            if getattr(self._port_handler, "is_using", False):
+                self._port_handler.is_using = False
+
             first_error: Exception | None = None
             if self._is_open:
                 try:

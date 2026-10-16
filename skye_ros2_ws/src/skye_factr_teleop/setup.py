@@ -48,6 +48,7 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
+            "skye_factr_sync_trial = skye_factr_teleop.sync_trial:main",
             "skye_factr_teleop_driver = skye_factr_teleop.ros_driver:main",
             "skye_factr_dynamixel_readonly_check = "
             "skye_factr_teleop.readonly_check:main",

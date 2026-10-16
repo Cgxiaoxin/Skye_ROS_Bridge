@@ -147,6 +147,7 @@ class FakePortHandler:
     def __init__(self, sdk, port):
         self.sdk = sdk
         self.port = port
+        self.is_using = False
         sdk.events.append(("PortHandler", port))
 
     def openPort(self):
@@ -172,6 +173,8 @@ class FakePacketHandler:
 
     def write1ByteTxRx(self, port, dxl_id, address, value):
         self.sdk.events.append(("write1", dxl_id, address, value))
+        if port.is_using:
+            return -1000, 0
         return self.sdk.write_results.get(
             (dxl_id, address, value), (COMM_SUCCESS, 0)
         )
@@ -222,6 +225,7 @@ class FakeGroupSyncRead:
 class FakeGroupSyncWrite:
     def __init__(self, sdk, port_handler, packet_handler, address, length):
         self.sdk = sdk
+        self.port_handler = port_handler
         sdk.events.append(("GroupSyncWrite", address, length))
 
     def addParam(self, dxl_id, data):
@@ -230,6 +234,8 @@ class FakeGroupSyncWrite:
 
     def txPacket(self):
         self.sdk.events.append(("write.txPacket",))
+        if self.port_handler.is_using:
+            return -1000
         return self.sdk.write_tx_result
 
     def clearParam(self):
@@ -699,6 +705,24 @@ def test_close_zeroes_current_disables_torque_then_closes_port(
         ("write1", 2, 64, 0),
         ("closePort",),
     ]
+    assert driver.torque_enabled is False
+
+
+def test_close_recovers_sdk_busy_flag_left_by_interrupted_packet(
+    driver_factory, fake_sdk
+):
+    driver = driver_factory()
+    driver.open()
+    driver._port_handler.is_using = True
+    fake_sdk.events.clear()
+
+    driver.close()
+
+    assert driver._port_handler.is_using is False
+    assert ("write.txPacket",) in fake_sdk.events
+    assert ("write1", 1, 64, 0) in fake_sdk.events
+    assert ("write1", 2, 64, 0) in fake_sdk.events
+    assert fake_sdk.events[-1] == ("closePort",)
     assert driver.torque_enabled is False
 
 

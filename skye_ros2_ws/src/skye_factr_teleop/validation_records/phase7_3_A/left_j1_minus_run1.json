@@ -1,0 +1,714 @@
+{
+  "side": "left",
+  "operator": "lyy",
+  "started_utc": "2026-10-16T12:52:55.617801+00:00",
+  "config_path": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml",
+  "config": {
+    "name": "grav_comp_m6_left",
+    "dynamixel": {
+      "dynamixel_port": "usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0",
+      "servo_types": [
+        "XM430-W350",
+        "XM430-W350",
+        "XC330-T288",
+        "XC330-T288",
+        "XC330-T288",
+        "XC330-T288",
+        "XC330-T288",
+        "XC330-T288"
+      ],
+      "baudrate": 4000000,
+      "current_limit_ma": [
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0
+      ],
+      "joint_offsets": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "joint_signs": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        -1.0,
+        -1.0,
+        1.0
+      ]
+    },
+    "controller": {
+      "frequency": 500.0,
+      "force_feedback_control": {
+        "joint": {
+          "enable": false,
+          "follower_gravity_comp_enable": true,
+          "dynamics": {
+            "follower_urdf_package": "skye_factr_description",
+            "follower_urdf": "urdf/skye_m6.urdf",
+            "follower_joint_offset": 0,
+            "follower_gravity_in_world": [
+              0.0,
+              0.0,
+              -9.81
+            ]
+          },
+          "gain": [
+            0.2,
+            0.2,
+            0.5,
+            0.5,
+            0.5,
+            0.5,
+            0.5
+          ],
+          "damping": [
+            0.04,
+            0.04,
+            0.02,
+            0.02,
+            0.02,
+            0.02,
+            0.02
+          ],
+          "motor_scalar": [
+            43.9,
+            43.9,
+            66.0,
+            66.0,
+            18.0,
+            18.0,
+            18.0
+          ]
+        },
+        "gripper": {
+          "enable": false,
+          "gain": 20.0,
+          "ema_beta": 0.85,
+          "effort_threshold": -0.25,
+          "damping": 0.04,
+          "ema_fast_alpha": 0.6
+        }
+      },
+      "joint_gravity_comp": {
+        "enable": true,
+        "gain": [
+          0.4,
+          0.2,
+          0.7,
+          0.6,
+          1.0,
+          0.8,
+          1.0
+        ],
+        "dynamics": {
+          "leader_urdf_package": "skye_factr_description",
+          "leader_urdf": "urdf/m6left_isomorphism.urdf"
+        },
+        "mode": "position_only"
+      },
+      "null_space_regulation": {
+        "enable": false,
+        "null_space_joint_target": [
+          0.0,
+          -0.8,
+          0.0,
+          -1.3,
+          0.0,
+          -0.5,
+          0.0
+        ],
+        "kp": [
+          0.1,
+          0.1,
+          0.1,
+          0.1,
+          0.1,
+          0.1,
+          0.1
+        ],
+        "kd": [
+          0.01,
+          0.01,
+          0.01,
+          0.01,
+          0.01,
+          0.01,
+          0.01
+        ]
+      },
+      "static_friction_comp": {
+        "enable": true,
+        "enable_speed": [
+          0.05,
+          0.05,
+          0.05,
+          0.05,
+          0.05,
+          0.05,
+          0.05
+        ],
+        "gain": [
+          0.15,
+          0.15,
+          0.15,
+          0.1,
+          0.1,
+          0.1,
+          0.2
+        ]
+      },
+      "limit_barrier_control": {
+        "enable": true,
+        "joint": {
+          "limit_max": [
+            3.0,
+            2.0,
+            3.0,
+            1.0,
+            3.0,
+            0.9,
+            0.8
+          ],
+          "limit_min": [
+            -3.0,
+            -2.0,
+            -3.0,
+            -2.4,
+            -3.0,
+            -0.9,
+            -0.8
+          ],
+          "safety_margin": 0.1,
+          "kp": 0.603561658022,
+          "kd": 0.04315069084
+        },
+        "gripper": {
+          "limit_max": 0.52517,
+          "limit_min": -0.0175,
+          "kp": 0.301658022,
+          "kd": 0.0315069084
+        }
+      },
+      "sync_hold_control": {
+        "gripper_setpoint": 0.4,
+        "ruckig": {
+          "kp": [
+            0.35,
+            0.35,
+            0.38,
+            0.38,
+            0.35,
+            0.35,
+            0.35,
+            0.35
+          ],
+          "kd": [
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05
+          ],
+          "gravity_comp_gain": [
+            0.15,
+            0.15,
+            0.35,
+            0.35,
+            0.3,
+            0.3,
+            0.3
+          ],
+          "max_velocity": [
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1
+          ],
+          "max_acceleration": [
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2,
+            0.2
+          ],
+          "max_jerk": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "trajectory_timeout": 10.0
+        },
+        "hold": {
+          "kp": [
+            0.35,
+            0.35,
+            0.35,
+            0.35,
+            0.35,
+            0.35,
+            0.35,
+            0.35
+          ],
+          "kd": [
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05
+          ],
+          "ki": [
+            0.15,
+            0.15,
+            0.15,
+            0.15,
+            0.15,
+            0.15,
+            0.15,
+            0.15
+          ],
+          "i_max": [
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1
+          ],
+          "i_thresh": [
+            0.15,
+            0.15,
+            0.15,
+            0.15,
+            0.15,
+            0.15,
+            0.15,
+            0.15
+          ],
+          "gravity_comp_gain": [
+            0.15,
+            0.15,
+            0.35,
+            0.35,
+            0.3,
+            0.3,
+            0.3
+          ],
+          "sync_position_tolerance": [
+            0.03,
+            0.03,
+            0.03,
+            0.03,
+            0.03,
+            0.03,
+            0.03,
+            0.05
+          ],
+          "sync_velocity_tolerance": [
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.05,
+            0.1
+          ],
+          "settle_duration": 0.25,
+          "settle_timeout": 3.0
+        }
+      }
+    },
+    "runtime": {
+      "state_timeout": 0.25,
+      "future_tolerance": 0.05,
+      "allow_unnamed_joint_states": false
+    }
+  },
+  "trace_path": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_3_A/left_j1_minus_run1.trace.jsonl",
+  "assessment": "PASS",
+  "states": [
+    "IDLE",
+    "TELEOP_SYNCING",
+    "HOLD_SETTLING",
+    "SYNCED",
+    "IDLE"
+  ],
+  "phases": {
+    "IDLE": {
+      "samples": 22468,
+      "first_monotonic_s": 39085.686051159,
+      "max_abs_error_rad": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_abs_velocity_rad_s": [
+        0.0,
+        0.0,
+        0.0,
+        0.023980823922402087,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_abs_current_before_clip_ma": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_abs_current_after_clip_ma": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_abs_present_current_ma": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "clipped_samples_per_axis": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cycle_dt_count": 22468,
+      "cycle_dt_sum_s": 44.97088765700755,
+      "cycle_dt_max_s": 0.011529043003974948,
+      "last_monotonic_s": 39158.042380628
+    },
+    "TELEOP_SYNCING": {
+      "samples": 602,
+      "first_monotonic_s": 39130.662346967,
+      "max_abs_error_rad": [
+        0.03821082969331768,
+        0.004601942363656963,
+        0.0,
+        0.003067961575771286,
+        0.0,
+        0.0046019423636569235,
+        0.0030679615757712997,
+        0.03031063007391971
+      ],
+      "max_abs_velocity_rad_s": [
+        0.047961647844804174,
+        0.023980823922402087,
+        0.0,
+        0.047961647844804174,
+        0.0,
+        0.14388494353441253,
+        0.09592329568960835,
+        0.0
+      ],
+      "max_abs_current_before_clip_ma": [
+        6.091991458006117,
+        8.608363719256939,
+        0.566175882323631,
+        23.563097113544917,
+        0.5113685262490449,
+        9.203251132732914,
+        5.110170675875376,
+        9.825306091229114
+      ],
+      "max_abs_current_after_clip_ma": [
+        6.091991458006117,
+        8.608363719256939,
+        0.566175882323631,
+        23.563097113544917,
+        0.5113685262490449,
+        9.203251132732914,
+        5.110170675875376,
+        9.825306091229114
+      ],
+      "max_abs_present_current_ma": [
+        21.52,
+        16.14,
+        2.0,
+        22.0,
+        2.0,
+        9.0,
+        5.0,
+        10.0
+      ],
+      "clipped_samples_per_axis": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cycle_dt_count": 602,
+      "cycle_dt_sum_s": 1.2260863929986954,
+      "cycle_dt_max_s": 0.019003991001227405,
+      "last_monotonic_s": 39131.869429369
+    },
+    "HOLD_SETTLING": {
+      "samples": 272,
+      "first_monotonic_s": 39131.871400731,
+      "max_abs_error_rad": [
+        0.036194172909029154,
+        0.004601942363656963,
+        0.0,
+        0.0015339807878856394,
+        0.0,
+        0.0,
+        0.0030679615757712997,
+        0.030310630119560478
+      ],
+      "max_abs_velocity_rad_s": [
+        0.023980823922402087,
+        0.0,
+        0.0,
+        0.047961647844804174,
+        0.0,
+        0.0,
+        0.11990411961201043,
+        0.0
+      ],
+      "max_abs_current_before_clip_ma": [
+        3.497217459365933,
+        8.227354354266959,
+        0.5782959572792622,
+        22.425457652699652,
+        0.5019586510915763,
+        1.6609010388798158,
+        5.907238491081749,
+        11.519465105664487
+      ],
+      "max_abs_current_after_clip_ma": [
+        3.497217459365933,
+        8.227354354266959,
+        0.5782959572792622,
+        22.425457652699652,
+        0.5019586510915763,
+        1.6609010388798158,
+        5.907238491081749,
+        11.519465105664487
+      ],
+      "max_abs_present_current_ma": [
+        10.76,
+        13.45,
+        2.0,
+        21.0,
+        1.0,
+        3.0,
+        6.0,
+        13.0
+      ],
+      "clipped_samples_per_axis": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cycle_dt_count": 272,
+      "cycle_dt_sum_s": 0.5468609070012462,
+      "cycle_dt_max_s": 0.0030314579998957925,
+      "last_monotonic_s": 39132.416290276
+    },
+    "SYNCED": {
+      "samples": 12683,
+      "first_monotonic_s": 39132.418264964,
+      "max_abs_error_rad": [
+        0.02852426896960103,
+        0.004601942363656963,
+        0.001533980787885643,
+        0.0015339807878856394,
+        0.0,
+        0.0,
+        0.0030679615757712997,
+        0.030310630119560478
+      ],
+      "max_abs_velocity_rad_s": [
+        0.047961647844804174,
+        0.0,
+        0.047961647844804174,
+        0.023980823922402087,
+        0.0,
+        0.0,
+        0.14388494353441253,
+        0.047961647844804174
+      ],
+      "max_abs_current_before_clip_ma": [
+        4.230135623928507,
+        8.087245330767882,
+        2.678406469640308,
+        22.547766331926326,
+        0.5013282893156225,
+        1.6539625909656244,
+        7.087981657279241,
+        23.59838181159003
+      ],
+      "max_abs_current_after_clip_ma": [
+        4.230135623928507,
+        8.087245330767882,
+        2.678406469640308,
+        22.547766331926326,
+        0.5013282893156225,
+        1.6539625909656244,
+        7.087981657279241,
+        23.59838181159003
+      ],
+      "max_abs_present_current_ma": [
+        13.45,
+        16.14,
+        5.0,
+        21.0,
+        1.0,
+        4.0,
+        9.0,
+        23.0
+      ],
+      "clipped_samples_per_axis": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cycle_dt_count": 12683,
+      "cycle_dt_sum_s": 25.61456130899751,
+      "cycle_dt_max_s": 0.0034738340036710724,
+      "last_monotonic_s": 39158.030851585
+    }
+  },
+  "transitions": [
+    {
+      "from": "IDLE",
+      "to": "TELEOP_SYNCING",
+      "sequence_gap": 1,
+      "current_change_ma": [
+        6.091991458006117,
+        8.608363719256939,
+        -0.39423108184747674,
+        21.829158307339124,
+        -0.40152414304093736,
+        -1.6284486167966756,
+        -0.005797259699958399,
+        8.843896713593401e-05
+      ]
+    },
+    {
+      "from": "TELEOP_SYNCING",
+      "to": "HOLD_SETTLING",
+      "sequence_gap": 1,
+      "current_change_ma": [
+        1.3375981858235828,
+        2.3033713621660574,
+        0.14585235211100567,
+        2.966905454840962,
+        0.09052776835040288,
+        0.2996172357881468,
+        -0.05344930165917762,
+        -9.266291076670541e-06
+      ]
+    },
+    {
+      "from": "HOLD_SETTLING",
+      "to": "SYNCED",
+      "sequence_gap": 1,
+      "current_change_ma": [
+        1.221130141177773,
+        2.3035347796656254,
+        0.14710514072627068,
+        4.020043372875367,
+        0.09028072521357139,
+        0.2985944160780585,
+        0.07760236141904339,
+        0.007903261998542632
+      ]
+    },
+    {
+      "from": "SYNCED",
+      "to": "IDLE",
+      "sequence_gap": 1,
+      "current_change_ma": [
+        -0.26733763759214,
+        -1.1743445654579308,
+        -1.0725420210166743,
+        -20.990348022245016,
+        0.40306318758129855,
+        1.32244470611781,
+        -5.437502245989184,
+        -22.542887800920923
+      ]
+    }
+  ],
+  "missing_samples": 0,
+  "sequence_restarts": 0,
+  "synced_observed": true,
+  "idle_zero_output_and_cached_disable_observed": true,
+  "follower_command_count": 0,
+  "hardware_torque_disable_verified": true,
+  "initial_assessment": "RECORDED",
+  "torque_disable_readback_path": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_3_A/left_j1_minus_run1_torque_disable.json",
+  "assessment_note": "操作者确认 J1 反向运动平顺，其他关节无明显异常。J1 最终目标误差约 0.00091 rad，SYNCED 保持约 25.6 s，最后 5 s 八轴位置和速度均在配置容差内；全程无命令电流裁剪，停止后八轴 Torque Enable 独立回读均为关闭。J7 在 SYNCED 开始后约 0.9–6.8 s 有 109 帧速度超过 0.05 rad/s，对应位置范围约 0.0046 rad；随后约 18 s 未再越限，保留为观察项。"
+}

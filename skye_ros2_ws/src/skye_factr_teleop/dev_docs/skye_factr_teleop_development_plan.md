@@ -1172,6 +1172,13 @@ Torque Disable 回读不能从该现场结论独立复核。
 
 ### 7.3 单臂同步
 
+上机前软件准备（2026-10-16）：设备 A 两侧已填入八轴 Ruckig 首轮试验上限
+`0.1 rad/s`、`0.2 rad/s²`、`1.0 rad/s³`，offset 均为 0，夹爪目标为 `0.4 rad`。
+新增可选的八轴逐周期诊断、`skye_factr_sync_trial move/record` 和
+[无大臂试验清单](checklist/phase7_3_sync_trial_checklist.md)。按左臂、右臂顺序使用
+`joint_move` 验证轨迹与保持；这部分真机结果和正式 follower 同步验收均待完成。
+
+
 - 大臂保持不动；
 - 通过 ROS CLI 发布 `/mode/switch_sync` 进入 TELEOP_SYNCING；
 - 小臂低速对齐大臂；
