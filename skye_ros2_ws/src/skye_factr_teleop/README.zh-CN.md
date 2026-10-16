@@ -154,7 +154,7 @@ ros2 topic pub --once /mode/switch_stop std_msgs/msg/String '{data: switch_stop}
 `limit_test_m6_right.launch.py`；`/mode/{side}/switch_limit_test` 仅输出所选
 ID 1--8 的限位项，并限制电流、渐增与通电时间。启动参数、记录器、上下边界
 和失能回读步骤见[限位屏障清单](dev_docs/checklist/phase7_2_limit_test_checklist.md)。
-软件入口已准备，左右真机限位验收尚未完成。
+左右真机限位验收均已按操作者结论记为 `PASS`；左侧记录中的检查缺口见清单第 4 节。
 
 静摩擦补偿使用 `friction_test_m6_left.launch.py` 或
 `friction_test_m6_right.launch.py`，通过 `/mode/{side}/switch_friction_test`

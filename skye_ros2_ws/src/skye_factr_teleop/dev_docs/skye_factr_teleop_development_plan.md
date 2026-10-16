@@ -1124,10 +1124,11 @@ ID、USB by-id、波特率、latency timer、只读采样结果、限值、正�
 
 ### 7.2 单臂基础控制项低电流验收
 
-状态：`PARTIAL`。设备 A 左、右臂 J1--J7 的重力补偿已按
+状态：`PASS`（2026-10-15）。设备 A 左、右臂 J1--J7 的重力补偿已按
 [重力补偿真机清单](checklist/phase7_2_gravity_test_checklist.md)通过；限位屏障的独立入口、
-[真机清单](checklist/phase7_2_limit_test_checklist.md)及无硬件测试已准备，
-左侧 J1--J7 与夹爪的整项真机验收仍待核对，右侧按现场人工结论验收 `PASS`
+[真机清单](checklist/phase7_2_limit_test_checklist.md)及无硬件测试已准备；
+左侧 J1--J7 与夹爪按操作者对现有记录的验收决定记为 `PASS`（越界样本和 ID8
+安全区间内零命令检查缺口保留在真机清单第 4 节），右侧按现场人工结论验收 `PASS`
 （未保存逐轮数据，见限位屏障真机清单第 5 节）。静摩擦补偿的独立入口及
 [真机清单](checklist/phase7_2_friction_test_checklist.md)已准备；左右两侧 ID 1--7 均按清单文末的操作者现场结论验收 `PASS`，减阻效果留待重力补偿稳定后复核。
 

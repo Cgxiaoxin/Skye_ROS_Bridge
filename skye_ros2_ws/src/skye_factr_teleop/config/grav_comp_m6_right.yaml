@@ -3,7 +3,7 @@
 # Thor: leader device A.
 name: grav_comp_m6_right # 主遥操未使用；仅辅助检查程序核对名称
 
-# 遥操标定模板：核实 joint_offsets；current_limit_ma 为低电流验证值；Ruckig 上限须填入本侧实测值。
+# 遥操标定模板：设备 A 的 joint_offsets 已确认为全 0；current_limit_ma 为低电流验证值；Ruckig 上限须填入本侧试验值。
 # null 是占位符，不能用于启动。
 
 dynamixel:
@@ -21,7 +21,7 @@ dynamixel:
   # 首轮低电流验证值，按物理舵机 ID 1..8；正式遥操上限须逐轴实测后调整。
   # Current Limit(38) 最大值：ID 1..2 XM430-W350 为 3209.17 mA；ID 3..8 XC330-T288 为 910 mA。
   current_limit_ma: [50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0] # mA
-  # 使用 Dynamixel Wizard 核实：ID 1..7 在主臂 URDF 零姿态、ID 8 在夹爪定义零位时，Present Position 均约为 0。
+  # 设备 A 的 ID 1..8 joint_offsets 已确认为 0。
   joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # rad，按物理舵机 ID 1..8
   # Physical leader-servo directions only; not a follower semantic mapping.
   joint_signs: [1, -1, 1, -1, 1, 1, 1, 1] # 遥操设备A（Thor）（checked 26/10/9）
@@ -64,7 +64,7 @@ controller:
       kd: 0.04315069084
 
   sync_hold_control:
-    gripper_setpoint: 0.55
+    gripper_setpoint: 0.4
     ruckig:
       gravity_comp_gain: [0.15, 0.15, 0.50, 0.60, 0.3, 0.3, 0.3]
       kp: [0.35, 0.35, 0.50, 0.50, 0.35, 0.35, 0.35, 0.35]

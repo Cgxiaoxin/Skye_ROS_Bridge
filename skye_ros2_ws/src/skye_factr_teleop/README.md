@@ -134,7 +134,8 @@ entries accept IDs 1–8 and `/mode/{side}/switch_limit_test`. They output only
 the selected limit barrier term with a 50 mA maximum trial cap, a ramp, and a
 timeout. See the [limit checklist](dev_docs/checklist/phase7_2_limit_test_checklist.md)
 for the calibrated configuration, recorder, boundary checks, and Torque Disable
-readback. The software entry is ready; real-hardware limit validation is pending.
+readback. Both sides have operator-accepted real-hardware limit validation;
+the left-side record limitations are documented in the checklist.
 
 The separate `friction_test_m6_left.launch.py` and
 `friction_test_m6_right.launch.py` entries accept arm IDs 1–7 and

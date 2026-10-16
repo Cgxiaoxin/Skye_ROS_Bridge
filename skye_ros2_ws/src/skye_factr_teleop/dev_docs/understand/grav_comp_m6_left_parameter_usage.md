@@ -21,4 +21,4 @@
 
 - `controller.joint_gravity_comp.gain` 用于普通模式；同步和保持模式分别改用 `ruckig_gravity_comp_gain`、`hold_gravity_comp_gain`，见 `control_core.py` 的 `_calculate_torques()`。
 - `controller.static_friction_comp.enable` 可独立于重力输出开关。静摩擦幅值仍以按当前模式和重力增益计算的动力学结果为参考；旧 YAML 若省略该字段，默认沿用 `joint_gravity_comp.enable`。
-- 当前 `controller.sync_hold_control.gripper_setpoint` 为 `0.55`，高于 `controller.limit_barrier_control.gripper.limit_max` 的 `0.52517`。同步目标采用前者，启用的夹爪限位采用后者，因此夹爪向目标运动时会与限位控制相互作用，见 `control_core.py` 的 `_apply_actions()` 和 `_calculate_torques()`。
+- 设备 A 左臂当前的 `controller.sync_hold_control.gripper_setpoint` 为 `0.4`，处于 `controller.limit_barrier_control.gripper.limit_min/max` 的 `-0.0175～0.52517` 范围内。同步目标使用前者，夹爪限位控制使用后者，见 `control_core.py` 的 `_apply_actions()` 和 `_calculate_torques()`。
