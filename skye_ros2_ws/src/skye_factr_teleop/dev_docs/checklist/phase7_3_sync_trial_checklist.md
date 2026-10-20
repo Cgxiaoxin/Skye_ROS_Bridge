@@ -118,12 +118,119 @@ ros2 run skye_factr_teleop skye_factr_sync_trial move \
 
 执行时重新采样当前位置，因此相对目标可能与先前预览略有不同。
 消息自动带 `l_j1..l_j7`、七轴 position 和发布时的 ROS 时间，只发布一次。
-没有额外的 `switch_sync` 请求。出现 `Observed mode` 后继续观察终端 B 和实机。
+没有额外的 `switch_sync` 请求。命令持续等待同步完成，并在状态变化时打印：
+
+```text
+Observed mode: TELEOP_SYNCING
+Observed mode: HOLD_SETTLING
+Observed mode: SYNCED
+Synchronization complete: SYNCED. 同步完成；继续保持目标姿态。 Use /mode/switch_stop to stop.
+```
+
+`TELEOP_SYNCING` 只表示轨迹执行中；`HOLD_SETTLING` 表示轨迹已结束，正在等待实测
+位置和速度收敛。只有观察到 `SYNCED` 才提示同步完成。若提前回到 IDLE、诊断过期或
+等待超时，命令以非零状态退出并报告原因；诊断丢帧可能导致中间状态未打印。
+`--wait-seconds` 默认为 5 s，用于连接和启动确认；启动后等待上限为配置中的轨迹超时
+加收敛超时，再加该余量。工具退出不发送停止命令，完成后仍需按第 6 节停止。
+继续观察终端 B 和实机。
+
+进入 `HOLD_SETTLING` 的条件为 Ruckig 返回 `Finished`，表示参考轨迹结束，并不要求
+实测关节此时已经到位。轨迹在 `10 s` 内未完成，控制器以 `sync_timeout` 停止。
+进入 `SYNCED` 要求八轴同时满足位置和速度容差，并连续保持 `0.25 s`：
+J1..J7 的位置误差不大于 `0.03 rad`、速度绝对值不大于 `0.05 rad/s`；夹爪分别为
+`0.05 rad`、`0.10 rad/s`。任一轴超差都会重置连续计时；进入收敛阶段后 `3 s` 内
+未满足持续条件，以 `settle_timeout` 停止。
+
+等待期间终端每秒打印当前未满足条件的轴；退出失败时向 stderr 报告超时原因、
+最新实测位置/最终目标/位置误差及超限速度。即使最后一帧瞬间达标，也不代表已完成
+连续保持。诊断新增 `sync_status`，包含控制器实际的超时原因与连续收敛时长；
+更新代码后须重启驱动节点才能获得这些字段。工具不会从丢帧数据推断连续收敛成功。
+执行失败时还会打印最后一个同步/收敛周期的实测电流、命令电流裁剪前后值、
+运行电流上限及各力矩分项，避免回到 IDLE 后的零输出掩盖失败前的状态。
+CLIP 样本数统计本次等待期间实际收到的同步/收敛帧，不能代表丢失的诊断帧。
 需要观察原七轴状态时，可另开终端运行：
 
 ```bash
 ros2 topic echo /left_leader_arm/current_state sensor_msgs/msg/JointState
 ```
+
+### 多关节相对目标示例
+
+小幅多关节试验使用 `--deltas`，按 J1..J7 顺序填写七个相对增量，单位 rad。
+工具从同一帧实测位置计算“当前位置 + 增量”；`0` 表示保留该轴的采样位置，
+正负值分别表示沿逻辑关节正负方向移动。不能与 `--target`、`--joint-id` 或
+`--delta` 同用。
+
+以下示例让 J4、J6 分别从当前姿态正向移动 `0.05 rad`，其余臂关节保持采样位置，
+不要求起点为零位。
+
+先预览：
+
+```bash
+ros2 run skye_factr_teleop skye_factr_sync_trial move \
+  --side "$SIDE" --config "$CONFIG" \
+  --deltas 0 0 0 0.05 0 0.05 0
+```
+
+确认完整目标、预计耗时和实体路径后执行：
+
+```bash
+ros2 run skye_factr_teleop skye_factr_sync_trial move \
+  --side "$SIDE" --config "$CONFIG" \
+  --deltas 0 0 0 0.05 0 0.05 0 \
+  --execute
+```
+
+七个数依次对应 `J1 J2 J3 J4 J5 J6 J7`，不包含夹爪；夹爪仍使用配置中的
+`gripper_setpoint`，本轮为 `0.4 rad`。执行时重新采样，因此相对目标可能与预览
+略有不同；每次执行都会再次叠加增量。每轮须从 IDLE 开始，完成后的观察、停止和
+失能回读沿用第 6 节。
+
+多关节相对试验用于检查同时运动时的动力学耦合、轨迹跟踪、电流限幅和收敛表现。
+从已验证的小幅双关节组合开始，再逐步增加参与关节和姿态；保留逐帧记录。
+
+需要复现固定姿态时仍使用 `--target`，七个数均为绝对位置。未参与运动的轴也须
+填入当前实测位置；`--target` 中的 `0` 会使该轴向零位运动。
+
+### 三个终端实时查看力矩分项
+
+驱动保持 `sync_diagnostics:=true`。三个新终端各执行第 3 节的公共环境设置，
+然后分别执行以下命令（只订阅诊断消息，不打开串口，也不发送控制命令）：
+
+```bash
+# 终端 D：重力补偿力矩
+ros2 run skye_factr_teleop skye_factr_sync_trial monitor --side "$SIDE" --term gravity
+
+# 终端 E：摩擦力补偿力矩
+ros2 run skye_factr_teleop skye_factr_sync_trial monitor --side "$SIDE" --term friction
+
+# 终端 F：限位屏障力矩
+ros2 run skye_factr_teleop skye_factr_sync_trial monitor --side "$SIDE" --term limit
+```
+
+每个终端原地刷新 J1..J7 和夹爪的瞬时逻辑力矩，单位 N·m，同时显示模式和诊断序号。
+默认每秒刷新 5 次，可用 `--rate 10` 调整。显示的是电流裁剪前的控制分项，
+不是实测力矩。无新消息超过 1 s 时显示 STALE，并隐藏旧数值；IDLE 时这些分项为零。
+Ctrl+C 只退出监视器，不停止驱动。无需传入 `--config`。
+
+### 一个终端实时查看实测电流和限幅
+
+新终端执行第 3 节的公共环境设置后运行：
+
+```bash
+ros2 run skye_factr_teleop skye_factr_sync_trial monitor --side "$SIDE" --term current
+```
+
+按物理舵机 ID 1..8 显示实测电流、`current_limit_ma`、实测电流绝对值占上限比例条、
+命令电流裁剪前后值，以及“当前帧 / 刷新间隔”的 CLIP 标记；单位均为 mA。
+上限由运行节点直接发布，取该节点的配置值与型号允许上限的较小值。
+更新代码后须重启驱动节点，并保持 `sync_diagnostics:=true`；监视器无需传入配置。
+
+CLIP 按 `abs(current_before_clip_ma - current_after_clip_ma) > 1e-9` 判断。
+实测电流接近或超过上限与软件命令被裁剪是两个独立观测，不互相替代。
+“刷新间隔”标记保留该间隔内收到的任一裁剪帧，下一次刷新后重新统计；
+诊断采用 BEST_EFFORT，该标记只覆盖实际收到的数据。默认刷新 5 Hz，
+可添加 `--rate 10`。诊断过期时显示 STALE，并隐藏旧数值。
 
 ## 6. 每轮观察、停止和失能回读
 
@@ -213,41 +320,3 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
   test/test_config.py test/test_control_core.py test/test_sync_hold.py \
   test/test_state_machine.py test/test_state_trajectory_integration.py test/test_dynamics.py
 ```
-
-## 10. 左臂 J1 小幅走位与保持实机复核（2026-10-16）
-
-- 本轮结论：**PASS**，范围为左臂 `/left_joint_move` 的 J1 正向小幅走位及进入 SYNCED 后的保持；
-  `follower_command_count=0`，不代表大臂反馈链路或左臂其他关节已完成验收。
-- J1 目标位移 `+0.05 rad`，实测位移约 `+0.05062 rad`；进入 SYNCED 后保持约 `39 s`，
-  该阶段 J1 最大位置误差约 `0.00858 rad`，小于七轴配置容差 `0.03 rad`。
-- 非目标关节保持在配置容差内；J2 相对固定目标的末端偏差约 `0.0092 rad`。
-  各轴未出现命令电流裁剪。
-- J8 目标 `0.4000 rad`，实测约 `0.3697 rad`，误差约 `0.0303 rad`，
-  小于夹爪配置容差 `0.05 rad`。操作者确认此前同步已使夹爪位于目标附近，
-  本轮未观察到再次开合；按到位及保持判据，这不影响本轮 PASS。
-- 记录包含 `IDLE → TELEOP_SYNCING → HOLD_SETTLING → SYNCED → IDLE`，
-  无诊断丢帧或序号重启。停止后独立回读为 `PASS`，八轴 `Torque Enable` 均为关闭；
-  操作者确认试验结束至回读期间舵机供电和 USB 连接持续保持。
-
-证据：[`left_j1_plus_run1.json`](../../validation_records/phase7_3_A/left_j1_plus_run1.json)、
-[`left_j1_plus_run1.trace.jsonl`](../../validation_records/phase7_3_A/left_j1_plus_run1.trace.jsonl)、
-[`left_j1_plus_run1_torque_disable.json`](../../validation_records/phase7_3_A/left_j1_plus_run1_torque_disable.json)。
-
-## 11. 左臂 J1 反向小幅走位与保持实机复核（2026-10-16）
-
-- 本轮结论：**PASS**，范围为左臂 `/left_joint_move` 的 J1 相对当前姿态 `−0.05 rad`
-  走位及保持。操作者确认 J1 反向运动平顺，J2、J4 等其他关节无明显异常。
-- 预览目标约 `−1.5564 rad`；执行时重新采样后目标约 `−1.5548 rad`，
-  J1 最终实测约 `−1.5539 rad`，目标误差约 `0.00091 rad`。
-  `TELEOP_SYNCING` 约 `1.21 s`，进入 SYNCED 后保持约 `25.6 s`。
-- SYNCED 全段八轴位置误差均在配置容差内，末尾连续 `5 s` 的八轴位置和速度也均在容差内。
-  J7 在进入 SYNCED 后约 `0.9–6.8 s` 有 `109` 帧速度超过 `0.05 rad/s`，
-  对应位置范围约 `0.0046 rad`；之后约 `18 s` 未再越限，保留为观察项。
-- 八轴均无命令电流裁剪；诊断无丢帧或序号重启，`follower_command_count=0`。
-  停止后记录器见 IDLE，独立回读为 `PASS`，八轴 `Torque Enable` 均为关闭。
-  操作者确认测试结束至回读期间舵机供电和 USB 连接持续保持。
-
-证据：[`left_j1_minus_run1_precheck.json`](../../validation_records/phase7_3_A/left_j1_minus_run1_precheck.json)、
-[`left_j1_minus_run1.json`](../../validation_records/phase7_3_A/left_j1_minus_run1.json)、
-[`left_j1_minus_run1.trace.jsonl`](../../validation_records/phase7_3_A/left_j1_minus_run1.trace.jsonl)、
-[`left_j1_minus_run1_torque_disable.json`](../../validation_records/phase7_3_A/left_j1_minus_run1_torque_disable.json)。

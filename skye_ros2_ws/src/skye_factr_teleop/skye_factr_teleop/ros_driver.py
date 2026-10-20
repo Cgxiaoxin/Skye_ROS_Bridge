@@ -562,6 +562,8 @@ class SkyeFactrTeleopNode(Node):
                         cycle_time - self._previous_cycle_time),
             torque_enabled_cached=self._hardware.torque_enabled,
             present_current_ma=self._hardware.present_currents_ma,
+            sync_status=self.core.sync_status,
+            current_limit_ma=self.core.current_limit_ma,
         )
         self._diagnostic_pub.publish(String(data=json.dumps(packet, allow_nan=False)))
         self._diagnostic_sequence += 1

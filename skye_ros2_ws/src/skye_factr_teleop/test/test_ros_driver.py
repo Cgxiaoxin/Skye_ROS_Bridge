@@ -602,7 +602,7 @@ def test_timer_is_driven_by_executor(make_node, context):
 
 
 def test_sync_timeout_with_fresh_input_publishes_idle(make_node):
-    rig = make_node()
+    rig = make_node(diagnostics=True)
     rig.node._on_follower(packet())
     rig.node._on_sync(String(data="switch_sync"))
     rig.clock.now += rig.node.config.controller.sync_hold_control.ruckig.trajectory_timeout
@@ -610,9 +610,27 @@ def test_sync_timeout_with_fresh_input_publishes_idle(make_node):
     rig.node._tick()
     assert rig.node.core.mode == ControlMode.IDLE
     assert rig.node.core.last_transition.reason == "sync_timeout"
+    diagnostic = json.loads(rig.node._diagnostic_pub.messages[-1].data)
+    assert diagnostic["sync_status"]["transition_reason"] == "sync_timeout"
     assert rig.node._state_pub.messages[-1].data == "IDLE"
     assert not rig.hardware.torque_enabled
     assert rig.trajectories[0].calls == 0
+
+
+def test_settle_timeout_diagnostics_preserve_reason_after_target_cleared(make_node):
+    rig = make_node(diagnostics=True)
+    rig.node._on_joint_move(packet())
+    rig.trajectories[0].finished = True
+    rig.clock.now += 0.002
+    rig.node._tick()
+    assert rig.node.core.mode == ControlMode.HOLD_SETTLING
+    rig.clock.now += rig.node.config.controller.sync_hold_control.hold.settle_timeout
+    rig.node._tick()
+    diagnostic = json.loads(rig.node._diagnostic_pub.messages[-1].data)
+    assert diagnostic["mode"] == "IDLE"
+    assert diagnostic["target_position_rad"] is None
+    assert diagnostic["sync_status"]["transition_reason"] == "settle_timeout"
+    assert diagnostic["sync_status"]["transition_from"] == "HOLD_SETTLING"
 
 
 def test_constructor_failure_closes_partially_open_device(make_node):
@@ -815,6 +833,8 @@ def test_sync_diagnostics_cover_motion_hold_clipping_and_stop(make_node, side):
     node._tick()
     moving = json.loads(node._diagnostic_pub.messages[-1].data)
     assert moving["mode"] == "TELEOP_SYNCING"
+    assert moving["sync_status"]["mode_elapsed_s"] == pytest.approx(0.002)
+    np.testing.assert_array_equal(moving["current_limit_ma"], node.core.current_limit_ma)
     assert moving["cycle_dt_s"] == pytest.approx(0.002)
     assert len(moving["position_rad"]) == len(moving["current_before_clip_ma"]) == 8
     np.testing.assert_allclose(moving["current_after_clip_ma"],
@@ -826,6 +846,9 @@ def test_sync_diagnostics_cover_motion_hold_clipping_and_stop(make_node, side):
     rig.trajectories[0].finished = True
     rig.clock.now += 0.002
     node._tick()
+    settling = json.loads(node._diagnostic_pub.messages[-1].data)
+    assert settling["sync_status"]["transition_from"] == "TELEOP_SYNCING"
+    assert settling["sync_status"]["transition_to"] == "HOLD_SETTLING"
     settle(rig, follower=False)
     assert node.core.mode == ControlMode.SYNCED
     node._on_teleop(String(data="switch_teleop"))

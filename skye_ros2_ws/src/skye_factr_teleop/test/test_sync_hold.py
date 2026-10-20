@@ -142,8 +142,12 @@ def test_settling_requires_position_velocity_and_continuous_dwell():
     assert core.mode == ControlMode.HOLD_SETTLING
     hardware.inject_state(np.full(8, 0.1) * core.joint_signs, np.zeros(8))
     core.step(now=1.2)
+    assert core.sync_status["settled_for_s"] == 0.0
+    core.step(now=1.25)
+    assert core.sync_status["settled_for_s"] == pytest.approx(0.05)
     hardware.inject_state(np.zeros(8), np.zeros(8))
     core.step(now=1.3)  # Leaving the position band resets the dwell timer.
+    assert core.sync_status["settled_for_s"] == 0.0
     hardware.inject_state(np.full(8, 0.1) * core.joint_signs, np.zeros(8))
     core.step(now=1.4)
     assert core.step(now=1.64).mode == ControlMode.HOLD_SETTLING
@@ -158,6 +162,9 @@ def test_settle_timeout_disables_torque_and_rejects_teleop():
     result = core.step(now=1.002 + core.config.controller.sync_hold_control.hold.settle_timeout)
     assert result.mode == ControlMode.IDLE
     assert core.last_transition.reason == "settle_timeout"
+    assert core.sync_status["transition_reason"] == "settle_timeout"
+    assert core.sync_status["transition_from"] == "HOLD_SETTLING"
+    assert core.sync_status["transition_to"] == "IDLE"
     assert not hardware.torque_enabled
     assert core.handle("switch_teleop", now=4.1).outcome == "rejected"
 

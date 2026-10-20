@@ -4,12 +4,15 @@
 from copy import deepcopy
 import json
 from pathlib import Path
+import sys
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from skye_factr_teleop.config import load_config
 from skye_factr_teleop.sync_trial import TrialSummary, fresh_idle, preview_move
+from skye_factr_teleop import sync_trial
 
 
 @pytest.fixture(params=["left", "right"])
@@ -22,6 +25,46 @@ def test_real_ruckig_preview_includes_gripper_and_small_joint_move(config):
     plan = preview_move(config, [0] * 8, [0] * 8, joint_id=6, delta=-0.05)
     np.testing.assert_allclose(plan["target_position_rad"], [0, 0, 0, 0, 0, -0.05, 0, 0.4])
     assert plan["trajectory_duration_s"] == pytest.approx(4.7)
+
+
+def test_multijoint_relative_move_uses_sampled_nonzero_pose(config):
+    position = [-1.46, 1.70, 0.14, 0.005, 0.10, 0.11, 0.17, 0.4]
+    deltas = [0, 0, 0, 0.05, 0, -0.05, 0]
+    plan = preview_move(config, position, [0] * 8, deltas=deltas)
+    expected = np.append(np.asarray(position[:7]) + deltas, 0.4)
+    np.testing.assert_allclose(plan["target_position_rad"], expected)
+    assert position == [-1.46, 1.70, 0.14, 0.005, 0.10, 0.11, 0.17, 0.4]
+    assert deltas == [0, 0, 0, 0.05, 0, -0.05, 0]
+    assert plan["trajectory_duration_s"] < 2
+    # A new invocation bases the same increments on its newly sampled pose.
+    updated = position.copy()
+    updated[0] += 0.2
+    again = preview_move(config, updated, [0] * 8, deltas=deltas)
+    assert again["target_position_rad"][0] == updated[0]
+
+
+@pytest.mark.parametrize("kwargs,match", [
+    ({"deltas": [0] * 6}, "seven finite"),
+    ({"deltas": [float("nan")] * 7}, "seven finite"),
+    ({"deltas": [0] * 7, "target": [0] * 7}, "choose"),
+    ({"deltas": [0] * 7, "joint_id": 4}, "choose"),
+    ({"deltas": [0] * 7, "delta": 0.05}, "choose"),
+    ({"deltas": [0, 0, 0, 0, 0, 0, 0.75]}, "target is outside"),
+    ({"deltas": [1.5, 0, 0, 0, 0, 0, 0]}, "timeout"),
+])
+def test_multijoint_relative_move_validates_input_and_trajectory(config, kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        preview_move(config, [0] * 8, [0] * 8, **kwargs)
+
+
+def test_multijoint_relative_cli_offline_preview(config, capsys):
+    side = "left" if "left" in config.controller.joint_gravity_comp.dynamics.leader_urdf else "right"
+    path = Path(__file__).parents[1] / "config" / f"grav_comp_m6_{side}.yaml"
+    sync_trial.main(["move", "--side", side, "--config", str(path),
+                     "--start", "-1.46", "1.70", "0.14", "0.005", "0.10", "0.11", "0.17", "0.4",
+                     "--deltas", "0", "0", "0", "0.05", "0", "-0.05", "0"])
+    plan = json.loads(capsys.readouterr().out)
+    np.testing.assert_allclose(plan["target_position_rad"], [-1.46, 1.70, 0.14, 0.055, 0.10, 0.06, 0.17, 0.4])
 
 
 @pytest.mark.parametrize("kwargs,match", [
@@ -51,6 +94,145 @@ def sample(mode, seq, **updates):
             "velocity_rad_s": [0.01] * 8, "current_before_clip_ma": [60.0] * 8,
             "current_after_clip_ma": [50.0] * 8, "present_current_ma": [48.0] * 8,
             **updates}
+
+
+def run_sync_monitor(monkeypatch, config, modes, *, stale=False):
+    """Feed diagnostic cycles to the real wait loop with a deterministic clock."""
+    clock = [100.0]
+    initial = sample("IDLE", 1)
+    latest = [initial, clock[0]]
+    pending = iter(modes)
+
+    def spin_once(node, timeout_sec):
+        clock[0] += 0.05
+        try:
+            mode = next(pending)
+        except StopIteration:
+            mode = latest[0]["mode"]
+        if not stale:
+            updates = mode if isinstance(mode, dict) else {"mode": mode}
+            latest[:] = [sample(updates["mode"], latest[0]["sequence"] + 1,
+                                stamp_s=clock[0], **{k: v for k, v in updates.items() if k != "mode"}),
+                         clock[0]]
+
+    monkeypatch.setattr(sync_trial.time, "monotonic", lambda: clock[0])
+    monkeypatch.setitem(sys.modules, "rclpy", SimpleNamespace(spin_once=spin_once))
+    node = SimpleNamespace(get_clock=lambda: SimpleNamespace(
+        now=lambda: SimpleNamespace(nanoseconds=int(clock[0] * 1e9))))
+    sync_trial._wait_for_sync(node, latest, packet=initial, target=[0.02] * 8,
+                             config=config, wait_seconds=0.5)
+
+
+def test_execute_monitor_waits_through_settling_until_synced(monkeypatch, config, capsys):
+    run_sync_monitor(monkeypatch, config,
+                     ["IDLE", "TELEOP_SYNCING", "TELEOP_SYNCING", "HOLD_SETTLING", "SYNCED"])
+    output = capsys.readouterr().out
+    assert output.count("Observed mode: TELEOP_SYNCING") == 1
+    assert "Observed mode: HOLD_SETTLING" in output
+    assert "Synchronization complete: SYNCED" in output
+    assert "继续保持目标姿态" in output
+
+
+def test_execute_monitor_accepts_synced_when_intermediate_samples_are_missed(monkeypatch, config, capsys):
+    run_sync_monitor(monkeypatch, config, ["SYNCED"])
+    assert "Synchronization complete: SYNCED" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("mode", ["IDLE", "TELEOP"])
+def test_execute_monitor_reports_abort_before_synced(monkeypatch, config, capsys, mode):
+    with pytest.raises(ValueError, match=f"entered {mode} before SYNCED"):
+        run_sync_monitor(monkeypatch, config, ["TELEOP_SYNCING", "HOLD_SETTLING", mode])
+    assert "Synchronization complete" not in capsys.readouterr().out
+
+
+def test_execute_monitor_reports_lost_diagnostics(monkeypatch, config):
+    with pytest.raises(TimeoutError, match="diagnostics are stale"):
+        run_sync_monitor(monkeypatch, config, [], stale=True)
+
+
+def test_execute_monitor_reports_missing_acknowledgement(monkeypatch, config):
+    with pytest.raises(TimeoutError, match="acknowledgement not observed"):
+        run_sync_monitor(monkeypatch, config, ["IDLE"])
+
+
+def test_execute_monitor_bounds_completion_wait(monkeypatch, config):
+    with pytest.raises(TimeoutError, match="completion not observed; last mode: HOLD_SETTLING"):
+        run_sync_monitor(monkeypatch, config, ["TELEOP_SYNCING", "HOLD_SETTLING"])
+
+
+def test_sync_conditions_identifies_position_and_velocity_blockers(config):
+    state = sample("HOLD_SETTLING", 3, position_rad=[0.0] * 8,
+                   velocity_rad_s=[0.0, 0.08] + [0.0] * 6,
+                   sync_status={"settled_for_s": 0.0})
+    text = sync_trial._sync_conditions(state, [0.1] + [0.0] * 6 + [0.4],
+                                       config.controller.sync_hold_control.hold)
+    tolerance = config.controller.sync_hold_control.hold.sync_position_tolerance[0]
+    assert f"J1: |position error|=0.100000 rad > {tolerance:.6f} rad" in text
+    assert "J2: |velocity|=0.080000 rad/s > 0.050000 rad/s" in text
+    assert "gripper(ID8): |position error|=0.400000 rad > 0.050000 rad" in text
+    assert "J3:" not in text
+    assert "Continuous settling: 0.000 / 0.250 s" in text
+
+
+def test_sync_conditions_instantaneous_pass_still_requires_continuous_settling(config):
+    hold = config.controller.sync_hold_control.hold
+    state = sample("HOLD_SETTLING", 3, velocity_rad_s=list(hold.sync_velocity_tolerance),
+                   sync_status={"settled_for_s": 0.12})
+    text = sync_trial._sync_conditions(state, list(hold.sync_position_tolerance), hold)
+    assert "All eight axes meet instantaneous tolerances" in text
+    assert "Continuous settling: 0.120 / 0.250 s" in text
+
+
+@pytest.mark.parametrize("reason,expected", [
+    ("sync_timeout", "Ruckig reference trajectory did not finish within 10.000 s"),
+    ("settle_timeout", "within 3.000 s of HOLD_SETTLING"),
+])
+def test_execute_monitor_reports_controller_timeout_and_measured_blockers(
+        monkeypatch, config, reason, expected):
+    final = {"mode": "IDLE", "sync_status": {"transition_reason": reason},
+             "position_rad": [0.1] + [0.0] * 7, "velocity_rad_s": [0.0] * 8}
+    with pytest.raises(ValueError) as exc:
+        run_sync_monitor(monkeypatch, config, ["TELEOP_SYNCING", "HOLD_SETTLING", final])
+    assert expected in str(exc.value)
+    tolerance = config.controller.sync_hold_control.hold.sync_position_tolerance[0]
+    assert f"J1: |position error|=0.080000 rad > {tolerance:.6f} rad" in str(exc.value)
+
+
+def test_execute_monitor_prints_blockers_while_settling(monkeypatch, config, capsys):
+    run_sync_monitor(monkeypatch, config, ["TELEOP_SYNCING",
+        {"mode": "HOLD_SETTLING", "velocity_rad_s": [0.1] + [0.0] * 7}, "SYNCED"])
+    text = capsys.readouterr().out
+    assert "Waiting for HOLD_SETTLING: Ruckig reference trajectory is not finished" in text
+    assert "Waiting for SYNCED:" in text
+    assert "J1: |velocity|=0.100000 rad/s > 0.050000 rad/s" in text
+
+
+def test_failure_keeps_active_currents_and_torques_after_idle_zeroes_them(monkeypatch, config):
+    active = dict(mode="HOLD_SETTLING", present_current_ma=[39.0] * 8,
+                  current_before_clip_ma=[70.0] * 8, current_after_clip_ma=[50.0] * 8,
+                  current_limit_ma=[50.0] * 8, gravity_torque_nm=[0.04] * 8,
+                  friction_torque_nm=[-0.005] * 8, joint_limit_torque_nm=[0.0] * 8,
+                  tracking_torque_nm=[0.03] * 8)
+    idle = dict(mode="IDLE", current_before_clip_ma=[0.0] * 8,
+                current_after_clip_ma=[0.0] * 8, present_current_ma=[0.0] * 8,
+                sync_status={"transition_reason": "settle_timeout"})
+    with pytest.raises(ValueError) as exc:
+        run_sync_monitor(monkeypatch, config, [active, idle])
+    text = str(exc.value)
+    assert "Last active sample: mode=HOLD_SETTLING" in text
+    assert "present=+39.00 mA, command=+70.00 -> +50.00 mA, limit=+50.00 mA" in text
+    assert "CLIP samples=1/1" in text
+    assert "gravity=+0.04000, friction=-0.00500, barrier=+0.00000, tracking=+0.03000" in text
+
+
+def test_failure_counts_clipping_even_when_last_active_frame_is_not_clipped(monkeypatch, config):
+    unclipped = dict(mode="HOLD_SETTLING", current_before_clip_ma=[30.0] * 8,
+                     current_after_clip_ma=[30.0] * 8)
+    with pytest.raises(ValueError) as exc:
+        run_sync_monitor(monkeypatch, config, ["TELEOP_SYNCING", unclipped, "IDLE"])
+    text = str(exc.value)
+    assert "command=+30.00 -> +30.00 mA" in text
+    assert "CLIP samples=1/2" in text
 
 
 def test_summary_counts_gaps_clipping_and_software_stop_without_claiming_hardware_pass():

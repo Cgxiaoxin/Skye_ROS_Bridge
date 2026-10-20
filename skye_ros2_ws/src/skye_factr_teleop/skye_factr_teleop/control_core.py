@@ -355,6 +355,19 @@ class ControlCore:
         return self._last_transition
 
     @property
+    def sync_status(self) -> dict:
+        """Read-only timing and transition evidence for synchronization diagnostics."""
+        transition = self._last_transition
+        return {
+            "mode_elapsed_s": self._now - self._machine.entered_at,
+            "settled_for_s": (0.0 if self._settle_since is None
+                              else self._now - self._settle_since),
+            "transition_reason": None if transition is None else transition.reason,
+            "transition_from": None if transition is None else transition.previous_state.name,
+            "transition_to": None if transition is None else transition.state.name,
+        }
+
+    @property
     def hold_integral(self) -> np.ndarray:
         return self._hold_integral.copy()
 
