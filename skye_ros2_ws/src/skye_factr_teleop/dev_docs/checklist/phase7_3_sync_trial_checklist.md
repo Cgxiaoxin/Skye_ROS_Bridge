@@ -729,3 +729,210 @@ ros2 run skye_factr_teleop skye_factr_sync_trial move \
   --side right --config "$CONFIG" \
   --target 0 0 0 0 0 0 0 --execute
 ```
+
+## 13. 双 USB 设置与双臂并行归零命令（2026-10-21）
+
+本节给出双臂测试的操作命令，不代表双臂并行测试已经通过。
+左臂沿用第 11 节基线，右臂沿用第 12 节基线，仅右臂 J2 保持 `ki=0.05`。
+先退出此前分别启动的单臂驱动，再启动双臂 launch，避免重复占用同一串口。
+
+双臂归零可以在一个终端发起：并行启动两个现有 `move` 工具，分别发布到
+`/left_joint_move` 和 `/right_joint_move`，各自等待对应侧的 SYNCED。
+此前 `> /tmp/…log 2>&1 &` 加 `wait`、`tail` 的写法也已经在一个终端并行发送，
+但所有进度先进入日志，终端须等两侧工具结束后才能看到最后几行，不便现场观察。
+第 13.5 节改为按行实时标注左右臂、显示并保存全部输出，再分别汇总结果。
+两个 CLI 各自连接和校验状态，实际开始运动的时间可能有差异，不保证同一控制周期起动。
+
+### 13.1 每个终端的环境准备
+
+使用 Bash；每个终端先执行以下命令。修改配置后须重启驱动，保证驱动与工具使用同一份文件。
+
+```bash
+cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+export LEFT_CONFIG="$PWD/src/skye_factr_teleop/config/grav_comp_m6_left.yaml"
+export RIGHT_CONFIG="$PWD/src/skye_factr_teleop/config/grav_comp_m6_right.yaml"
+```
+
+### 13.2 终端 1：设置两个 FTDI USB 的 latency_timer
+
+在启动驱动前执行。按 by-id 分别找到对应串口，无需固定 `ttyUSB0 / ttyUSB1` 的分配顺序。
+`FTBEO9L1` 对应左臂，`FTBEO8WL` 对应右臂。重新插拔 USB 或重启后再次设置并确认。
+
+```bash
+sudo -v
+
+for USB_BY_ID in \
+  /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0 \
+  /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0
+do
+  TTY_PATH=$(readlink -f "$USB_BY_ID")
+  if ! test -c "$TTY_PATH"; then
+    echo "串口不存在：$USB_BY_ID" >&2
+    continue
+  fi
+
+  TTY_NAME=$(basename "$TTY_PATH")
+  LATENCY_PATH="/sys/bus/usb-serial/devices/${TTY_NAME}/latency_timer"
+  echo "USB by-id: $USB_BY_ID -> $TTY_PATH"
+  if ! printf '1\n' | sudo tee "$LATENCY_PATH" > /dev/null; then
+    echo "设置失败：$LATENCY_PATH" >&2
+    continue
+  fi
+  echo "latency_timer 读取确认："
+  cat "$LATENCY_PATH"
+done
+```
+
+两侧的读取确认均应为 `1`；设置失败或串口缺失时，处理对应问题后再启动。
+
+### 13.3 终端 1：启动双臂驱动
+
+```bash
+ros2 launch skye_factr_teleop start_teleop_m6_dual.launch.py \
+  left_config:="$LEFT_CONFIG" \
+  right_config:="$RIGHT_CONFIG" \
+  sync_diagnostics:=true
+```
+
+双臂使用独立节点、串口、归零话题及诊断话题；启动后确认两侧驱动均正常运行。
+
+### 13.4 终端 2、3：分别开启左右臂记录
+
+先启动记录，再发送目标。下面的输出文件名必须未被使用；重复测试时两侧一起换成新的轮次。
+每份汇总旁会生成同名 `.trace.jsonl`。记录到期只保存数据，不发送停止命令。
+
+终端 2，左臂：
+
+```bash
+ros2 run skye_factr_teleop skye_factr_sync_trial record \
+  --side left --config "$LEFT_CONFIG" --operator lyy \
+  --output /tmp/dual_sync_left_next01.json --duration 180
+```
+
+终端 3，右臂：
+
+```bash
+ros2 run skye_factr_teleop skye_factr_sync_trial record \
+  --side right --config "$RIGHT_CONFIG" --operator lyy \
+  --output /tmp/dual_sync_right_next01.json --duration 180
+```
+
+### 13.5 终端 4：一个终端并行归零，实时显示两侧进度
+
+执行第 13.1 节的环境准备后，将下面整块复制到同一个 Bash 终端执行。
+两侧均须处于可接受新目标的 IDLE 状态。
+`PYTHONUNBUFFERED=1` 与 `sed -u` 用于及时输出；每行会带 `[左臂]` 或 `[右臂]` 标识。
+`tee` 同时保存日志，日志目录每次自动创建，不覆盖前一轮。
+输出管道启用 `pipefail`，以保留工具失败状态，不把日志保存成功误记为同步成功。
+
+```bash
+DUAL_MOVE_LOG_DIR=$(mktemp -d /tmp/dual_sync_move_XXXXXX)
+echo "本轮归零日志目录：$DUAL_MOVE_LOG_DIR"
+
+run_arm_zero() (
+  set -o pipefail
+  arm_side="$1"
+  arm_config="$2"
+  arm_label="$3"
+  arm_log="$4"
+
+  printf '[%s] 开始归零，等待对应侧 SYNCED。\n' "$arm_label"
+  if PYTHONUNBUFFERED=1 ros2 run skye_factr_teleop skye_factr_sync_trial move \
+    --side "$arm_side" --config "$arm_config" \
+    --target 0 0 0 0 0 0 0 --execute \
+    2>&1 | sed -u "s/^/[$arm_label] /" | tee "$arm_log"
+  then
+    printf '[%s] 本侧归零工具正常结束，已确认 SYNCED；机械臂继续保持目标姿态。\n' "$arm_label"
+  else
+    arm_result=$?
+    printf '[%s] 本侧归零工具异常结束（退出码 %s），请查看上方原因；未自动发送停止命令。\n' \
+      "$arm_label" "$arm_result"
+    exit "$arm_result"
+  fi
+)
+
+run_arm_zero left "$LEFT_CONFIG" 左臂 "$DUAL_MOVE_LOG_DIR/left.log" &
+LEFT_MOVE_PID=$!
+run_arm_zero right "$RIGHT_CONFIG" 右臂 "$DUAL_MOVE_LOG_DIR/right.log" &
+RIGHT_MOVE_PID=$!
+
+if wait "$LEFT_MOVE_PID"; then LEFT_MOVE_RC=0; else LEFT_MOVE_RC=$?; fi
+if wait "$RIGHT_MOVE_PID"; then RIGHT_MOVE_RC=0; else RIGHT_MOVE_RC=$?; fi
+
+if [ "$LEFT_MOVE_RC" -eq 0 ] && [ "$RIGHT_MOVE_RC" -eq 0 ]; then
+  echo "双臂结果：左右臂均已确认 SYNCED；继续保持目标姿态。"
+else
+  printf '双臂结果：未能确认两侧全部成功，左臂退出码=%s，右臂退出码=%s。\n' \
+    "$LEFT_MOVE_RC" "$RIGHT_MOVE_RC"
+fi
+echo "完整日志目录：$DUAL_MOVE_LOG_DIR"
+```
+
+运行中可直接看到各侧的起点、参考轨迹时长、`Observed mode`、超差关节和连续收敛时间，
+成功时出现带对应侧标识的 `Synchronization complete: SYNCED`。
+某侧提前结束时会立即显示该侧结果，不必等另一侧结束。
+只有两侧工具均正常结束，最后才输出“双臂均已确认 SYNCED”。
+该命令不调整任何控制参数，也不会因某侧工具报错或等待结束而自动停止机械臂。
+
+### 13.6 停止双臂
+
+观察完成后，或运动中出现异常时，在另一个已准备好 ROS 环境的终端执行：
+
+```bash
+ros2 topic pub --once /mode/switch_stop \
+  std_msgs/msg/String '{data: switch_stop}'
+```
+
+`/mode/switch_stop` 是两侧共同订阅的全局停止话题。应确认左右臂均停止并退出活动状态，
+不能仅凭发布端的 `publishing #1` 判断实际停止已完成。
+归零工具结束、记录时长到期，以及终端 4 中断进度显示，都不等同于停止双臂。
+
+## 14. 双臂首次并行归零结果：文本日志记录（2026-10-21）
+
+### 14.1 本轮操作与证据
+
+操作者 `lyy` 按第 13 节启动双臂驱动，并在同一个终端并行运行左右臂 `move` 工具。
+配置沿用第 11 节左臂基线和第 12 节右臂基线，未为本次双臂测试调整参数；
+右臂 J2 保持 `ki=0.05`，左臂为 `0.00`。
+两侧七个臂关节目标均为 `0 rad`，夹爪目标均为 `0.4 rad`。
+
+本轮没有启动第 13.4 节的逐帧 `record`，没有对应的汇总 JSON、`.trace.jsonl` 或配置快照。
+但第 13.5 节命令中的 `tee` 已保存左右臂工具的文本输出，文件已核对存在：
+
+- 左臂：[left.log](/tmp/dual_sync_move_R5pbHC/left.log)。
+- 右臂：[right.log](/tmp/dual_sync_move_R5pbHC/right.log)。
+
+这些文件目前位于本机 `/tmp/dual_sync_move_R5pbHC/`，尚未归档到仓库。
+终端显示每侧工具均正常结束，最后汇总为“左右臂均已确认 SYNCED；继续保持目标姿态”。
+
+### 14.2 双侧结果与收敛差异
+
+| 项目 | 左臂 | 右臂 |
+|---|---|---|
+| CLI 预览起点 J3 / J5（rad） | -0.3298 / 0.3835 | 0.2117 / -0.3666 |
+| CLI 预览参考轨迹时长 | 3.115 s | 3.034 s |
+| 工具观察到的状态顺序 | TELEOP_SYNCING → HOLD_SETTLING → SYNCED | TELEOP_SYNCING → HOLD_SETTLING → SYNCED |
+| 同步结果 | 成功，先进入 SYNCED | 成功，稍后进入 SYNCED |
+
+右臂进入 HOLD_SETTLING 时，J2 位置误差约为 `+0.105845 rad`，随后降至 `+0.058291 rad`，
+较长时间停留在约 `+0.055223 rad`，再逐步降到 `+0.050621 rad` 附近后进入 SYNCED。
+后半段仅 J2 持续被列为超差关节，因此右臂本轮主要等待 J2 收敛。
+`0.050621 rad` 是成功前的超差采样值，不是最终达标值，也不表示容差已放宽。
+
+表中的时长来自 CLI 轨迹预览，不是实测轨迹执行时间或总同步时间。
+文本日志没有逐帧单调时钟，不能按逐秒打印次数计算精确同步耗时，
+也不能由本轮两侧均成功推断双侧总时间均约 5 s。
+
+### 14.3 当前结论与保留范围
+
+- [x] 同一终端并行发起双臂归零，左右臂各自确认进入 SYNCED；本轮可记为首次双臂并行归零成功。
+- [x] 带左右臂标识的进度、超差条件和成功信息已实时显示，并分别保存为文本日志。
+- [x] 当前控制参数继续保留，不因本轮右臂收敛较慢而立即增加增益。
+
+本轮文本输出不足以统计电流裁剪、诊断丢样和完整保持区间，也不能据此判定全程运动平稳、
+双侧起动时间一致或 stop 可靠性已通过。用户提供的本轮输出截至同步成功，未补记停止后的状态或失能回读。
+额外 60 s 保持测试仍按第 12.4 节约定跳过，不作为本轮收尾前置条件。
+后续如继续双臂测试，先按第 13.4 节分别启动两侧记录器，再执行第 13.5 节归零命令。
