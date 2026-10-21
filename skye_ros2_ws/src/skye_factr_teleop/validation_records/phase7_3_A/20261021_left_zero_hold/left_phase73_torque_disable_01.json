@@ -1,0 +1,223 @@
+{
+  "schema": "skye_factr_teleop.phase_2_5_1.v1",
+  "started_at": "2026-10-21T15:10:52+08:00",
+  "side": "left",
+  "config": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml",
+  "configured_port": "usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0",
+  "resolved_port": "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0",
+  "ids": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "baudrate": 4000000,
+  "latency_timer": 1,
+  "devices": [
+    {
+      "id": 1,
+      "configured_model": "XM430-W350",
+      "model_number": 1020,
+      "expected_model_number": 1020,
+      "return_delay_time": 0,
+      "torque_enabled": false
+    },
+    {
+      "id": 2,
+      "configured_model": "XM430-W350",
+      "model_number": 1020,
+      "expected_model_number": 1020,
+      "return_delay_time": 0,
+      "torque_enabled": false
+    },
+    {
+      "id": 3,
+      "configured_model": "XC330-T288",
+      "model_number": 1220,
+      "expected_model_number": 1220,
+      "return_delay_time": 0,
+      "torque_enabled": false
+    },
+    {
+      "id": 4,
+      "configured_model": "XC330-T288",
+      "model_number": 1220,
+      "expected_model_number": 1220,
+      "return_delay_time": 0,
+      "torque_enabled": false
+    },
+    {
+      "id": 5,
+      "configured_model": "XC330-T288",
+      "model_number": 1220,
+      "expected_model_number": 1220,
+      "return_delay_time": 0,
+      "torque_enabled": false
+    },
+    {
+      "id": 6,
+      "configured_model": "XC330-T288",
+      "model_number": 1220,
+      "expected_model_number": 1220,
+      "return_delay_time": 0,
+      "torque_enabled": false
+    },
+    {
+      "id": 7,
+      "configured_model": "XC330-T288",
+      "model_number": 1220,
+      "expected_model_number": 1220,
+      "return_delay_time": 0,
+      "torque_enabled": false
+    },
+    {
+      "id": 8,
+      "configured_model": "XC330-T288",
+      "model_number": 1220,
+      "expected_model_number": 1220,
+      "return_delay_time": 0,
+      "torque_enabled": false
+    }
+  ],
+  "samples": [
+    {
+      "index": 0,
+      "elapsed_s": 0.02777254200191237,
+      "positions_rad": [
+        -1.4879613642490719,
+        1.6689710972195777,
+        -0.2193592526676467,
+        0.04601942363656923,
+        0.44485442848683593,
+        -0.04295146206079795,
+        -0.14419419406125028,
+        0.37429131224409645
+      ],
+      "velocities_rad_s": [
+        0.0,
+        0.0,
+        0.0,
+        0.023980823922402087,
+        0.0,
+        0.0,
+        0.0,
+        0.023980823922402087
+      ]
+    },
+    {
+      "index": 1,
+      "elapsed_s": 0.029788534011458978,
+      "positions_rad": [
+        -1.4879613642490719,
+        1.667437116431692,
+        -0.2193592526676467,
+        0.04601942363656923,
+        0.44485442848683593,
+        -0.04295146206079795,
+        -0.14419419406125028,
+        0.37429131224409645
+      ],
+      "velocities_rad_s": [
+        0.0,
+        0.0,
+        0.0,
+        0.023980823922402087,
+        0.0,
+        0.0,
+        0.0,
+        0.023980823922402087
+      ]
+    }
+  ],
+  "analysis": {
+    "devices": [
+      {
+        "id": 1,
+        "position_min_rad": -1.4879613642490719,
+        "position_max_rad": -1.4879613642490719,
+        "position_delta_rad": 0.0,
+        "signed_position_delta_rad": 0.0,
+        "max_abs_velocity_rad_s": 0.0,
+        "max_position_step_rad": 0.0
+      },
+      {
+        "id": 2,
+        "position_min_rad": 1.667437116431692,
+        "position_max_rad": 1.6689710972195777,
+        "position_delta_rad": -0.0015339807878858025,
+        "signed_position_delta_rad": -0.0015339807878858025,
+        "max_abs_velocity_rad_s": 0.0,
+        "max_position_step_rad": 0.0015339807878858025
+      },
+      {
+        "id": 3,
+        "position_min_rad": -0.2193592526676467,
+        "position_max_rad": -0.2193592526676467,
+        "position_delta_rad": 0.0,
+        "signed_position_delta_rad": 0.0,
+        "max_abs_velocity_rad_s": 0.0,
+        "max_position_step_rad": 0.0
+      },
+      {
+        "id": 4,
+        "position_min_rad": 0.04601942363656923,
+        "position_max_rad": 0.04601942363656923,
+        "position_delta_rad": 0.0,
+        "signed_position_delta_rad": 0.0,
+        "max_abs_velocity_rad_s": 0.023980823922402087,
+        "max_position_step_rad": 0.0
+      },
+      {
+        "id": 5,
+        "position_min_rad": 0.44485442848683593,
+        "position_max_rad": 0.44485442848683593,
+        "position_delta_rad": 0.0,
+        "signed_position_delta_rad": 0.0,
+        "max_abs_velocity_rad_s": 0.0,
+        "max_position_step_rad": 0.0
+      },
+      {
+        "id": 6,
+        "position_min_rad": -0.04295146206079795,
+        "position_max_rad": -0.04295146206079795,
+        "position_delta_rad": 0.0,
+        "signed_position_delta_rad": -0.0,
+        "max_abs_velocity_rad_s": 0.0,
+        "max_position_step_rad": 0.0
+      },
+      {
+        "id": 7,
+        "position_min_rad": -0.14419419406125028,
+        "position_max_rad": -0.14419419406125028,
+        "position_delta_rad": 0.0,
+        "signed_position_delta_rad": -0.0,
+        "max_abs_velocity_rad_s": 0.0,
+        "max_position_step_rad": 0.0
+      },
+      {
+        "id": 8,
+        "position_min_rad": 0.37429131224409645,
+        "position_max_rad": 0.37429131224409645,
+        "position_delta_rad": 0.0,
+        "signed_position_delta_rad": 0.0,
+        "max_abs_velocity_rad_s": 0.023980823922402087,
+        "max_position_step_rad": 0.0
+      }
+    ],
+    "issues": []
+  },
+  "manual_checks": {
+    "large_arm_motion_link_disconnected": "PENDING",
+    "usb_side_mapping": "PENDING",
+    "physical_id_order": "PENDING",
+    "joint_direction": "PENDING",
+    "continuous_angle": "PENDING"
+  },
+  "automated_result": "PASS",
+  "error": null,
+  "finished_at": "2026-10-21T15:10:52+08:00"
+}
