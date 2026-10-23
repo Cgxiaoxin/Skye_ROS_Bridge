@@ -14,8 +14,10 @@ from typing import Protocol, Sequence, runtime_checkable
 
 import numpy as np
 from dynamixel_sdk import (
+    COMM_NOT_AVAILABLE,
+    COMM_RX_FAIL,
     COMM_SUCCESS,
-    GroupSyncRead,
+    GroupSyncRead as SdkGroupSyncRead,
     GroupSyncWrite,
     PacketHandler,
     PortHandler,
@@ -27,6 +29,7 @@ PROTOCOL_VERSION = 2.0
 ADDR_RETURN_DELAY_TIME = 9
 ADDR_OPERATING_MODE = 11
 ADDR_TORQUE_ENABLE = 64
+ADDR_HARDWARE_ERROR_STATUS = 70
 ADDR_GOAL_CURRENT = 102
 LEN_GOAL_CURRENT = 2
 ADDR_PRESENT_CURRENT = 126
@@ -246,6 +249,33 @@ class DynamixelPortError(DynamixelError):
 
 class DynamixelSdkError(DynamixelError):
     """A Dynamixel SDK transaction or device-status check failed."""
+
+
+class GroupSyncRead(SdkGroupSyncRead):
+    """Preserve status-packet errors discarded by the Python SDK's rxPacket.
+
+    The normal state transaction and payload size are unchanged. A hardware
+    alert therefore becomes visible every cycle without extra bus polling.
+    """
+
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.device_errors: dict[int, int] = {}
+
+    def rxPacket(self):
+        self.last_result = False
+        self.device_errors.clear()
+        if self.ph.getProtocolVersion() == 1.0 or not self.data_dict:
+            return COMM_NOT_AVAILABLE
+        result = COMM_RX_FAIL
+        for dxl_id in self.data_dict:
+            data, result, error = self.ph.readRx(self.port, dxl_id, self.data_length)
+            if result != COMM_SUCCESS:
+                return result
+            self.data_dict[dxl_id] = data
+            self.device_errors[dxl_id] = error
+        self.last_result = True
+        return result
 
 
 @runtime_checkable
@@ -550,6 +580,7 @@ class DynamixelDriver(DynamixelIO):
                 if last_result == COMM_SUCCESS:
                     break
             else:
+                self._check_sync_errors_locked()
                 detail = self._packet_handler.getTxRxResult(last_result)
                 if self._read_only:
                     raise self._diagnose_sync_read_failure_locked(detail)
@@ -557,6 +588,7 @@ class DynamixelDriver(DynamixelIO):
                     f"read_state sync read failed: {detail}"
                 )
 
+            self._check_sync_errors_locked()
             positions = np.empty(len(self._ids), dtype=float)
             velocities = np.empty(len(self._ids), dtype=float)
             currents = np.empty(len(self._ids), dtype=float) if self._read_present_current else None
@@ -722,17 +754,34 @@ class DynamixelDriver(DynamixelIO):
     def _set_torque_enabled_locked(self, enabled: bool) -> None:
         value = TORQUE_ENABLE if enabled else TORQUE_DISABLE
         operation = "enable torque" if enabled else "disable torque"
+        first_error: Exception | None = None
         for dxl_id in self._ids:
-            comm_result, device_error = self._packet_handler.write1ByteTxRx(
-                self._port_handler,
-                dxl_id,
-                ADDR_TORQUE_ENABLE,
-                value,
-            )
-            self._check_sdk_result(
-                operation, dxl_id, comm_result, device_error
-            )
+            try:
+                comm_result, device_error = self._packet_handler.write1ByteTxRx(
+                    self._port_handler,
+                    dxl_id,
+                    ADDR_TORQUE_ENABLE,
+                    value,
+                )
+                # Alert alone reports a latched fault, not a rejected write.
+                # It must not block disabling this servo or the remaining IDs.
+                if not enabled and comm_result == COMM_SUCCESS and device_error == 0x80:
+                    continue
+                self._check_sdk_result(
+                    operation, dxl_id, comm_result, device_error
+                )
+            except Exception as exc:
+                if enabled:
+                    raise
+                if first_error is None:
+                    first_error = exc
+        if first_error is not None:
+            raise first_error
         self._torque_enabled = enabled
+
+    def _check_sync_errors_locked(self) -> None:
+        for dxl_id, error in self._sync_read.device_errors.items():
+            self._check_sdk_result("read_state", dxl_id, COMM_SUCCESS, error)
 
     def _read_byte_locked(
         self, dxl_id: int, address: int, operation: str
@@ -816,10 +865,32 @@ class DynamixelDriver(DynamixelIO):
     ) -> None:
         if comm_result == COMM_SUCCESS and device_error == 0:
             return
+        detail = self._sdk_result_details(comm_result, device_error)
+        if comm_result == COMM_SUCCESS and device_error & 0x80:
+            detail += "; " + self._hardware_error_detail_locked(dxl_id)
         raise DynamixelSdkError(
             f"{operation} failed for device ID {dxl_id}: "
-            f"{self._sdk_result_details(comm_result, device_error)}"
+            f"{detail}"
         )
+
+    def _hardware_error_detail_locked(self, dxl_id: int) -> str:
+        status, comm_result, device_error = self._packet_handler.read1ByteTxRx(
+            self._port_handler, dxl_id, ADDR_HARDWARE_ERROR_STATUS,
+        )
+        # Alert is expected here; lower bits still signal a failed instruction.
+        if comm_result != COMM_SUCCESS or device_error & 0x7F:
+            return ("Hardware Error Status unavailable: "
+                    + self._sdk_result_details(comm_result, device_error))
+        bits = {0: "INPUT_VOLTAGE", 2: "OVERHEATING",
+                4: "ELECTRICAL_SHOCK", 5: "OVERLOAD"}
+        if self._servo_types[self._ids.index(dxl_id)] == "XM430-W350":
+            bits[3] = "ENCODER"
+        faults = [name for bit, name in sorted(bits.items()) if status & (1 << bit)]
+        unknown = status & ~sum(1 << bit for bit in bits)
+        if unknown:
+            faults.append(f"UNKNOWN_BITS=0x{unknown:02X}")
+        return (f"Hardware Error Status=0x{status:02X} "
+                f"({', '.join(faults) or 'NONE; alert asserted'})")
 
     def _sdk_result_details(self, comm_result: int, device_error: int) -> str:
         details = []

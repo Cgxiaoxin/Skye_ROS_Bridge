@@ -525,6 +525,30 @@ def test_shutdown_closes_even_when_cleanup_or_callback_fails(make_node, fault):
     assert rig.hardware.close_calls == 1
 
 
+@pytest.mark.parametrize("mode", ["IDLE", "TELEOP_SYNCING", "HOLD_SETTLING", "SYNCED"])
+def test_fault_log_keeps_detection_phase_before_core_stops(make_node, monkeypatch, mode):
+    rig = make_node()
+    if mode != "IDLE":
+        rig.node._on_joint_move(packet())
+    if mode in ("HOLD_SETTLING", "SYNCED"):
+        rig.trajectories[0].finished = True
+        rig.node._tick()
+    if mode == "SYNCED":
+        settle(rig, follower=False)
+    assert rig.node.core.mode.name == mode
+    messages = []
+    monkeypatch.setattr(rig.node, "get_logger", lambda: SimpleNamespace(error=messages.append))
+    rig.hardware.fail_next_read(RuntimeError("device ID 3: Hardware Error Status=0x20 (OVERLOAD)"))
+
+    rig.node._tick()
+
+    assert any(f"phase={mode}" in message and "ID 3" in message
+               and "0x20" in message for message in messages)
+    assert rig.node._closed and rig.node.core.mode == ControlMode.IDLE
+    assert not rig.hardware.torque_enabled
+    assert not rig.node._command_pub.messages
+
+
 @pytest.mark.parametrize("key,value", [
     ("joint_offsets", [0.0] * 7), ("current_limit_ma", 50.0),
     ("state_timeout", -0.1),
@@ -786,6 +810,8 @@ def test_dual_ros_graph_types_remaps_and_isolation(make_node, context):
                 executor.spin_once(timeout_sec=0.01)
         _spin_until(executor, lambda: all(
             rig.node.core.mode == ControlMode.SYNCED for rig in rigs.values()))
+        # Drain the depth-one state subscription before publishing the next mode.
+        _spin_until(executor, lambda: "SYNCED" in states)
         _spin_until(executor, lambda: all(target[side] for side in rigs))
         assert all(target[side][-1].name == packet(side).name for side in rigs)
         publish_mode("teleop")
@@ -879,11 +905,13 @@ def test_diagnostics_are_optional_and_enable_present_current_reads(make_node, mo
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
-def test_trial_cli_over_ros_with_fake_hardware(make_node, side, tmp_path, monkeypatch):
+@pytest.mark.parametrize("motion_source", ["joint_move", "follower_sync"])
+def test_trial_cli_over_ros_with_fake_hardware(make_node, side, motion_source, tmp_path, monkeypatch):
     """Exercise discovery, stamped publication, recording and stop through DDS."""
     from rclpy.executors import SingleThreadedExecutor
     rig = make_node(side, diagnostics=True, record_publishers=False,
                     cli_args=["--ros-args", "-r", f"/joint_move:=/{side}_joint_move",
+                              "-r", f"/joint_state:=/gento/{side}_joint_states",
                               "-r", f"/joint_control:=/gento/{side}_joint_control"])
     node = rig.node
     monkeypatch.setattr(node, "_ros_now", lambda: node.get_clock().now().nanoseconds * 1e-9)
@@ -895,6 +923,10 @@ def test_trial_cli_over_ros_with_fake_hardware(make_node, side, tmp_path, monkey
     base = ["/usr/bin/python3", "-m", "skye_factr_teleop.sync_trial"]
     shared = ["--side", side, "--config", config_path]
     processes = []
+    follower = (node.create_publisher(JointState, f"/gento/{side}_joint_states", module.state_qos())
+                if motion_source == "follower_sync" else None)
+    # Distinct, signed joint values expose accidental reordering or sign changes.
+    follower_target = [0.1, -0.2, 0.3, -0.4, 0.2, -0.1, 0.15]
 
     def spawn(arguments):
         process = subprocess.Popen(base + arguments, env=env, stdout=subprocess.PIPE,
@@ -906,9 +938,14 @@ def test_trial_cli_over_ros_with_fake_hardware(make_node, side, tmp_path, monkey
         deadline = time.monotonic() + timeout
         while not condition() and time.monotonic() < deadline:
             rig.clock.now = time.monotonic()
+            if follower is not None:
+                message = packet(side)
+                message.header.stamp = node.get_clock().now().to_msg()
+                message.position = follower_target.copy()
+                follower.publish(message)
             if node.core._target is not None:
                 rig.hardware.inject_state(node.core._target * node.core.joint_signs, np.zeros(8))
-                rig.trajectories[-1].finished = True
+                rig.trajectories[-1].finished = rig.trajectories[-1].calls >= 10
             executor.spin_once(timeout_sec=0.005)
         assert condition(), "ROS trial test timed out"
 
@@ -916,18 +953,30 @@ def test_trial_cli_over_ros_with_fake_hardware(make_node, side, tmp_path, monkey
         recorder = spawn(["record", *shared, "--output", str(output),
                           "--operator", "automated-fake-hardware", "--duration", "20"])
         spin_until(lambda: node._diagnostic_pub.get_subscription_count() > 0)
-        preview = spawn(["move", *shared, "--joint-id", "1", "--delta", "0.05"])
-        spin_until(lambda: preview.poll() is not None)
-        preview_text = preview.communicate()[0]
-        assert preview.returncode == 0, preview_text
-        assert "Preview only" in preview_text
-        assert not rig.hardware.torque_enabled
-        command = spawn(["move", *shared, "--joint-id", "1", "--delta", "0.05", "--execute"])
+        if follower is None:
+            preview = spawn(["move", *shared, "--joint-id", "1", "--delta", "0.05"])
+            spin_until(lambda: preview.poll() is not None)
+            preview_text = preview.communicate()[0]
+            assert preview.returncode == 0, preview_text
+            assert "Preview only" in preview_text
+            assert not rig.hardware.torque_enabled
+            command = spawn(["move", *shared, "--joint-id", "1", "--delta", "0.05", "--execute"])
+        else:
+            spin_until(lambda: node._fresh_follower())
+            command = subprocess.Popen(
+                ["ros2", "topic", "pub", "--once", "/mode/switch_sync",
+                 "std_msgs/msg/String", "{data: switch_sync}"], env=env,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            processes.append(command)
         spin_until(lambda: command.poll() is not None)
         command_text = command.communicate()[0]
         assert command.returncode == 0, command_text
-        assert "Observed mode:" in command_text
+        if follower is None:
+            assert "Observed mode:" in command_text
         spin_until(lambda: node.core.mode == ControlMode.SYNCED)
+        assert node._follower_session_active == (follower is not None)
+        if follower is not None:
+            np.testing.assert_allclose(node.core._target, follower_target + [0.4])
         stop = node.create_publisher(String, "/mode/switch_stop", module.event_qos())
         spin_until(lambda: stop.get_subscription_count() > 0)
         stop.publish(String(data="switch_stop"))
@@ -937,6 +986,8 @@ def test_trial_cli_over_ros_with_fake_hardware(make_node, side, tmp_path, monkey
         record = json.loads(output.read_text())
         assert record["assessment"] == "RECORDED"
         assert record["synced_observed"]
+        assert record["states"] == [
+            "IDLE", "TELEOP_SYNCING", "HOLD_SETTLING", "SYNCED", "IDLE"]
         assert record["follower_command_count"] == 0
         assert record["side"] == side
         assert record["config"]["controller"]["sync_hold_control"]["gripper_setpoint"] == 0.4

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from copy import deepcopy
+from dataclasses import replace
 import json
 from pathlib import Path
 import sys
@@ -21,10 +22,26 @@ def config(request):
                        f"grav_comp_m6_{request.param}.yaml", require_runtime=True)
 
 
-def test_real_ruckig_preview_includes_gripper_and_small_joint_move(config):
+@pytest.mark.parametrize("velocity,acceleration,jerk,duration", [
+    (0.1, 0.2, 1.0, 4.7),
+    (0.8, 1.0, 5.0, 1.4806248474865698),
+])
+def test_real_ruckig_preview_includes_gripper_and_small_joint_move(
+        config, velocity, acceleration, jerk, duration):
+    sync = config.controller.sync_hold_control
+    ruckig = replace(sync.ruckig, max_velocity=(velocity,) * 8,
+                     max_acceleration=(acceleration,) * 8, max_jerk=(jerk,) * 8)
+    config = replace(config, controller=replace(
+        config.controller, sync_hold_control=replace(sync, ruckig=ruckig)))
     plan = preview_move(config, [0] * 8, [0] * 8, joint_id=6, delta=-0.05)
     np.testing.assert_allclose(plan["target_position_rad"], [0, 0, 0, 0, 0, -0.05, 0, 0.4])
-    assert plan["trajectory_duration_s"] == pytest.approx(4.7)
+    assert plan["trajectory_duration_s"] == pytest.approx(duration)
+
+
+def with_trajectory_timeout(config, seconds):
+    sync = config.controller.sync_hold_control
+    return replace(config, controller=replace(config.controller, sync_hold_control=replace(
+        sync, ruckig=replace(sync.ruckig, trajectory_timeout=seconds))))
 
 
 def test_multijoint_relative_move_uses_sampled_nonzero_pose(config):
@@ -53,6 +70,8 @@ def test_multijoint_relative_move_uses_sampled_nonzero_pose(config):
     ({"deltas": [1.5, 0, 0, 0, 0, 0, 0]}, "timeout"),
 ])
 def test_multijoint_relative_move_validates_input_and_trajectory(config, kwargs, match):
+    if match == "timeout":
+        config = with_trajectory_timeout(config, 1.0)
     with pytest.raises(ValueError, match=match):
         preview_move(config, [0] * 8, [0] * 8, **kwargs)
 
@@ -75,6 +94,8 @@ def test_multijoint_relative_cli_offline_preview(config, capsys):
     ({"joint_id": 1, "delta": 0.05, "target": [0] * 7}, "choose"),
 ])
 def test_preview_rejects_bad_or_overlong_targets(config, kwargs, match):
+    if match == "timeout":
+        config = with_trajectory_timeout(config, 1.0)
     with pytest.raises(ValueError, match=match):
         preview_move(config, [0] * 8, [0] * 8, **kwargs)
 
@@ -183,12 +204,13 @@ def test_sync_conditions_instantaneous_pass_still_requires_continuous_settling(c
     assert "Continuous settling: 0.120 / 0.250 s" in text
 
 
-@pytest.mark.parametrize("reason,expected", [
-    ("sync_timeout", "Ruckig reference trajectory did not finish within 10.000 s"),
-    ("settle_timeout", "within 3.000 s of HOLD_SETTLING"),
-])
+@pytest.mark.parametrize("reason", ["sync_timeout", "settle_timeout"])
 def test_execute_monitor_reports_controller_timeout_and_measured_blockers(
-        monkeypatch, config, reason, expected):
+        monkeypatch, config, reason):
+    sync = config.controller.sync_hold_control
+    expected = (f"Ruckig reference trajectory did not finish within {sync.ruckig.trajectory_timeout:.3f} s"
+                if reason == "sync_timeout" else
+                f"within {sync.hold.settle_timeout:.3f} s of HOLD_SETTLING")
     final = {"mode": "IDLE", "sync_status": {"transition_reason": reason},
              "position_rad": [0.1] + [0.0] * 7, "velocity_rad_s": [0.0] * 8}
     with pytest.raises(ValueError) as exc:

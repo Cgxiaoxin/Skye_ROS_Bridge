@@ -501,6 +501,19 @@ def test_write_failure_disables_torque_after_zero_retry():
     assert not hardware.torque_enabled
 
 
+def test_cleanup_failure_does_not_hide_original_hardware_fault():
+    core, hardware, _ = _core()
+    hardware.fail_next_read(RuntimeError("device ID 3: OVERLOAD"))
+    hardware.fail_next_write(TimeoutError("cleanup communication timeout"))
+
+    with pytest.raises(RuntimeError, match="device ID 3: OVERLOAD") as caught:
+        core.step()
+
+    assert isinstance(caught.value.__cause__, TimeoutError)
+    assert not hardware.torque_enabled
+    assert core.mode == ControlMode.IDLE
+
+
 def test_invalid_constructor_inputs_do_not_touch_hardware():
     config = load_config(CONFIG)
     hardware = FakeDynamixelIO(np.zeros(8), np.zeros(8), torque_enabled=True)

@@ -201,6 +201,7 @@ class FakePacketHandler:
 class FakeGroupSyncRead:
     def __init__(self, sdk, port_handler, packet_handler, address, length):
         self.sdk = sdk
+        self.device_errors = sdk.device_errors
         sdk.events.append(("GroupSyncRead", address, length))
 
     def addParam(self, dxl_id):
@@ -259,6 +260,7 @@ class FakeSdk:
         self.read_tx_results = deque()
         self.available_results = {}
         self.read_data = {}
+        self.device_errors = {}
         self.write_add_results = {}
         self.write_tx_result = COMM_SUCCESS
 
@@ -741,6 +743,103 @@ def test_close_still_disables_torque_and_closes_after_zero_write_failure(
     assert ("write1", 2, 64, 0) in fake_sdk.events
     assert fake_sdk.events[-1] == ("closePort",)
     assert driver.is_open is False
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_read_state_detects_overload_even_when_sync_read_succeeds(
+    driver_factory, fake_sdk, enabled
+):
+    driver = driver_factory()
+    driver.open(enable_torque=enabled)
+    fake_sdk.device_errors[2] = 0x80
+    fake_sdk.read_results[(2, 70)] = (0x20, COMM_SUCCESS, 0x80)
+
+    with pytest.raises(driver_module.DynamixelSdkError) as caught:
+        driver.read_state()
+
+    assert "device ID 2" in str(caught.value)
+    assert "0x20" in str(caught.value)
+    assert "OVERLOAD" in str(caught.value)
+
+
+def test_alert_with_unreadable_fault_register_still_stops(
+    driver_factory, fake_sdk
+):
+    driver = driver_factory()
+    driver.open()
+    fake_sdk.device_errors[2] = 0x80
+    fake_sdk.read_results[(2, 70)] = (0, -1001, 0)
+
+    with pytest.raises(driver_module.DynamixelSdkError, match="Hardware Error Status.*unavailable"):
+        driver.read_state()
+
+
+def test_mode_verification_reports_specific_hardware_fault(driver_factory, fake_sdk):
+    driver = driver_factory()
+    driver.open(enable_torque=False)
+    fake_sdk.read_results[(2, 11)] = (0, COMM_SUCCESS, 0x80)
+    fake_sdk.read_results[(2, 70)] = (0x24, COMM_SUCCESS, 0x80)
+
+    with pytest.raises(driver_module.DynamixelSdkError, match="0x24.*OVERHEATING.*OVERLOAD"):
+        driver.set_torque_enabled(True)
+
+    assert not driver.torque_enabled
+
+
+def test_close_accepts_alert_only_disable_reply_and_disables_remaining_ids(
+    driver_factory, fake_sdk
+):
+    driver = driver_factory()
+    driver.open()
+    fake_sdk.write_results[(1, 64, 0)] = (COMM_SUCCESS, 0x80)
+    fake_sdk.events.clear()
+
+    driver.close()
+
+    assert ("write1", 2, 64, 0) in fake_sdk.events
+    assert fake_sdk.events[-1] == ("closePort",)
+    assert not driver.torque_enabled
+
+
+def test_disable_communication_failure_does_not_skip_remaining_ids(
+    driver_factory, fake_sdk
+):
+    driver = driver_factory()
+    driver.open()
+    fake_sdk.write_results[(1, 64, 0)] = (-1001, 0)
+    fake_sdk.events.clear()
+
+    with pytest.raises(driver_module.DynamixelSdkError, match="communication error"):
+        driver.close()
+
+    assert ("write1", 2, 64, 0) in fake_sdk.events
+    assert fake_sdk.events[-1] == ("closePort",)
+    assert driver.torque_enabled  # Cached state remains unknown on failed disable.
+
+
+def test_sync_reader_preserves_packet_alerts_and_clears_them_next_cycle():
+    class Packets:
+        error = 0x80
+
+        def getProtocolVersion(self):
+            return 2.0
+
+        def syncReadTx(self, *args):
+            return COMM_SUCCESS
+
+        def readRx(self, port, dxl_id, length):
+            return [dxl_id] * length, COMM_SUCCESS, self.error if dxl_id == 2 else 0
+
+    packets = Packets()
+    reader = driver_module.GroupSyncRead(None, packets, 128, 8)
+    reader.addParam(1)
+    reader.addParam(2)
+    assert reader.txRxPacket() == COMM_SUCCESS
+    assert getattr(reader, "device_errors", {}) == {1: 0, 2: 0x80}
+    assert reader.getData(2, 128, 4) == 0x02020202
+    packets.error = 0
+    assert reader.txRxPacket() == COMM_SUCCESS
+    assert reader.device_errors == {1: 0, 2: 0}
 
 
 def test_sdk_error_reports_operation_and_device_id(driver_factory, fake_sdk):

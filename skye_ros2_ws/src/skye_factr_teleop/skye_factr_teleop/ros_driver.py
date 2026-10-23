@@ -346,6 +346,7 @@ class SkyeFactrTeleopNode(Node):
     def _tick(self):
         if self._closed:
             return
+        phase = self.core.mode.name
         try:
             if self._follower_session_active and not self._fresh_follower():
                 self.get_logger().warning("Follower state expired; stopping")
@@ -359,7 +360,7 @@ class SkyeFactrTeleopNode(Node):
             self._publish_diagnostics(result, cycle_time)
             self._publish_friction_phase()
         except Exception as exc:
-            self._fault(exc)
+            self._fault(exc, phase=phase)
 
     def _ros_now(self):
         return self.get_clock().now().nanoseconds * 1e-9
@@ -546,8 +547,13 @@ class SkyeFactrTeleopNode(Node):
             ]))
         self._publish_state()
 
-    def _fault(self, exc):
-        self.get_logger().error(f"Control stopped after failure: {exc}")
+    def _fault(self, exc, *, phase=None):
+        phase = phase or self.core.mode.name
+        self.get_logger().error(
+            f"Control stopped after failure [side={self.side}, phase={phase}]: {exc}"
+        )
+        if exc.__cause__ is not None:
+            self.get_logger().error(f"Additional error context: {exc.__cause__}")
         self.shutdown_control()
 
     def _publish_diagnostics(self, result, cycle_time):

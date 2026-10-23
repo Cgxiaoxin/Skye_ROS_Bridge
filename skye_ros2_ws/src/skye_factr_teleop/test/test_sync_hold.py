@@ -166,7 +166,8 @@ def test_settle_timeout_disables_torque_and_rejects_teleop():
     assert core.sync_status["transition_from"] == "HOLD_SETTLING"
     assert core.sync_status["transition_to"] == "IDLE"
     assert not hardware.torque_enabled
-    assert core.handle("switch_teleop", now=4.1).outcome == "rejected"
+    after_timeout = core.config.controller.sync_hold_control.hold.settle_timeout + 1.1
+    assert core.handle("switch_teleop", now=after_timeout).outcome == "rejected"
 
 
 def test_hold_integral_clamps_both_signs_and_resets_outside_threshold():
@@ -176,14 +177,18 @@ def test_hold_integral_clamps_both_signs_and_resets_outside_threshold():
     core.step(now=1.002)
     position = np.array([-0.1, 0.1, -0.1, 0.1, -0.1, 0.1, -0.1, 0.1])
     hardware.inject_state(position * core.joint_signs, np.zeros(8))
-    result = core.step(now=3.002)
-    expected = -np.sign(position) * np.array(core.config.controller.sync_hold_control.hold.i_max)
+    hold = core.config.controller.sync_hold_control.hold
+    # Integrate long enough to reach every configured clamp before settle timeout.
+    end_time = 1.002 + max(hold.i_max) / 0.1 + 0.1
+    assert end_time < 1.002 + hold.settle_timeout
+    result = core.step(now=end_time)
+    expected = -np.sign(position) * np.array(hold.i_max)
     np.testing.assert_allclose(core.hold_integral, expected)
     # Snapshots returned to the caller cannot mutate the controller's target/integral.
     core.hold_integral[:] = 100
     result.target_position[:] = 100
-    hardware.inject_state(np.full(8, 0.2) * core.joint_signs, np.zeros(8))
-    result = core.step(now=3.004)
+    hardware.inject_state((np.asarray(hold.i_thresh) + 0.1) * core.joint_signs, np.zeros(8))
+    result = core.step(now=end_time + 0.002)
     np.testing.assert_array_equal(core.hold_integral, np.zeros(8))
     np.testing.assert_array_equal(result.target_position, np.zeros(8))
 
@@ -213,18 +218,19 @@ def test_deadline_wins_over_completion_and_repeated_sync_does_not_extend_it():
     begin(core)
     trajectories[0].finished = True
     assert begin(core, now=2.0, target=0.2).outcome == "ignored"
-    result = core.step(now=11.0)
+    deadline = 1.0 + core.config.controller.sync_hold_control.ruckig.trajectory_timeout
+    result = core.step(now=deadline)
     assert result.mode == ControlMode.IDLE
     assert core.last_transition.reason == "sync_timeout"
     assert trajectories[0].calls == 0
     assert result.target_position is None
     assert not hardware.torque_enabled
     np.testing.assert_array_equal(hardware.last_currents_ma, np.zeros(8))
-    assert core.handle("switch_teleop", now=12.0).outcome == "rejected"
+    assert core.handle("switch_teleop", now=deadline + 1.0).outcome == "rejected"
     hardware.set_torque_enabled(True)
-    begin(core, now=13.0, target=0.2)
+    begin(core, now=deadline + 2.0, target=0.2)
     assert len(trajectories) == 2
-    assert core.step(now=13.002).mode == ControlMode.TELEOP_SYNCING
+    assert core.step(now=deadline + 2.002).mode == ControlMode.TELEOP_SYNCING
     np.testing.assert_allclose(trajectories[1].target, 0.2)
 
 

@@ -444,8 +444,11 @@ class ControlCore:
                 target_position=torques.target_position,
                 target_velocity=torques.target_velocity,
             )
-        except Exception:
-            self.stop()
+        except Exception as exc:
+            try:
+                self.stop()
+            except Exception as stop_error:
+                raise exc from stop_error
             raise
 
     def handle(
@@ -475,8 +478,11 @@ class ControlCore:
             self._apply_actions(result, follower_position, gripper_setpoint)
             self._last_transition = result
             return result
-        except Exception:
-            self.stop()
+        except Exception as exc:
+            try:
+                self.stop()
+            except Exception as stop_error:
+                raise exc from stop_error
             raise
 
     def stop(self) -> TransitionResult:
