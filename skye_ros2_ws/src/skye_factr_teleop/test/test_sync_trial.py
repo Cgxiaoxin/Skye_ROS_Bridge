@@ -297,3 +297,72 @@ def test_fresh_idle_checks_ros_time_receive_time_side_and_mode(config):
     moving["mode"] = "SYNCED"
     with pytest.raises(ValueError, match="IDLE"):
         fresh_idle(moving, **kwargs)
+
+
+def test_record_status_shows_only_unmet_conditions_and_waiting_time(config):
+    display = sync_trial.RecordStatus(config)
+    display.observe(sample("HOLD_SETTLING", 1, target_position_rad=[0.1] + [0.0] * 7,
+                           velocity_rad_s=[0.0, 0.08] + [0.0] * 6,
+                           sync_status={"mode_elapsed_s": 12.4, "settled_for_s": 0.0}), received_at=100.0)
+    text = display.render(now=100.01, ros_now=100.01)
+    assert "Waiting for SYNCED" in text and "12.400 / 25.000 s" in text
+    tolerance = config.controller.sync_hold_control.hold.sync_position_tolerance[0]
+    assert f"J1: |position error|=0.100000 rad > {tolerance:.6f} rad" in text
+    assert "J2: |velocity|=0.080000 rad/s > 0.050000 rad/s" in text
+    assert "Continuous settling: 0.000 / 0.250 s" in text
+    for absent in ("J3:", "J7:", "gripper(ID8):", "CLIP", "actual/limit"):
+        assert absent not in text
+
+
+def test_record_status_limits_refresh_and_reports_synced_once(config):
+    display = sync_trial.RecordStatus(config)
+    display.observe(sample("TELEOP_SYNCING", 1, sync_status={"mode_elapsed_s": 0.5}), received_at=100.0)
+    text = display.render(now=100.0, ros_now=100.0)
+    assert "Waiting for HOLD_SETTLING" in text and "0.500 / 30.000 s" in text
+    for seq, now in ((2, 100.1), (3, 100.99)):
+        display.observe(sample("TELEOP_SYNCING", seq, stamp_s=now), received_at=now)
+        assert display.render(now=now, ros_now=now) is None
+    assert display.render(now=101.0, ros_now=101.0) is not None
+    display.observe(sample("SYNCED", 4, stamp_s=101.01), received_at=101.01)
+    assert "Synchronization complete: SYNCED" in display.render(now=101.01, ros_now=101.01)
+    display.observe(sample("SYNCED", 5, stamp_s=102.1), received_at=102.1)
+    assert display.render(now=102.1, ros_now=102.1) is None
+
+
+def test_record_status_reports_missing_stale_and_resumed_diagnostics(config):
+    display = sync_trial.RecordStatus(config)
+    assert "WAITING" in display.render(now=100.0, ros_now=100.0)
+    display.observe(sample("HOLD_SETTLING", 1), received_at=100.0)
+    assert "Waiting for SYNCED" in display.render(now=100.01, ros_now=100.01)
+    stale = display.render(now=100.3, ros_now=100.3)
+    assert "STALE" in stale and "0.300 s" in stale and "position error" not in stale
+    display.observe(sample("HOLD_SETTLING", 2, stamp_s=100.31), received_at=100.31)
+    assert "Waiting for SYNCED" in display.render(now=100.31, ros_now=100.31)
+
+
+@pytest.mark.parametrize("stamp", [99.0, 101.0])
+def test_record_status_checks_message_timestamp_as_well_as_receipt(config, stamp):
+    display = sync_trial.RecordStatus(config)
+    display.observe(sample("HOLD_SETTLING", 1, stamp_s=stamp), received_at=100.0)
+    assert "STALE" in display.render(now=100.0, ros_now=100.0)
+
+
+def test_record_status_timeout_keeps_goal_after_idle_clears_target(config):
+    display = sync_trial.RecordStatus(config)
+    display.observe(sample("HOLD_SETTLING", 1, target_position_rad=[0.1] + [0.0] * 7), received_at=100.0)
+    display.render(now=100.0, ros_now=100.0)
+    display.observe(sample("IDLE", 2, stamp_s=100.1, target_position_rad=None,
+                           velocity_rad_s=[0.0] * 8,
+                           sync_status={"transition_reason": "settle_timeout"}), received_at=100.1)
+    text = display.render(now=100.1, ros_now=100.1)
+    assert "settle_timeout" in text and "25.000 s" in text
+    assert "J1: |position error|=0.100000 rad" in text and "J3:" not in text
+
+
+def test_record_cli_removes_progress_option(tmp_path, capsys):
+    with pytest.raises(SystemExit) as caught:
+        sync_trial.main(["record", "--side", "left", "--config", "not-loaded.yaml",
+                         "--operator", "test", "--output", str(tmp_path / "record.json"),
+                         "--progress-hz", "2"])
+    assert caught.value.code == 2
+    assert "unrecognized arguments: --progress-hz 2" in capsys.readouterr().err

@@ -24,6 +24,88 @@
 
 ## 2. 公共环境与启动
 
+### 2.1 启动前准备：编译、串口检查与设置
+
+参考[原试验清单第 2、3 节](phase7_3_sync_trial_checklist.md#2-构建和离线预览不打开串口)。
+先退出占用目标侧串口的旧小臂节点及检查工具，再执行本节；编译不连接大臂，也不打开小臂串口。
+
+**编译并加载工作区**（首次使用或源码、launch、安装配置变更后执行）：
+
+```bash
+cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+source /opt/ros/humble/setup.bash
+colcon build --packages-up-to skye_factr_teleop --symlink-install
+```
+
+确认编译成功；本次真实反馈同步还需要 `skye_robot_driver`。若大臂驱动尚未构建，
+或修改过其代码、launch、控制器 IP 等安装配置，再执行：
+
+```bash
+colcon build --packages-select skye_robot_driver \
+  --cmake-args -DAMENT_CMAKE_SYMLINK_INSTALL=OFF
+```
+
+大臂驱动沿用本工作区已有的普通安装方式，显式关闭 CMake 符号链接安装，
+避免与已有安装目录冲突。编译成功后加载安装环境：
+
+```bash
+source install/setup.bash
+SIDE=left
+CONFIG="$PWD/src/skye_factr_teleop/config/grav_comp_m6_${SIDE}.yaml"
+```
+
+**枚举串口并核对实体侧别**：
+
+```bash
+ls -l /dev/serial/by-id/
+rg -n 'dynamixel_port:' "$CONFIG"
+```
+
+本设备 A 的左侧 by-id 为 `FTBEO9L1`，右侧为 `FTBEO8WL`；与 YAML 及实体线缆标签核对一致。
+`ttyUSB0 / ttyUSB1` 编号可能变化，不用编号判定左右侧。无法区分时，在节点停止后逐个拔插 USB 并重新枚举。
+
+**检查设备、权限及占用，设置 FTDI 延迟**：以下按 `SIDE` 选择本设备 A 的串口。
+若更换设备或修改了 YAML 中的串口，先同步修改下面的 by-id 路径。
+
+```bash
+(
+  case "$SIDE" in
+    left) USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0 ;;
+    right) USB_BY_ID=/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0 ;;
+    *) echo "SIDE 必须为 left 或 right" >&2; exit 1 ;;
+  esac
+
+  TTY_PATH=$(readlink -f "$USB_BY_ID")
+  if ! test -c "$TTY_PATH"; then
+    echo "串口不存在：$USB_BY_ID" >&2
+    exit 1
+  fi
+  if ! test -r "$TTY_PATH" || ! test -w "$TTY_PATH"; then
+    echo "当前用户缺少串口读写权限：$TTY_PATH" >&2
+    exit 1
+  fi
+  echo "USB by-id: $USB_BY_ID -> $TTY_PATH"
+  if fuser -v "$TTY_PATH"; then
+    echo "串口仍被进程占用，请先正常退出对应程序" >&2
+    exit 1
+  fi
+
+  TTY_NAME=$(basename "$TTY_PATH")
+  LATENCY_PATH="/sys/bus/usb-serial/devices/${TTY_NAME}/latency_timer"
+  printf '1\n' | sudo tee "$LATENCY_PATH" > /dev/null || exit 1
+  echo "latency_timer 读取确认（应为 1）："
+  cat "$LATENCY_PATH"
+  test "$(cat "$LATENCY_PATH")" = 1
+)
+```
+
+`fuser` 无占用时通常无输出、返回非零；若显示 PID，先退出占用程序。
+设备缺失、权限不足或延迟设置失败时，处理后重新执行本节。
+`latency_timer` 回读必须为 `1`；USB 重新插拔或主机重启后需重新设置并检查。
+舵机总线波特率仍为 YAML 中的 `4000000`，由驱动打开串口时设置，不另用 `stty` 改写。
+
+### 2.2 公共环境与真机启动
+
 以下为连接真机后的操作命令。所有终端使用同一主机工作区和 ROS 环境，各执行：
 
 ```bash
@@ -41,7 +123,7 @@ CONFIG="$PWD/src/skye_factr_teleop/config/grav_comp_m6_${SIDE}.yaml"
 
 操作者先确认大臂姿态、小臂路径、线缆及夹爪范围可行，并支撑小臂，准备好停止与断电。
 只运行目标侧小臂节点，停止旧控制器和 `skye_follower_align`，避免其它节点发布运动命令。
-USB 侧别及 latency timer 的检查沿用[原清单第 3 节](phase7_3_sync_trial_checklist.md#3-现场准备与启动终端-a)。
+启动前应已完成第 2.1 节的编译、USB 侧别核对、串口检查及 latency timer 设置。
 
 终端 A 启动大臂驱动；已有同一驱动运行时不重复启动。该命令会连接真机、进入控制模式，并按现有配置启动夹爪：
 
@@ -65,6 +147,7 @@ ros2 topic echo --once "/gento/${SIDE}_joint_states" sensor_msgs/msg/JointState
 ```
 
 核对七轴名称、顺序及数值与实体姿态一致；目标须位于小臂安全范围内。
+2026-10-26 新提供的典型姿态中，J7 超出当前安全区，具体检查结果和 stop 验收建议见第 17 节。
 不能只凭有消息就发送同步；首轮让小臂起点靠近大臂目标，由操作者确认实体路径。
 
 ## 3. 记录与终端输出
@@ -82,6 +165,33 @@ ros2 run skye_factr_teleop skye_factr_sync_trial record \
 记录命令会占用终端；不要把 stop 排在它后面等待执行，停止始终在终端 D 发出。
 到期或 Ctrl+C 只保存记录，不停止小臂。
 
+### 3.1 在记录终端查看同步状态和未达标关节
+
+`record` 默认使用与 `move --execute` 相同的简洁等待提示，无需附加显示参数。
+状态变化立即显示，活动阶段约每秒更新一次：
+
+- TELEOP_SYNCING：显示 `Waiting for HOLD_SETTLING`，以及轨迹已用时/超时门限。
+- HOLD_SETTLING：显示 `Waiting for SYNCED`，以及收敛已用时/超时门限；
+  复用 `move` 的判定与格式，只列出位置或速度未达标的关节、误差/速度及门限，
+  并显示连续达标时间。已经达标的关节不逐轴打印。
+- 瞬时全部达标时提示还需连续满足指定时长；进入 SYNCED 后提示同步完成，停止重复打印等待信息。
+- 轨迹或收敛超时显示 `sync_timeout` 或 `settle_timeout`；收敛超时后即使目标已清空，
+  仍使用停止前的目标显示最新未达标条件。
+
+例如（数值仅示意）：
+
+```text
+Waiting for SYNCED: HOLD_SETTLING (12.400 / 25.000 s)
+J1: |position error|=0.094000 rad > 0.070000 rad (actual=0.094000, target=0.000000)
+Continuous settling: 0.000 / 0.250 s
+```
+
+未收到诊断时显示 `WAITING`，数据过期时显示 `STALE` 并停止展示旧误差，恢复后继续显示。
+终端不再输出八轴电流大表，完整误差、电流和力矩数据仍逐帧写入 trace 并纳入 JSON 汇总。
+显示不发送同步或停止命令；模式请求仍在独立终端操作，关闭记录器不停止小臂。
+
+### 3.2 独立状态监控
+
 终端 E 查看状态，供保存终端输出及判断同步进度：
 
 ```bash
@@ -89,7 +199,7 @@ ros2 topic echo /teleop/state std_msgs/msg/String --qos-durability transient_loc
 ```
 
 本轮仅启动一侧，因此这个全局状态话题对应当前侧。详细误差、电流和力矩由记录文件分析。
-正式同步没有 `move --execute` 的逐轴等待提示；CLI 的 `publishing #1` 只表示请求已发布。
+正式同步的等待条件显示在记录终端；发布请求终端的 `publishing #1` 只表示请求已发布。
 
 ## 4. 同步与停止（终端 D）
 
@@ -567,8 +677,132 @@ SYNCED 阶段七轴位置误差最大约 `0.0613 rad`，在 `0.07 rad` 容差内
 - [x] 同一最终参数完成零位回归；操作者接受当前平顺性和收敛耗时。
 - [x] 批次末独立回读确认八台电机无故障、扭矩关闭。
 - [ ] 使用最终参数验证受影响的大偏差起点；结论暂限于本节已测范围，不扩展到任意初始姿态或全部工作空间。
+- [ ] 核对典型目标中 J7 约 `0.774 rad` 的需求与小臂实际机械行程、配置限位是否匹配，见第 17 节。
 - [ ] 左侧最终参数下的运动中 stop、受控超时、反馈中断等异常路径验收；历史调参中的人工中止不替代完整异常路径验收。
 - [ ] 右侧正式大臂反馈同步及独立失能回读；右侧参数须单独验证。
 - [ ] 阶段 7.4 的 SYNCED → TELEOP 切换和遥操验收，本组未执行。
 
 当前只完成上述左侧已测范围的正常同步验收，不标记整个阶段 7.3 完成，也不将保持稳定代替切遥操验收。
+
+## 17. 新典型姿态的启动前检查：J7 进入限位屏障区（2026-10-26）
+
+操作者在开始同步前，通过以下命令回读大臂左侧反馈，并说明这是一个典型同步姿态：
+
+```bash
+ros2 topic echo --once "/gento/${SIDE}_joint_states" sensor_msgs/msg/JointState
+```
+
+七轴名称为 `l_j1`～`l_j7`，位置约为：
+
+```text
+J1..J7 = [0.399392, 0.527795, -0.407642, -1.909503, 1.132799, -0.700401, 0.773859] rad
+```
+
+该次采样的七轴实测速度绝对值均小于 `0.0006 rad/s`，大臂基本静止。
+对照当前左侧 YAML，安全区按 `limit_min + safety_margin` 至 `limit_max - safety_margin` 计算。
+J1～J6 均在安全区内；J7 的检查结果如下：
+
+| 项目 | 数值 |
+|---|---:|
+| 大臂 J7 目标 | `+0.773859 rad` |
+| 小臂 J7 配置限位 | `[-0.8, +0.8] rad` |
+| 安全余量 `safety_margin` | `0.1 rad` |
+| 小臂 J7 安全区 | `[-0.7, +0.7] rad` |
+| 目标超过安全区上沿的幅度 | `0.073859 rad` |
+
+J7 目标虽在配置限位内，但已进入限位屏障介入区。
+小臂实际 J7 超过 `+0.7 rad` 后，屏障产生向安全区内的恢复力矩，
+与跟踪该正向目标的纠偏力矩相互抵消，可能影响到位、增加电流请求或导致收敛超时。
+这次检查仅说明目标与当前安全区存在冲突，尚无该姿态的同步或中途 stop 验收结果。
+
+**本轮运动中 stop 验收的姿态建议：** 操作者先将大臂 J7 调至约 `+0.65 rad`，
+其余关节姿态可保留；随后重新回读七轴反馈，确认目标均在小臂安全范围内且大臂静止，
+再按记录、同步、中途 stop、独立失能回读的流程验收。该建议尚未执行。
+
+**常用姿态覆盖待办：** 既然 J7 约 `+0.774 rad` 是实际使用需求，
+后续须核对小臂 J7 的实际机械行程、零位/方向映射和当前配置限位是否匹配，
+再决定是否调整配置以覆盖该范围；本次仅记录检查结果，保留现有控制参数和限位。
+
+## 18. 轨迹到保持的平滑交接（2026-10-26，回归结果见第 19 节）
+
+最近零位回归中，操作者确认 `left_follower_sync_031` 顺滑，
+`left_follower_sync_032` 仍有一次明显停顿和补动。第 032 轮进入 HOLD_SETTLING 时，
+J2 位置误差约 `0.1855 rad`，约 4 s 后满足同步条件。
+本轮改进针对轨迹 PD 到保持 PID 的瞬时切换，不继续提高增益或放宽误差门限。
+
+### 18.1 本次控制变化
+
+- Ruckig 参考轨迹结束后照常进入 HOLD_SETTLING，用固定 `0.5 s` 平滑交接到保持 PID。
+- 交接权重为 `w = 3x² - 2x³`，`x` 为交接时间除以 `0.5 s` 并限制在 `[0, 1]`。
+  跟踪力矩为 `(1-w) × 轨迹终点 PD + w × 保持 PID`。
+- 两套控制都根据每个周期的实时位置、速度与最终目标计算；不会冻结最后一次电流。
+  保持积分沿用现有积分阈值和上限，从进入 HOLD_SETTLING 时开始积累。
+- 两阶段重力补偿增益也按相同权重交接。当前左侧两阶段增益相同，该部分输出不因交接而改变。
+- `0.07 rad` 七轴位置容差、速度容差、连续达标 `0.25 s`、保持收敛超时 `25 s` 均保留。
+  若提前进入 SYNCED，剩余交接继续完成，不重新计时。
+- 当前 YAML 增益、电流上限及轨迹上限 `0.8 rad/s、1.0 rad/s²、5.0 rad/s³` 保留。
+  stop、故障和超时会终止交接；下一次同步重新开始。
+- 诊断及 `.trace.jsonl` 的 `sync_status.hold_blend_weight` 记录交接权重：
+  非保持状态为 `null`，交接期间从 `0` 增至 `1`，完成后保持 `1`。
+
+### 18.2 下一次现场验证
+
+退出并重新启动小臂节点以加载新控制代码，继续使用本文原有 `record` 和模式切换命令。
+依次复测第 031、032 轮对应的两类小臂起点，大臂均保持零位；分别使用新文件名保存记录。
+重点观察轨迹结束时是否仍明显停顿、保持阶段是否补动，以及进入 SYNCED 的耗时。
+若零位两类起点表现可接受，再复测已验证的常用非零目标，最后按原流程做独立失能回读。
+
+- [x] 零位第一类起点顺滑；第二类起点停顿、补动减轻，见第 19 节。
+- [x] 常用非零目标两类起点均同步成功；仍有停顿、补动，现场速度变化较平顺。
+- [x] 批次末独立失能回读确认八台电机扭矩关闭；不作为硬件故障寄存器全零的证据。
+
+此修改平滑控制律切换引入的输出变化；静摩擦、重力模型偏差或限幅仍可能造成停顿，
+实际改善程度以新记录和现场观察为准；本次仅确认第 19 节所列姿态和起点范围。
+
+## 19. 平滑交接回归及运动中 stop 验收（2026-10-26）
+
+### 19.1 当前参数下的正常同步回归
+
+保留 `0.5 s` 平滑交接；后续仅将左侧 J2 的 `hold.kp` 从 `0.50` 调至 `0.60`。
+第 051、052、061、062 轮配置快照中，J2 的 `ruckig.kp=0.60`、`hold.kp=0.60`，
+其余增益和电流、轨迹上限保持相同；当前参数先固定。
+
+| 记录（均位于 `/tmp/`） | 目标与起点 | HOLD_SETTLING 耗时 | 结果 |
+|---|---|---:|---|
+| `left_follower_sync_051.json` | 零位，第一类起点 | 1.16 s | SYNCED；操作者确认顺滑 |
+| `left_follower_sync_052.json` | 零位，第二类起点 | 3.68 s | SYNCED；操作者确认停顿、补动减轻 |
+| `left_follower_sync_061.json` | 常用非零位，第一类起点 | 6.99 s | SYNCED；主要等待 J3 |
+| `left_follower_sync_062.json` | 同一非零位，第二类起点 | 17.87 s | SYNCED；后半段主要等待 J1 |
+
+操作者确认第 061、062 轮顺滑，仍有停顿或补动，但速度变化不算突兀，无报警。
+在切换 stop 前几秒有人工碰触支撑；该末段标记为人工干预，不用于证明无接触保持稳定。
+J1 慢收敛及 J3 补动保留为性能优化项。
+第 061 轮 J4 在轨迹阶段累计约 `1.19 s` 被软件限幅至 `200 mA`；
+第 062 轮 J3 在 HOLD 阶段有 14 个限幅样本，限值 `450 mA`。
+第 062 轮 J1 无软件电流限幅，不将其慢收敛归因于电流上限。
+
+### 19.2 第 064 轮：TELEOP_SYNCING 中途 stop
+
+同步记录：[left_follower_sync_064.json](/tmp/left_follower_sync_064.json)，
+逐周期证据：[left_follower_sync_064.trace.jsonl](/tmp/left_follower_sync_064.trace.jsonl)。
+
+- 状态序列为 `IDLE → TELEOP_SYNCING → IDLE`；同步开始约 `2.13 s` 后观察到 IDLE，
+  这是从同步开始计时，不是 stop 命令响应延迟。
+- 第一个停止后诊断样本中，八轴输出电流归零、`torque_enabled_cached=false`，
+  目标位置和目标速度已清除，`hold_blend_weight=null`。
+- 无诊断丢帧、无序号重启、大臂运动指令计数为零。
+  记录在首次回到 IDLE 时结束，不据此推断停止后的长期行为。
+- 操作者确认现场停止表现一切正常。
+
+独立回读：[left_follower_sync_064_torque_disable.json](/tmp/left_follower_sync_064_torque_disable.json)，
+时间为 `2026-10-26 13:39:44 +08:00`。已核对 ID1～8 的 `torque_enabled` 全部为 `false`，
+`automated_result=PASS`，`analysis.issues=[]`；两帧位置无变化。
+该工具未记录 `Hardware Error Status`，不将 PASS 扩展为故障寄存器全零。
+原始同步记录的 `hardware_torque_disable_verified=false` 保留，硬件失能证据以本独立回读为准。
+
+- [x] 左侧当前参数下，TELEOP_SYNCING 运动中人工 stop：本轮验收通过。
+- [x] HOLD_SETTLING 中途 stop：操作者确认此前多次均成功，采用历史现场验证结论，
+  不再安排单独重复测试。此项依据操作者确认，不新增逐轮独立回读证据，也不扩展为当前参数逐轮复验。
+- [ ] 受控超时、反馈中断等其余异常路径验收。
+
+本轮不替代整个阶段 7.3 验收，也不覆盖右侧或 SYNCED → TELEOP 切换。

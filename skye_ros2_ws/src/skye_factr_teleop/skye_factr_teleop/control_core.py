@@ -15,6 +15,9 @@ from .dynamixel_driver import DynamixelIO, get_servo_spec, torque_nm_to_current_
 from .state_machine import Action, ControlMode, Event, StateMachine, TransitionResult
 
 
+HOLD_BLEND_DURATION_S = 0.5
+
+
 @dataclass(frozen=True)
 class ControlTerms:
     joint_limits: bool = True
@@ -342,6 +345,7 @@ class ControlCore:
         self._trajectory: TrajectoryIO | None = None
         self._target: np.ndarray | None = None
         self._hold_integral = np.zeros(MOTOR_COUNT)
+        self._hold_started_at: float | None = None
         self._settle_since: float | None = None
         self._last_step_at = self._now
         self._last_transition: TransitionResult | None = None
@@ -362,6 +366,8 @@ class ControlCore:
             "mode_elapsed_s": self._now - self._machine.entered_at,
             "settled_for_s": (0.0 if self._settle_since is None
                               else self._now - self._settle_since),
+            "hold_blend_weight": (None if self._hold_started_at is None
+                                  else self._hold_blend_weight()),
             "transition_reason": None if transition is None else transition.reason,
             "transition_from": None if transition is None else transition.previous_state.name,
             "transition_to": None if transition is None else transition.state.name,
@@ -620,7 +626,9 @@ class ControlCore:
                 if self.mode == ControlMode.TELEOP_SYNCING:
                     gain = ctrl.sync_hold_control.ruckig.gravity_comp_gain
                 elif self.mode in (ControlMode.HOLD_SETTLING, ControlMode.SYNCED):
-                    gain = ctrl.sync_hold_control.hold.gravity_comp_gain
+                    weight = self._hold_blend_weight()
+                    gain = ((1.0 - weight) * np.asarray(ctrl.sync_hold_control.ruckig.gravity_comp_gain)
+                            + weight * np.asarray(ctrl.sync_hold_control.hold.gravity_comp_gain))
                 compensation = gravity_compensation(
                     state.arm_position, state.arm_velocity,
                     self.dynamics, gain,
@@ -676,7 +684,7 @@ class ControlCore:
                 return torque, target, target_velocity
 
             self._trajectory_event(Event.TRAJECTORY_COMPLETE)
-            # Continue with hold control this cycle, without integrating trajectory time.
+            # Begin handover this cycle, without integrating trajectory time.
             dt = 0.0
 
         target = _vector(self._target, MOTOR_COUNT, "hold target")
@@ -707,7 +715,19 @@ class ControlCore:
             - np.asarray(hold.kd) * velocity
             + np.asarray(hold.ki) * self._hold_integral
         )
+        weight = self._hold_blend_weight()
+        if weight < 1.0:
+            # Recompute endpoint PD from live feedback; never retain a stale output.
+            endpoint_pd = np.asarray(ruckig.kp) * error - np.asarray(ruckig.kd) * velocity
+            torque = (1.0 - weight) * endpoint_pd + weight * torque
         return torque, target, np.zeros(MOTOR_COUNT)
+
+    def _hold_blend_weight(self) -> float:
+        # Keep the original start time through SYNCED if settling completes early.
+        if self._hold_started_at is None:
+            return 1.0
+        fraction = min(1.0, max(0.0, (self._now - self._hold_started_at) / HOLD_BLEND_DURATION_S))
+        return fraction * fraction * (3.0 - 2.0 * fraction)
 
     def _trajectory_event(self, event: Event) -> None:
         result = self._machine.handle(event, now=self._now)
@@ -746,6 +766,7 @@ class ControlCore:
                 if self._target is None:
                     raise RuntimeError("hold requires a synchronization target")
                 self._hold_integral.fill(0.0)
+                self._hold_started_at = self._now
                 self._settle_since = None
             elif action == Action.START_TELEOP:
                 if not self.hardware.torque_enabled:
@@ -772,6 +793,7 @@ class ControlCore:
         self._trajectory = None
         self._target = None
         self._hold_integral.fill(0.0)
+        self._hold_started_at = None
         self._settle_since = None
 
     def _zero_and_disable(self) -> None:

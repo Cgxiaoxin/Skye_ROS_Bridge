@@ -806,8 +806,10 @@ def test_dual_ros_graph_types_remaps_and_isolation(make_node, context):
             _spin_until(executor, lambda: all(
                 rig.node._follower.received_at == rig.clock.now
                 for rig in rigs.values()))
-            for _ in range(5):
-                executor.spin_once(timeout_sec=0.01)
+            # Both control timers must consume this fake time before advancing it;
+            # a fixed number of callbacks can be spent entirely on subscriptions.
+            _spin_until(executor, lambda: all(
+                rig.node.core._last_step_at == rig.clock.now for rig in rigs.values()))
         _spin_until(executor, lambda: all(
             rig.node.core.mode == ControlMode.SYNCED for rig in rigs.values()))
         # Drain the depth-one state subscription before publishing the next mode.
@@ -860,6 +862,7 @@ def test_sync_diagnostics_cover_motion_hold_clipping_and_stop(make_node, side):
     moving = json.loads(node._diagnostic_pub.messages[-1].data)
     assert moving["mode"] == "TELEOP_SYNCING"
     assert moving["sync_status"]["mode_elapsed_s"] == pytest.approx(0.002)
+    assert moving["sync_status"]["hold_blend_weight"] is None
     np.testing.assert_array_equal(moving["current_limit_ma"], node.core.current_limit_ma)
     assert moving["cycle_dt_s"] == pytest.approx(0.002)
     assert len(moving["position_rad"]) == len(moving["current_before_clip_ma"]) == 8
@@ -875,8 +878,11 @@ def test_sync_diagnostics_cover_motion_hold_clipping_and_stop(make_node, side):
     settling = json.loads(node._diagnostic_pub.messages[-1].data)
     assert settling["sync_status"]["transition_from"] == "TELEOP_SYNCING"
     assert settling["sync_status"]["transition_to"] == "HOLD_SETTLING"
+    assert settling["sync_status"]["hold_blend_weight"] == 0.0
     settle(rig, follower=False)
     assert node.core.mode == ControlMode.SYNCED
+    synced = json.loads(node._diagnostic_pub.messages[-1].data)
+    assert 0.0 < synced["sync_status"]["hold_blend_weight"] < 1.0
     node._on_teleop(String(data="switch_teleop"))
     assert node.core.mode == ControlMode.SYNCED
     node._on_stop(None)
@@ -891,6 +897,7 @@ def test_sync_diagnostics_cover_motion_hold_clipping_and_stop(make_node, side):
     np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))
     assert node.core.hold_integral.tolist() == [0.0] * 8
     assert node.core._target is None
+    assert node.core.sync_status["hold_blend_weight"] is None
     assert not node._command_pub.messages
 
 
@@ -992,6 +999,11 @@ def test_trial_cli_over_ros_with_fake_hardware(make_node, side, motion_source, t
         assert record["side"] == side
         assert record["config"]["controller"]["sync_hold_control"]["gripper_setpoint"] == 0.4
         assert output.with_suffix(".trace.jsonl").stat().st_size > 0
+        trace = [json.loads(line) for line in output.with_suffix(".trace.jsonl").read_text().splitlines()]
+        assert sum("data" in row for row in trace) == sum(p["samples"] for p in record["phases"].values())
+        assert "Waiting for SYNCED" in recorder_text
+        assert "Synchronization complete: SYNCED" in recorder_text
+        assert "CLIP now/window" not in recorder_text
         assert not rig.hardware.torque_enabled
         np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))
     finally:

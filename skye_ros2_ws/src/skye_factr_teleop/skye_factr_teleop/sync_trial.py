@@ -183,6 +183,65 @@ class TrialSummary:
         }
 
 
+class RecordStatus:
+    """Show the same concise waiting conditions as move, without sending commands."""
+
+    def __init__(self, config):
+        self.sync = config.controller.sync_hold_control
+        self.runtime = config.runtime
+        self.packet = None
+        self.last_active = None
+        self.received_at = None
+        self.last_display_at = float("-inf")
+        self.last_display_key = None
+
+    def observe(self, packet, *, received_at):
+        self.packet, self.received_at = packet, received_at
+        if packet["mode"] in ("TELEOP_SYNCING", "HOLD_SETTLING"):
+            self.last_active = packet
+
+    def render(self, *, now, ros_now):
+        packet = self.packet
+        age = None if packet is None else now - self.received_at
+        stamp_age = None if packet is None else ros_now - packet["stamp_s"]
+        freshness = ("WAITING" if packet is None else
+                     "FRESH" if (0 <= age <= self.runtime.state_timeout
+                                 and -self.runtime.future_tolerance <= stamp_age
+                                 <= self.runtime.state_timeout) else "STALE")
+        key = (None if packet is None else packet["mode"], freshness)
+        changed = key != self.last_display_key
+        if not changed and now - self.last_display_at < 1.0:
+            return None
+        self.last_display_at, self.last_display_key = now, key
+        if packet is None:
+            return "WAITING: 等待诊断消息；检查该侧 sync_diagnostics:=true 和 ROS_DOMAIN_ID。"
+        if freshness == "STALE":
+            return (f"STALE: 接收间隔={age:.3f} s，消息时间差={stamp_age:.3f} s；"
+                    f"最后状态={packet['mode']}，当前状态和误差未知。")
+
+        mode = packet["mode"]
+        if mode == "SYNCED":
+            return ("Synchronization complete: SYNCED. 同步完成；继续保持目标姿态。 "
+                    "Use /mode/switch_stop to stop." if changed else None)
+        if mode == "IDLE":
+            if changed and self.last_active is not None:
+                reason = (packet.get("sync_status") or {}).get("transition_reason")
+                if reason:
+                    return _sync_failure(packet, self.last_active["target_position_rad"], self.sync)
+            return None
+        if mode not in ("TELEOP_SYNCING", "HOLD_SETTLING"):
+            return None
+        status = packet.get("sync_status") or {}
+        elapsed = status.get("mode_elapsed_s")
+        timeout = (self.sync.ruckig.trajectory_timeout if mode == "TELEOP_SYNCING" else
+                   self.sync.hold.settle_timeout)
+        timing = "" if elapsed is None else f" ({elapsed:.3f} / {timeout:.3f} s)"
+        if mode == "TELEOP_SYNCING":
+            return "Waiting for HOLD_SETTLING: Ruckig reference trajectory is not finished" + timing
+        return ("Waiting for SYNCED: HOLD_SETTLING" + timing + "\n"
+                + _sync_conditions(packet, packet["target_position_rad"], self.sync.hold))
+
+
 def fresh_idle(packet, *, side, ros_now, received_at, monotonic_now, runtime):
     if packet["side"] != side or packet["mode"] != "IDLE" or packet["torque_enabled_cached"]:
         raise ValueError("move requires selected arm IDLE with cached torque disabled")
@@ -410,6 +469,7 @@ def _record(args, config):
     if output == trace_path or output.exists() or trace_path.exists():
         raise FileExistsError("choose a new .json output path; existing records are preserved")
     trial = TrialSummary()
+    status_display = RecordStatus(config)
     started_utc = datetime.now(timezone.utc).isoformat()
     config_snapshot = asdict(config)
     rclpy.init()
@@ -421,9 +481,11 @@ def _record(args, config):
                 packet = json.loads(msg.data)
                 if packet["side"] != args.side:
                     raise ValueError("diagnostic side mismatch")
-                trace.write(json.dumps({"received_monotonic_s": time.monotonic(), "data": packet}) + "\n")
+                received_at = time.monotonic()
+                trace.write(json.dumps({"received_monotonic_s": received_at, "data": packet}) + "\n")
                 previous_mode = trial.states[-1] if trial.states else None
                 trial.observe(packet)
+                status_display.observe(packet, received_at=received_at)
                 if previous_mode != packet["mode"]:
                     trace.flush()
                     print(f"{packet['mode']} | samples={packet['sequence']} | lost={trial.missing_samples}", flush=True)
@@ -438,6 +500,10 @@ def _record(args, config):
             try:
                 while rclpy.ok() and time.monotonic() < deadline and not trial.stopped:
                     rclpy.spin_once(node, timeout_sec=0.1)
+                    text = status_display.render(now=time.monotonic(),
+                                                 ros_now=node.get_clock().now().nanoseconds * 1e-9)
+                    if text is not None:
+                        print(text, flush=True)
             except (KeyboardInterrupt, ExternalShutdownException):
                 pass
     finally:

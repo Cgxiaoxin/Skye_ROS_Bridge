@@ -103,29 +103,93 @@ def test_one_update_per_cycle_pd_phase_gravity_and_current_clipping():
     assert trajectories[0].calls == 2
 
 
-def test_completion_enters_hold_with_distinct_gravity_and_pid_gains():
+def test_completion_blends_live_pd_into_hold_pid_and_phase_gravity():
     core, hardware, dynamics, trajectories = make_core()
     ctrl = core.config.controller
     hold = replace(ctrl.sync_hold_control.hold, gravity_comp_gain=(0.2,) * 7)
     sync_hold = replace(ctrl.sync_hold_control, hold=hold)
     core.config = replace(core.config, controller=replace(ctrl, sync_hold_control=sync_hold))
+    ruckig = sync_hold.ruckig
     begin(core)
+    trajectories[0].position[:] = 0.1
+    trajectories[0].velocity[:] = 0.0
+    before = core.step(now=1.002)
     trajectories[0].finished = True
-    result = core.step(now=1.002)
+    result = core.step(now=1.004)
     assert core.mode == ControlMode.HOLD_SETTLING
     np.testing.assert_allclose(result.target_position, 0.1)
     np.testing.assert_array_equal(result.target_velocity, np.zeros(8))
     np.testing.assert_array_equal(core.hold_integral, np.zeros(8))
-    np.testing.assert_allclose(result.gravity_torque[:7], dynamics.gravity_value * 0.2)
-    np.testing.assert_allclose(result.tracking_torque, np.array(hold.kp) * 0.1)
+    np.testing.assert_allclose(result.gravity_torque, before.gravity_torque)
+    np.testing.assert_allclose(result.tracking_torque, before.tracking_torque)
+    assert core.sync_status["hold_blend_weight"] == 0.0
 
-    hardware.inject_state(np.zeros(8), np.full(8, 0.02) * core.joint_signs)
-    result = core.step(now=1.012)
-    np.testing.assert_allclose(core.hold_integral, 0.001)
-    expected = np.array(hold.kp) * 0.1 - np.array(hold.kd) * 0.02
-    expected += np.array(hold.ki) * 0.001
+    integral = np.zeros(8)
+    previous_elapsed = 0.0
+    # The changed feedback must affect both controllers throughout handover.
+    for elapsed, position, velocity, weight in [
+        (0.125, 0.01, 0.02, 0.15625),
+        (0.250, 0.02, -0.01, 0.5),
+        (0.500, 0.03, 0.0, 1.0),
+        (0.600, 0.02, 0.01, 1.0),
+    ]:
+        hardware.inject_state(np.full(8, position) * core.joint_signs,
+                              np.full(8, velocity) * core.joint_signs)
+        result = core.step(now=1.004 + elapsed)
+        error = 0.1 - position
+        integral += error * (elapsed - previous_elapsed)
+        pd = np.array(ruckig.kp) * error - np.array(ruckig.kd) * velocity
+        pid = (np.array(hold.kp) * error - np.array(hold.kd) * velocity
+               + np.array(hold.ki) * integral)
+        np.testing.assert_allclose(core.hold_integral, integral)
+        np.testing.assert_allclose(result.tracking_torque, (1 - weight) * pd + weight * pid)
+        gain = (1 - weight) * np.array(ruckig.gravity_comp_gain) + weight * 0.2
+        np.testing.assert_allclose(result.gravity_torque[:7], dynamics.gravity_value * gain)
+        assert core.sync_status["hold_blend_weight"] == pytest.approx(weight)
+        assert np.max(np.abs(result.physical_current_ma)) <= 50
+        previous_elapsed = elapsed
+    assert trajectories[0].calls == 2  # Hold never advances the old trajectory.
+
+
+def test_handover_continues_through_early_synced_without_restarting():
+    core, hardware, _, trajectories = make_core(gravity=False)
+    begin(core)
+    hardware.inject_state(np.full(8, 0.09) * core.joint_signs, np.zeros(8))
+    trajectories[0].finished = True
+    core.step(now=1.002)
+    result = core.step(now=1.262)
+    assert result.mode == ControlMode.SYNCED
+    weight = 0.52 ** 2 * (3 - 2 * 0.52)
+    assert core.sync_status["hold_blend_weight"] == pytest.approx(weight)
+    cfg = core.config.controller.sync_hold_control
+    expected = ((1 - weight) * np.array(cfg.ruckig.kp) * 0.01
+                + weight * (np.array(cfg.hold.kp) * 0.01
+                            + np.array(cfg.hold.ki) * core.hold_integral))
     np.testing.assert_allclose(result.tracking_torque, expected)
-    assert trajectories[0].calls == 1  # Hold never advances the old trajectory.
+    core.step(now=1.502)
+    assert core.sync_status["hold_blend_weight"] == 1.0
+
+
+def test_stopping_during_handover_clears_blend_and_next_sync_starts_fresh():
+    core, hardware, _, trajectories = make_core(gravity=False)
+    begin(core)
+    assert core.sync_status["hold_blend_weight"] is None
+    trajectories[0].finished = True
+    core.step(now=1.002)
+    core.step(now=1.252)
+    assert core.sync_status["hold_blend_weight"] == pytest.approx(0.5)
+    core.handle("switch_stop", now=1.253)
+    assert not hardware.torque_enabled
+    assert core.sync_status["hold_blend_weight"] is None
+    np.testing.assert_array_equal(hardware.last_currents_ma, np.zeros(8))
+    hardware.set_torque_enabled(True)
+    begin(core, now=2.0, target=0.2)
+    trajectories[1].finished = True
+    result = core.step(now=2.002)
+    assert core.sync_status["hold_blend_weight"] == 0.0
+    np.testing.assert_array_equal(core.hold_integral, np.zeros(8))
+    np.testing.assert_allclose(result.tracking_torque,
+                               np.array(core.config.controller.sync_hold_control.ruckig.kp) * 0.2)
 
 
 def test_settling_requires_position_velocity_and_continuous_dwell():
@@ -162,6 +226,7 @@ def test_settle_timeout_disables_torque_and_rejects_teleop():
     result = core.step(now=1.002 + core.config.controller.sync_hold_control.hold.settle_timeout)
     assert result.mode == ControlMode.IDLE
     assert core.last_transition.reason == "settle_timeout"
+    assert core.sync_status["hold_blend_weight"] is None
     assert core.sync_status["transition_reason"] == "settle_timeout"
     assert core.sync_status["transition_from"] == "HOLD_SETTLING"
     assert core.sync_status["transition_to"] == "IDLE"
@@ -172,6 +237,12 @@ def test_settle_timeout_disables_torque_and_rejects_teleop():
 
 def test_hold_integral_clamps_both_signs_and_resets_outside_threshold():
     core, hardware, _, trajectories = make_core(gravity=False)
+    # Use explicit small clamps so this unit test does not depend on hardware tuning
+    # making the integration time exceed the independent settling deadline.
+    ctrl = core.config.controller
+    hold = replace(ctrl.sync_hold_control.hold, i_max=(0.05,) * 8)
+    sync_hold = replace(ctrl.sync_hold_control, hold=hold)
+    core.config = replace(core.config, controller=replace(ctrl, sync_hold_control=sync_hold))
     begin(core, target=0.0)
     trajectories[0].finished = True
     core.step(now=1.002)
@@ -243,6 +314,7 @@ def test_stop_works_with_invalid_time_and_drops_old_motion(now):
     assert core.mode == ControlMode.IDLE
     assert not hardware.torque_enabled
     np.testing.assert_array_equal(core.hold_integral, np.zeros(8))
+    assert core.sync_status["hold_blend_weight"] is None
     hardware.set_torque_enabled(True)
     result = core.step(now=2.0)
     assert result.target_position is None
@@ -265,6 +337,7 @@ def test_leaving_hold_clears_integral_target_and_trajectory(event):
         assert core.mode == ControlMode.SYNCED
     result = core.handle(event, now=1.4)
     assert result.outcome == "accepted"
+    assert core.sync_status["hold_blend_weight"] is None
     np.testing.assert_array_equal(core.hold_integral, np.zeros(8))
     result = core.step(now=1.402)
     assert result.target_position is None
@@ -297,6 +370,7 @@ def test_control_failure_returns_idle_and_disables_torque(fault):
     assert not hardware.torque_enabled
     np.testing.assert_array_equal(hardware.last_currents_ma, np.zeros(8))
     np.testing.assert_array_equal(core.hold_integral, np.zeros(8))
+    assert core.sync_status["hold_blend_weight"] is None
 
 
 def test_start_failure_rolls_back_and_external_completion_is_not_accepted():
