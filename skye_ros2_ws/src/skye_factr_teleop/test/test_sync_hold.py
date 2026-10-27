@@ -81,6 +81,29 @@ def test_sync_captures_measured_eight_axis_state_and_copies_target():
     assert hardware.current_history_ma == []
 
 
+def test_left_teleop_baseline_keeps_gravity_but_removes_live_hold_pid():
+    core, hardware, dynamics, trajectories = make_core()
+    begin(core)
+    trajectories[0].finished = True
+    hardware.inject_state(np.full(8, 0.09) * core.joint_signs, np.zeros(8))
+    core.step(now=1.002)
+    core.step(now=1.260)
+    before = core.step(now=1.602)
+    assert before.mode == ControlMode.SYNCED
+    assert np.any(before.tracking_torque != 0)
+    assert np.any(core.hold_integral != 0)
+    assert core.config.controller.joint_gravity_comp.gain[0] == 0.5
+    core.handle("switch_teleop", now=1.604)
+    after = core.step(now=1.606)
+    assert after.mode == ControlMode.TELEOP
+    assert after.target_position is after.target_velocity is None
+    np.testing.assert_array_equal(after.tracking_torque, np.zeros(8))
+    np.testing.assert_array_equal(core.hold_integral, np.zeros(8))
+    np.testing.assert_allclose(after.gravity_torque[:7],
+                               dynamics.gravity_value * core.config.controller.joint_gravity_comp.gain)
+    np.testing.assert_allclose(after.gravity_torque, before.gravity_torque)
+
+
 def test_one_update_per_cycle_pd_phase_gravity_and_current_clipping():
     core, hardware, dynamics, trajectories = make_core()
     velocity = np.full(8, 0.01)

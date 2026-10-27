@@ -911,6 +911,76 @@ def test_diagnostics_are_optional_and_enable_present_current_reads(make_node, mo
     assert calls == [{"read_present_current": True}]
 
 
+def test_teleop_recorder_over_ros_keeps_command_applied_feedback_and_stop_tail(make_node, tmp_path, monkeypatch):
+    """Exercise the new recorder through DDS; the test driver only echoes frames."""
+    from rclpy.executors import SingleThreadedExecutor
+    rig = make_node(diagnostics=True, record_publishers=False,
+                    cli_args=["--ros-args", "-r", "/joint_state:=/gento/left_joint_states",
+                              "-r", "/joint_control:=/gento/left_joint_control"])
+    node = rig.node
+    monkeypatch.setattr(node, "_ros_now", lambda: node.get_clock().now().nanoseconds * 1e-9)
+    executor = SingleThreadedExecutor(context=node.context)
+    executor.add_node(node)
+    follower = node.create_publisher(JointState, "/gento/left_joint_states", module.state_qos())
+    applied = node.create_publisher(JointState, "/gento/left_joint_action_applied", module.state_qos())
+    node.create_subscription(JointState, "/gento/left_joint_control", applied.publish, module.command_qos())
+    output = tmp_path / "teleop.json"
+    driver_config = Path(__file__).parents[2] / "skye_robot_driver/config/skye_robot.yaml"
+    command = ["/usr/bin/python3", "-m", "skye_factr_teleop.teleop_trial", "--side", "left",
+               "--config", node.get_parameter("config_path").value,
+               "--driver-config", str(driver_config), "--output", str(output),
+               "--operator", "fake-hardware", "--duration", "15", "--post-stop-seconds", "0.3"]
+    process = subprocess.Popen(command, env=dict(os.environ, ROS_DOMAIN_ID="193", ROS_LOCALHOST_ONLY="1"),
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+    def spin_until(condition, timeout=10):
+        deadline = time.monotonic() + timeout
+        while not condition() and time.monotonic() < deadline:
+            rig.clock.now = time.monotonic()
+            message = packet()
+            message.header.stamp = node.get_clock().now().to_msg()
+            follower.publish(message)
+            if node.core._target is not None:
+                rig.hardware.inject_state(node.core._target * node.core.joint_signs, np.zeros(8))
+                rig.trajectories[-1].finished = True
+            executor.spin_once(timeout_sec=0.005)
+        assert condition(), "teleop recorder test timed out"
+
+    try:
+        spin_until(lambda: node._diagnostic_pub.get_subscription_count() > 0
+                   and applied.get_subscription_count() > 0 and node._fresh_follower())
+        node._on_sync(String(data="switch_sync"))
+        spin_until(lambda: node.core.mode == ControlMode.SYNCED)
+        node._on_teleop(String(data="switch_teleop"))
+        spin_until(lambda: node._diagnostic_sequence > 20)
+        # Keep TELEOP running long enough for all subscription streams to drain.
+        until = time.monotonic() + 0.15
+        spin_until(lambda: time.monotonic() >= until)
+        node._on_stop(None)
+        assert process.poll() is None
+        spin_until(lambda: process.poll() is not None)
+        text = process.communicate()[0]
+        assert process.returncode == 0, text
+        result = json.loads(output.read_text())
+        assert result["assessment"] == "RECORDED", text
+        assert result["post_stop_window_complete"]
+        assert result["invalid_messages"] == {}
+        assert result["config"]["controller"]["joint_gravity_comp"]["gain"][0] == 0.5
+        for name in ("command", "applied", "feedback"):
+            assert result["streams"][name]["count"] > 0
+        assert "other_command" not in result["streams"]
+        trace = [json.loads(line) for line in output.with_suffix(".trace.jsonl").read_text().splitlines()]
+        idle = [row for row in trace if row["event"] == "diagnostic" and row["data"]["mode"] == "IDLE"]
+        assert idle[-1]["received_monotonic_s"] - idle[0]["received_monotonic_s"] >= 0.25
+        assert not rig.hardware.torque_enabled
+    finally:
+        if process.poll() is None:
+            process.terminate()
+        process.communicate(timeout=5)
+        executor.remove_node(node)
+        executor.shutdown()
+
+
 @pytest.mark.parametrize("side", ["left", "right"])
 @pytest.mark.parametrize("motion_source", ["joint_move", "follower_sync"])
 def test_trial_cli_over_ros_with_fake_hardware(make_node, side, motion_source, tmp_path, monkeypatch):

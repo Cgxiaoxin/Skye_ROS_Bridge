@@ -32,6 +32,17 @@ DriverCore::JointArray map_frame(
 
 }  // namespace
 
+TEST(DriverCore, RelativeEntryKeepsFollowerPoseDespiteLeaderResidual) {
+  DriverCore::JointArray leader_prev{0.04, -0.03, 0.02, 0.01, -0.02, 0.03, -0.04};
+  auto continuous = leader_prev;
+  const auto leader_ref = leader_prev;
+  const DriverCore::JointArray follower_ref{0.0, -0.5, 0.0, -1.0, 0.3, -0.5, 0.2};
+  const auto mapped = DriverCore::apply_relative_joint_mapping(
+      leader_prev, leader_prev, continuous, leader_ref, follower_ref,
+      kOrder, kJ4NegSigns);
+  EXPECT_EQ(mapped, follower_ref);
+}
+
 TEST(DriverCore, ClutchLeavesRefsUnchangedWhenInsideLimits) {
   const DriverCore::JointArray desired{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7};
   const auto clamped = DriverCore::clamp_to_limits(desired, kMin, kMax);

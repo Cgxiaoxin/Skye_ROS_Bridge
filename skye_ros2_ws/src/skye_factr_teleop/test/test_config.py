@@ -43,12 +43,13 @@ def _calibrated_document():
 
 def test_device_a_trial_config_and_explicit_calibration_load(tmp_path):
     assert load_config(LEFT_CONFIG).dynamixel.joint_offsets == (0.0,) * 8
-    assert load_config(LEFT_CONFIG).dynamixel.current_limit_ma == (50.0,) * 8
+    assert load_config(LEFT_CONFIG).dynamixel.current_limit_ma == (
+        500.0, 500.0, 450.0, 250.0, 180.0, 180.0, 180.0, 50.0)
     for path in (LEFT_CONFIG, RIGHT_CONFIG):
         trial = load_config(path, require_runtime=True)
-        assert trial.controller.sync_hold_control.ruckig.max_velocity == (0.1,) * 8
-        assert trial.controller.sync_hold_control.ruckig.max_acceleration == (0.2,) * 8
-        assert trial.controller.sync_hold_control.ruckig.max_jerk == (1.0,) * 8
+        assert trial.controller.sync_hold_control.ruckig.max_velocity == (0.8,) * 8
+        assert trial.controller.sync_hold_control.ruckig.max_acceleration == (1.0,) * 8
+        assert trial.controller.sync_hold_control.ruckig.max_jerk == (5.0,) * 8
     config = load_config(_write(tmp_path, _calibrated_document()), require_runtime=True)
     assert config.dynamixel.joint_offsets == (0.0,) * 8
     assert config.dynamixel.current_limit_ma == (50.0,) * 8

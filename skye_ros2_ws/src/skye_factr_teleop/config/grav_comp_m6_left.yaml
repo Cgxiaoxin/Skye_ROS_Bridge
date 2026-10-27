@@ -3,8 +3,6 @@
 # Thor: leader device A.
 name: grav_comp_m6_left # 主遥操未使用；仅辅助检查程序核对名称
 
-# 设备 A 首轮同步试验配置：joint_offsets 已确认为全 0，电流与轨迹上限须结合真机响应复核。
-
 dynamixel:
   dynamixel_port: usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0 # 遥操设备A（Thor）
   servo_types:
@@ -35,7 +33,7 @@ controller:
       leader_urdf: urdf/m6left_isomorphism.urdf
     # position_velocity: RNEA(q,dq,0); position_only: RNEA(q,0,0)
     mode: position_only
-    gain: [0.4, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]
+    gain: [0.5, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]
 
   static_friction_comp:
     enable: true
@@ -43,10 +41,10 @@ controller:
     gain: [0.15, 0.15, 0.15, 0.1, 0.1, 0.1, 0.2]
 
   null_space_regulation:
-    enable: false
-    null_space_joint_target: [0.0, -0.8, 0.0, -1.3, 0.0, -0.5, 0.0] # enable=false 时不生效
-    kp: 0.1 # enable=false 时不生效
-    kd: 0.01 # enable=false 时不生效
+    enable: true
+    null_space_joint_target: [0.0, -0.8, 0.0, -1.3, 0.0, -0.5, 0.0]
+    kp: 0.1
+    kd: 0.01
 
   limit_barrier_control:
     enable: true
