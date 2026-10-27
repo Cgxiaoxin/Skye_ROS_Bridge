@@ -211,13 +211,14 @@ def test_execute_monitor_reports_controller_timeout_and_measured_blockers(
     expected = (f"Ruckig reference trajectory did not finish within {sync.ruckig.trajectory_timeout:.3f} s"
                 if reason == "sync_timeout" else
                 f"within {sync.hold.settle_timeout:.3f} s of HOLD_SETTLING")
+    tolerance = sync.hold.sync_position_tolerance[0]
+    error = tolerance + 0.01
     final = {"mode": "IDLE", "sync_status": {"transition_reason": reason},
-             "position_rad": [0.1] + [0.0] * 7, "velocity_rad_s": [0.0] * 8}
+             "position_rad": [0.02 + error] + [0.0] * 7, "velocity_rad_s": [0.0] * 8}
     with pytest.raises(ValueError) as exc:
         run_sync_monitor(monkeypatch, config, ["TELEOP_SYNCING", "HOLD_SETTLING", final])
     assert expected in str(exc.value)
-    tolerance = config.controller.sync_hold_control.hold.sync_position_tolerance[0]
-    assert f"J1: |position error|=0.080000 rad > {tolerance:.6f} rad" in str(exc.value)
+    assert f"J1: |position error|={error:.6f} rad > {tolerance:.6f} rad" in str(exc.value)
 
 
 def test_execute_monitor_prints_blockers_while_settling(monkeypatch, config, capsys):
