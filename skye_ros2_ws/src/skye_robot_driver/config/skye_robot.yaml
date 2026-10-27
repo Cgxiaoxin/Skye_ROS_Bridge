@@ -8,10 +8,10 @@ skye_robot_driver:
     control_mode: "imp_joint"
     # left_velocity_ratio: 100
     left_velocity_ratio: 10  # 左臂首轮关节遥操基线
-    right_velocity_ratio: 100
+    right_velocity_ratio: 10  # 右臂首轮关节遥操基线，与左臂一致
     # left_acceleration_ratio: 100
     left_acceleration_ratio: 10
-    right_acceleration_ratio: 100
+    right_acceleration_ratio: 10
     state_publish_hz: 250.0
     cmd_cycle_time_ms: 4
     connect_on_startup: true

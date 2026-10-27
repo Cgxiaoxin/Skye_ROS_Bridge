@@ -3,8 +3,8 @@
 # Thor: leader device A.
 name: grav_comp_m6_right # 主遥操未使用；仅辅助检查程序核对名称
 
-# 设备 A 右臂零点重标后，以 2026-10-21 左臂快速同步稳定参数为基线；仅增加 J2 保持积分，待复测。
-# joint_offsets 已确认为全 0；先近零位、小幅试验，再验证完整归零及不同起点。
+# 2026-10-27：恢复左臂控制基线，两侧七轴同步位置容差统一为 0.0873 rad（约 5°），见验收清单第 19 节。
+# 保留右臂串口、物理方向、零点、模型和限位边界；新控制基线须经右臂真机复测。
 
 dynamixel:
   dynamixel_port: usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0 # 遥操设备A（Thor）
@@ -20,7 +20,8 @@ dynamixel:
   baudrate: 4000000
   # 同步候选电流上限按物理舵机 ID 1..8；右臂须结合实测响应复核。
   # Current Limit(38) 最大值：ID 1..2 XM430-W350 为 3209.17 mA；ID 3..8 XC330-T288 为 910 mA。
-  current_limit_ma: [300.0, 300.0, 120.0, 200.0, 50.0, 50.0, 50.0, 50.0] # mA
+  # 复用左臂当前电流上限，第 06 轮起以此作为右臂候选基线。
+  current_limit_ma: [500.0, 500.0, 450.0, 250.0, 180.0, 180.0, 180.0, 50.0] # mA
   # 设备 A 的 ID 1..8 joint_offsets 已确认为 0。
   joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # rad，按物理舵机 ID 1..8
   # Physical leader-servo directions only; not a follower semantic mapping.
@@ -36,7 +37,7 @@ controller:
       leader_urdf: urdf/m6right_isomorphism.urdf
     # position_velocity: RNEA(q,dq,0); position_only: RNEA(q,0,0)
     mode: position_only
-    gain: [0.4, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]
+    gain: [0.5, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]
 
   static_friction_comp:
     enable: true
@@ -44,10 +45,10 @@ controller:
     gain: [0.15, 0.15, 0.15, 0.1, 0.1, 0.1, 0.2]
 
   null_space_regulation:
-    enable: false
-    null_space_joint_target: [0.0, -0.8, 0.0, -1.3, 0.0, -0.5, 0.0] # enable=false 时不生效
-    kp: 0.1 # enable=false 时不生效
-    kd: 0.01 # enable=false 时不生效
+    enable: true
+    null_space_joint_target: [0.0, -0.8, 0.0, -1.3, 0.0, -0.5, 0.0]
+    kp: 0.1
+    kd: 0.01
 
   limit_barrier_control:
     enable: true
@@ -60,16 +61,16 @@ controller:
     gripper:
       limit_max: 0.52517
       limit_min: -0.0175
-      kp: 1.03561658022
-      kd: 0.04315069084
+      kp: 0.301658022
+      kd: 0.0315069084
 
   sync_hold_control:
-    # 左臂最终稳定参数作为右臂调试起点，不代表右臂已通过同步验收。
+    # 与当前左臂控制参数一致；撤回右臂独立积分/阻尼微调，统一采用约 5° 同步位置容差。
     gripper_setpoint: 0.4
     ruckig:
       gravity_comp_gain: [0.5, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]
-      kp: [0.50, 0.50, 0.80, 0.50, 0.35, 0.35, 0.35, 0.35]
-      kd: [0.08, 0.08, 0.10, 0.08, 0.05, 0.05, 0.05, 0.05]
+      kp: [0.50, 0.60, 0.80, 0.50, 0.35, 0.35, 0.35, 0.35]
+      kd: [0.08, 0.08, 0.05, 0.08, 0.05, 0.05, 0.05, 0.05]
       # 参考轨迹上限；右臂候选尚待真机复核。顺序 J1..J7、夹爪。
       max_velocity: [0.80, 0.80, 0.80, 0.80, 0.80, 0.80, 0.80, 0.80]  # rad/s
       max_acceleration: [1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]  # rad/s²
@@ -77,13 +78,12 @@ controller:
       trajectory_timeout: 30.0
     hold:
       gravity_comp_gain: [0.5, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]
-      kp: [0.50, 0.35, 0.80, 0.80, 0.35, 0.50, 0.35, 0.35]
+      kp: [0.50, 0.60, 0.80, 0.80, 0.35, 0.50, 0.35, 0.35]
       kd: [0.15, 0.15, 0.05, 0.08, 0.05, 0.05, 0.05, 0.05]
-      # 与左臂不同：右臂 J2（第 2 项）Ki 为 0.05，左臂基线为 0.00；用于消除重标零后约 +0.060 rad 的保持静差，待复测。
-      ki: [0.02, 0.05, 0.60, 0.15, 0.15, 0.15, 0.15, 0.15]
-      i_max: [0.6, 1.6, 0.125, 0.80, 0.10, 0.10, 0.10, 0.10] # rad·s；积分力矩上限为 ki × i_max（N·m）
-      i_thresh: [0.20, 1.00, 0.15, 0.25, 0.15, 0.15, 0.15, 0.15] # rad；误差超过阈值时该轴积分清零
-      sync_position_tolerance: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
+      ki: [0.05, 0.10, 0.60, 0.15, 0.15, 0.15, 0.15, 0.15]
+      i_max: [4.5, 1.25, 0.25, 0.80, 0.10, 0.10, 0.10, 0.10] # rad·s；积分力矩上限为 ki × i_max（N·m）
+      i_thresh: [0.50, 1.00, 0.25, 0.25, 0.15, 0.15, 0.15, 0.15] # rad；误差超过阈值时该轴积分清零
+      sync_position_tolerance: [0.0873, 0.0873, 0.0873, 0.0873, 0.0873, 0.0873, 0.0873, 0.05] # rad，七轴约 5°；夹爪保持 0.05
       sync_velocity_tolerance: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
       settle_duration: 0.25
       settle_timeout: 25.0
