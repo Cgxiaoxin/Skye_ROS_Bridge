@@ -7,6 +7,7 @@
 from dataclasses import dataclass
 from collections.abc import Callable
 from typing import Protocol
+import math
 
 import numpy as np
 
@@ -205,6 +206,20 @@ def transform_leader_state(
         float((position[-1] - zero[-1]) * signs[-1]),
         float(velocity[-1] * signs[-1]),
     )
+
+def gripper_command_norm(q: float, limit_min: float, limit_max: float) -> float | None:
+    """Map logical gripper angle to FACTR open-norm in [0, 1] (1=open).
+
+    Returns None when ``q`` is non-finite so the publisher can skip one cycle.
+    """
+    lo = _scalar(limit_min, "gripper_lower")
+    hi = _scalar(limit_max, "gripper_upper")
+    if not (math.isfinite(lo) and math.isfinite(hi)) or hi <= lo:
+        raise ValueError("invalid gripper limits for command mapping")
+    value = float(q)
+    if not math.isfinite(value):
+        return None
+    return float(np.clip((value - lo) / (hi - lo), 0.0, 1.0))
 
 def joint_limit_barrier(
     state: LeaderState, lower: object, upper: object, kp: float, kd: float,

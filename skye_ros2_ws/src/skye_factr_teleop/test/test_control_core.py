@@ -522,3 +522,32 @@ def test_invalid_constructor_inputs_do_not_touch_hardware():
     with pytest.raises(ValueError, match="current_limit_ma"):
         ControlCore(config, hardware, FakeDynamics(), [0] * 8, -1)
     assert hardware.current_history_ma == []
+
+
+import math
+import pytest
+from skye_factr_teleop.control_core import gripper_command_norm
+
+
+def test_gripper_command_norm_endpoints_and_midpoint():
+    assert gripper_command_norm(-0.0175, -0.0175, 0.52517) == pytest.approx(0.0)
+    assert gripper_command_norm(0.52517, -0.0175, 0.52517) == pytest.approx(1.0)
+    mid = (-0.0175 + 0.52517) / 2.0
+    assert gripper_command_norm(mid, -0.0175, 0.52517) == pytest.approx(0.5)
+
+
+def test_gripper_command_norm_clamps_outside_range():
+    assert gripper_command_norm(-1.0, -0.0175, 0.52517) == 0.0
+    assert gripper_command_norm(2.0, -0.0175, 0.52517) == 1.0
+
+
+def test_gripper_command_norm_nonfinite_returns_none():
+    assert gripper_command_norm(float("nan"), -0.0175, 0.52517) is None
+    assert gripper_command_norm(float("inf"), -0.0175, 0.52517) is None
+
+
+def test_gripper_command_norm_rejects_invalid_limits():
+    with pytest.raises(ValueError, match="gripper limits"):
+        gripper_command_norm(0.0, 0.5, 0.5)
+    with pytest.raises(ValueError, match="gripper limits"):
+        gripper_command_norm(0.0, 1.0, 0.0)
