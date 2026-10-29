@@ -24,7 +24,10 @@ from std_msgs.msg import Float64MultiArray, String
 
 from .config import load_config
 from .state_machine import ControlMode
-from .control_core import ControlCore, GravityTestSettings, LimitTestSettings, FrictionTestSettings
+from .control_core import (
+    ControlCore, GravityTestSettings, LimitTestSettings, FrictionTestSettings,
+    gripper_command_norm,
+)
 from .dynamics import PinocchioDynamics
 from .trajectory import RuckigTrajectory
 from .dynamixel_driver import DynamixelDriver
@@ -260,6 +263,7 @@ class SkyeFactrTeleopNode(Node):
         self._current_pub = self.create_publisher(JointState, "/leader_arm/current_state", state_qos())
         self._target_pub = self.create_publisher(JointState, "/leader_arm/target_joint_state", state_qos())
         self._command_pub = self.create_publisher(JointState, "/joint_control", command_qos())
+        self._gripper_pub = None
         self._diagnostic_pub = None
         if self._sync_diagnostics and not self._test_only:
             self._diagnostic_pub = self.create_publisher(
@@ -310,6 +314,9 @@ class SkyeFactrTeleopNode(Node):
                 self._on_friction_output, event_qos(),
             )
         else:
+            self._gripper_pub = self.create_publisher(
+                JointState, "/gripper/ctrl", command_qos(),
+            )
             self.create_subscription(JointState, "/joint_state", self._on_follower, state_qos())
             self.create_subscription(JointState, "/joint_move", self._on_joint_move, state_qos())
             self.create_subscription(String, "/mode/switch_sync", self._on_sync, event_qos())
@@ -533,6 +540,20 @@ class SkyeFactrTeleopNode(Node):
             ))
         if result.mode == ControlMode.TELEOP:
             self._command_pub.publish(self._joint_message(result.state.arm_position))
+            if self._gripper_pub is not None:
+                gripper = self.config.controller.limit_barrier_control.gripper
+                norm = gripper_command_norm(
+                    result.state.gripper_position, gripper.limit_min, gripper.limit_max,
+                )
+                if norm is None:
+                    self.get_logger().warning(
+                        "Skipping gripper command: non-finite logical gripper position",
+                    )
+                else:
+                    msg = JointState()
+                    msg.header.stamp = self.get_clock().now().to_msg()
+                    msg.position = [norm]
+                    self._gripper_pub.publish(msg)
         if self._test_current_pub is not None:
             self._test_current_pub.publish(Float64MultiArray(data=result.physical_current_ma.tolist()))
             present_current = _vector(

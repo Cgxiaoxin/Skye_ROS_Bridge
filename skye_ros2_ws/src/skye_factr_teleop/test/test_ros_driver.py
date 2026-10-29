@@ -153,8 +153,9 @@ def make_node(context, monkeypatch, tmp_path):
         monkeypatch.setattr(node, "_ros_now", lambda: clock.now)
         pubs = list(node.publishers)
         if record_publishers:
-            for name in ("_state_pub", "_current_pub", "_target_pub", "_command_pub"):
-                setattr(node, name, Recorder())
+            for name in ("_state_pub", "_current_pub", "_target_pub", "_command_pub", "_gripper_pub"):
+                if getattr(node, name, None) is not None:
+                    setattr(node, name, Recorder())
             if diagnostics:
                 node._diagnostic_pub = Recorder()
             if gravity_test is not None or limit_test is not None or friction_test is not None:
@@ -181,9 +182,12 @@ def test_interfaces_qos_and_disabled_startup(make_node, side):
     assert node._timer.timer_period_ns == 2_000_000
     pubs = {pub.topic_name: pub for pub in rig.publishers}
     assert {"/teleop/state", "/leader_arm/current_state",
-            "/leader_arm/target_joint_state", "/joint_control"} <= set(pubs)
+            "/leader_arm/target_joint_state", "/joint_control",
+            "/gripper/ctrl"} <= set(pubs)
     assert pubs["/joint_control"].qos_profile.reliability == ReliabilityPolicy.BEST_EFFORT
     assert pubs["/joint_control"].qos_profile.depth == 1
+    assert pubs["/gripper/ctrl"].qos_profile.reliability == ReliabilityPolicy.BEST_EFFORT
+    assert pubs["/gripper/ctrl"].qos_profile.depth == 1
     assert pubs["/teleop/state"].qos_profile.durability == DurabilityPolicy.TRANSIENT_LOCAL
     for topic in ("/leader_arm/current_state", "/leader_arm/target_joint_state"):
         assert pubs[topic].qos_profile.reliability == ReliabilityPolicy.RELIABLE
@@ -405,6 +409,52 @@ def test_sync_hold_teleop_stop_and_published_shapes(make_node, side):
         "TELEOP_SYNCING", "HOLD_SETTLING", "SYNCED", "TELEOP", "IDLE",
     ]
     np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))
+
+
+def test_teleop_publishes_gripper_ctrl_and_idle_does_not(make_node):
+    rig = make_node()
+    node = rig.node
+    assert node._gripper_pub is not None
+    node._on_follower(packet())
+    node._on_sync(String(data="switch_sync"))
+    rig.trajectories[0].finished = True
+    rig.clock.now += 0.002
+    node._tick()
+    settle(rig)
+    assert node.core.mode == ControlMode.SYNCED
+    assert node._gripper_pub.messages == []
+
+    node._on_teleop(String(data="switch_teleop"))
+    rig.clock.now += 0.002
+    node._tick()
+    assert node.core.mode == ControlMode.TELEOP
+    assert len(node._command_pub.messages) >= 1
+    grip = node._gripper_pub.messages[-1]
+    assert len(grip.position) == 1
+    assert len(grip.velocity) == len(grip.effort) == 0
+    assert 0.0 <= grip.position[0] <= 1.0
+
+    gripper = node.config.controller.limit_barrier_control.gripper
+    signs = node.core.joint_signs
+    offsets = node._offsets
+    physical = np.zeros(8)
+    physical[-1] = gripper.limit_max * float(signs[-1]) + float(offsets[-1])
+    if node.core._target is not None:
+        physical[:7] = (
+            np.asarray(node.core._target[:7], dtype=float) * signs[:7] + offsets[:7]
+        )
+    rig.hardware.inject_state(physical, np.zeros(8))
+    rig.clock.now += 0.002
+    node._on_follower(packet(stamp=rig.clock.now))
+    node._tick()
+    assert node._gripper_pub.messages[-1].position[0] == pytest.approx(1.0)
+
+    before = len(node._gripper_pub.messages)
+    node._on_stop(String(data="switch_stop"))
+    rig.clock.now += 0.002
+    node._tick()
+    assert node.core.mode == ControlMode.IDLE
+    assert len(node._gripper_pub.messages) == before
 
 
 def test_joint_move_holds_but_does_not_grant_teleop(make_node):
