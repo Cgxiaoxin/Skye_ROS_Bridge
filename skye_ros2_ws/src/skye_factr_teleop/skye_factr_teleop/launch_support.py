@@ -64,6 +64,7 @@ def _launch_setup(context, *, sides):
                 ("/joint_move", f"/{side}_joint_move"),
                 ("/leader_arm/current_state", f"/{side}_leader_arm/current_state"),
                 ("/leader_arm/target_joint_state", f"/{side}_leader_arm/target_joint_state"),
+                ("/gripper/ctrl", f"/{side}_teleop_gripper/ctrl"),
             ],
             output="screen",
         )

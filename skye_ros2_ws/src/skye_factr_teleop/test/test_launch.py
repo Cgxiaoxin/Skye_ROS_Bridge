@@ -99,6 +99,7 @@ def test_launch_profiles_sides_and_remaps(expand_launch, profile, kind, sides):
             ("/joint_move", f"/{side}_joint_move"),
             ("/leader_arm/current_state", f"/{side}_leader_arm/current_state"),
             ("/leader_arm/target_joint_state", f"/{side}_leader_arm/target_joint_state"),
+            ("/gripper/ctrl", f"/{side}_teleop_gripper/ctrl"),
         ]
         assert len(parameter_files) == 1
         config_dir = expand_launch.share / "config"
