@@ -221,6 +221,21 @@ def gripper_command_norm(q: float, limit_min: float, limit_max: float) -> float 
         return None
     return float(np.clip((value - lo) / (hi - lo), 0.0, 1.0))
 
+
+def gripper_position_hold(
+    position: float, velocity: float, setpoint: float, kp: float, kd: float,
+) -> float:
+    """PD toward the open rest pose for leader J8 (TELEOP default open)."""
+    q = _scalar(position, "gripper_position")
+    dq = _scalar(velocity, "gripper_velocity")
+    target = _scalar(setpoint, "gripper_setpoint")
+    gain_p = _scalar(kp, "gripper_kp")
+    gain_d = _scalar(kd, "gripper_kd")
+    if min(gain_p, gain_d) < 0:
+        raise ValueError("gripper hold gains must be non-negative")
+    return float(-gain_p * (q - target) - gain_d * dq)
+
+
 def joint_limit_barrier(
     state: LeaderState, lower: object, upper: object, kp: float, kd: float,
     gripper_lower: float, gripper_upper: float, *, margin: float = 0.0,
@@ -624,6 +639,15 @@ class ControlCore:
                     target, target_velocity, next_flags,
                 )
             tracking, target, target_velocity = self._update_tracking(state, dt)
+            if self.mode == ControlMode.TELEOP:
+                # Spring J8 toward sync open setpoint so teleop defaults to open;
+                # the operator can still close against this PD.
+                gripper = ctrl.limit_barrier_control.gripper
+                tracking[-1] = gripper_position_hold(
+                    state.gripper_position, state.gripper_velocity,
+                    ctrl.sync_hold_control.gripper_setpoint,
+                    gripper.kp, gripper.kd,
+                )
             motion = self.mode in (ControlMode.TELEOP_SYNCING, ControlMode.HOLD_SETTLING, ControlMode.SYNCED)
             if self.terms.joint_limits:
                 barrier = ctrl.limit_barrier_control

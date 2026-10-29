@@ -13,8 +13,8 @@ from conftest import FakeDynamixelIO
 from skye_factr_teleop.config import load_config
 from skye_factr_teleop.control_core import (
     ControlCore, ControlTerms, GravityTestSettings, LeaderState, gravity_compensation,
-    joint_limit_barrier, LimitTestSettings, FrictionTestSettings, nullspace_regulation,
-    static_friction_compensation, transform_leader_state,
+    gripper_position_hold, joint_limit_barrier, LimitTestSettings, FrictionTestSettings,
+    nullspace_regulation, static_friction_compensation, transform_leader_state,
 )
 from skye_factr_teleop.state_machine import ControlMode
 
@@ -60,6 +60,12 @@ def test_signed_state_mapping():
     assert state.gripper_position == 0
     assert state.gripper_velocity == -1
     np.testing.assert_array_equal(raw, original)
+
+
+def test_gripper_position_hold_pulls_toward_setpoint():
+    assert gripper_position_hold(0.1, 0.0, 0.4, 2.0, 0.5) == pytest.approx(0.6)
+    assert gripper_position_hold(0.4, 0.0, 0.4, 2.0, 0.5) == pytest.approx(0.0)
+    assert gripper_position_hold(0.5, 1.0, 0.4, 2.0, 0.5) == pytest.approx(-0.7)
 
 
 def test_joint_limit_barrier_including_gripper_and_margin():

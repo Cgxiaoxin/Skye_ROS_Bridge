@@ -12,7 +12,7 @@ from conftest import FakeDynamixelIO
 from test_control_core import CONFIG, FakeDynamics
 from skye_factr_teleop.config import load_config
 from skye_factr_teleop.control_core import (
-    ControlCore, ControlTerms, TrajectorySample,
+    ControlCore, ControlTerms, TrajectorySample, gripper_position_hold,
 )
 from skye_factr_teleop.state_machine import ControlMode
 from skye_factr_teleop.trajectory import RuckigTrajectory
@@ -97,7 +97,13 @@ def test_left_teleop_baseline_keeps_gravity_but_removes_live_hold_pid():
     after = core.step(now=1.606)
     assert after.mode == ControlMode.TELEOP
     assert after.target_position is after.target_velocity is None
-    np.testing.assert_array_equal(after.tracking_torque, np.zeros(8))
+    np.testing.assert_array_equal(after.tracking_torque[:7], np.zeros(7))
+    gripper = core.config.controller.limit_barrier_control.gripper
+    setpoint = core.config.controller.sync_hold_control.gripper_setpoint
+    assert after.tracking_torque[-1] == pytest.approx(gripper_position_hold(
+        after.state.gripper_position, after.state.gripper_velocity,
+        setpoint, gripper.kp, gripper.kd,
+    ))
     np.testing.assert_array_equal(core.hold_integral, np.zeros(8))
     np.testing.assert_allclose(after.gravity_torque[:7],
                                dynamics.gravity_value * core.config.controller.joint_gravity_comp.gain)
@@ -365,12 +371,15 @@ def test_leaving_hold_clears_integral_target_and_trajectory(event):
     result = core.step(now=1.402)
     assert result.target_position is None
     assert result.target_velocity is None
-    np.testing.assert_array_equal(result.tracking_torque, np.zeros(8))
+    np.testing.assert_array_equal(result.tracking_torque[:7], np.zeros(7))
     assert trajectories[0].calls == 1
     if event == "switch_teleop":
         assert result.mode == ControlMode.TELEOP
+        assert result.tracking_torque[-1] != 0.0
         assert hardware.torque_enabled
         assert core.handle(event, now=1.404).outcome == "rejected"
+    else:
+        np.testing.assert_array_equal(result.tracking_torque, np.zeros(8))
 
 
 @pytest.mark.parametrize("fault", ["trajectory", "sample", "gravity_on_completion", "write"])
