@@ -506,7 +506,7 @@ ros2 service call /gento/emergency_stop std_srvs/srv/Trigger '{}'
 结论限于实测姿态和动作范围，并列明现场现象；J6/J7 方向问题按操作者确认关闭。
 受控超时、反馈中断和单侧故障等异常路径另选具体试验方式安排，不因正常流程完成而自动标记通过。
 
-历史参数及单臂记录见[右臂调参与双臂衔接记录](phase7_3_7_5_right_dual_checklist.md)。
+历史参数及单臂记录见[右臂同步调参与遥操记录](phase7_3_7_4_right_checklist.md)。
 
 ## 10. 首批双臂真机记录（2026-10-27）
 
