@@ -71,8 +71,8 @@ def preview_move(config, position, velocity, *, joint_id=None, delta=None, targe
         if arm.shape != (7,) or not np.all(np.isfinite(arm)):
             raise ValueError("target requires seven finite positions")
     sync = config.controller.sync_hold_control
-    goal = np.append(arm, sync.gripper_setpoint)
     barrier = config.controller.limit_barrier_control
+    goal = np.append(arm, barrier.gripper.gripper_setpoint)
     lower = np.append(np.asarray(barrier.joint.limit_min) + barrier.joint.safety_margin,
                       barrier.gripper.limit_min)
     upper = np.append(np.asarray(barrier.joint.limit_max) - barrier.joint.safety_margin,

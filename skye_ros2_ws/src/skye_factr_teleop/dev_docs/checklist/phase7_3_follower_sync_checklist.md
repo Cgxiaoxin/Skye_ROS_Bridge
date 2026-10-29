@@ -1,5 +1,9 @@
 # 阶段 7.3：连接大臂后的单臂同步
 
+配置迁移说明（2026-10-29）：下文历史快照保留当时的 `sync_hold_control.gripper_setpoint`。
+用于当前程序前，应将其移到 `controller.limit_barrier_control.gripper.gripper_setpoint`，
+放在 `limit_min` 与 `kp` 之间；历史 JSON 记录保持原样。
+
 设备 A / Thor，先左后右。无大臂同步按操作者结论已完成；本清单验证真实大臂反馈驱动小臂同步。
 沿用当前左右 YAML：轨迹上限 `0.8 rad/s、1.0 rad/s²、5.0 rad/s³`，夹爪目标 `0.4 rad`，
 保留已调通的轨迹上限。左侧最终参数、正常同步结果和剩余项目见第 16 节；第 6～15 节保留各阶段的历史记录，

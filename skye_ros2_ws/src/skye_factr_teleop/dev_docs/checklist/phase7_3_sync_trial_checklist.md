@@ -1,5 +1,9 @@
 # 阶段 7.3：无大臂时的小臂走位与保持试验
 
+配置迁移说明（2026-10-29）：下文历史快照保留当时的 `sync_hold_control.gripper_setpoint`。
+用于当前程序前，应将其移到 `controller.limit_barrier_control.gripper.gripper_setpoint`，
+放在 `limit_min` 与 `kp` 之间；历史 JSON 记录保持原样。
+
 2026-10-23 补充：操作者确认无大臂同步验收已完成。当前保留参数以第 11、12 节为准：
 轨迹上限 `0.8 rad/s、1.0 rad/s²、5.0 rad/s³`。实际采用第 12 节的 `/tmp/` 路径、
 `record --duration 180` 及 `move --target 0 0 0 0 0 0 0 --execute` 终端输出进行分析；

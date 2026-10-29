@@ -740,7 +740,7 @@ gripper_teleop
 controller
 ```
 
-当前 M6 配置改用顶层 `dynamixel`、`controller` 和可选的 `runtime`。`initialization` 与 `end_effector` 位于 `controller` 下，紧随 `null_space_regulation`；夹爪上下限与独立增益在 `controller.limit_barrier_control`，默认同步目标在 `controller.sync_hold_control.gripper_setpoint`；leader URDF 在 `controller.joint_gravity_comp.dynamics`，从臂模型参数在 `controller.force_feedback_control.joint.dynamics`，从臂重力补偿开关在 `controller.force_feedback_control.joint`。不再使用顶层 `arm_teleop` 和 `gripper_teleop`。
+当前 M6 配置改用顶层 `dynamixel`、`controller` 和可选的 `runtime`。`initialization` 与 `end_effector` 位于 `controller` 下，紧随 `null_space_regulation`；夹爪上下限与独立增益在 `controller.limit_barrier_control`，默认同步目标在 `controller.limit_barrier_control.gripper.gripper_setpoint`；leader URDF 在 `controller.joint_gravity_comp.dynamics`，从臂模型参数在 `controller.force_feedback_control.joint.dynamics`，从臂重力补偿开关在 `controller.force_feedback_control.joint`。不再使用顶层 `arm_teleop` 和 `gripper_teleop`。
 
 但参数值不从 Franka 示例继承。左右 M6 的端口、型号、方向、关节限制、增益、
 follower offset 和夹爪参数，应以当前已验证的 M6 YAML 为迁移输入，再由

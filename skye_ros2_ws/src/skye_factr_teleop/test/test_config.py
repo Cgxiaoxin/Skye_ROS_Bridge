@@ -141,8 +141,42 @@ def test_left_and_right_configs_load_and_preserve_differences():
     assert left.controller.joint_gravity_comp.mode == "position_only"
     assert right.controller.joint_gravity_comp.mode == "position_only"
     assert left.controller.limit_barrier_control.gripper.kp == 0.301658022
-    assert right.controller.limit_barrier_control.gripper.kp == 1.03561658022
-    assert left.controller.sync_hold_control.gripper_setpoint == 0.4
+    assert right.controller.limit_barrier_control.gripper.kp == 0.301658022
+    assert left.controller.limit_barrier_control.gripper.gripper_setpoint == 0.5
+
+
+@pytest.mark.parametrize("profile,setpoint", [("", 0.5), ("orin", 0.55)])
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_packaged_gripper_setpoint_location(profile, setpoint, side):
+    path = CONFIG_DIR / profile / f"grav_comp_m6_{side}.yaml"
+    document = _document(path)
+    gripper = document["controller"]["limit_barrier_control"]["gripper"]
+    keys = list(gripper)
+    assert keys.index("limit_min") < keys.index("gripper_setpoint") < keys.index("kp")
+    assert "gripper_setpoint" not in document["controller"]["sync_hold_control"]
+    assert load_config(path).controller.limit_barrier_control.gripper.gripper_setpoint == setpoint
+
+
+def test_missing_gripper_setpoint_reports_new_path():
+    document = _document()
+    document["controller"]["limit_barrier_control"]["gripper"].pop("gripper_setpoint")
+    with pytest.raises(ConfigError, match="limit_barrier_control.gripper.gripper_setpoint is required"):
+        TeleopConfig.from_mapping(document)
+
+
+@pytest.mark.parametrize("value", [None, True, float("nan"), float("inf")])
+def test_invalid_gripper_setpoint_reports_new_path(value):
+    document = _document()
+    document["controller"]["limit_barrier_control"]["gripper"]["gripper_setpoint"] = value
+    with pytest.raises(ConfigError, match="limit_barrier_control.gripper.gripper_setpoint"):
+        TeleopConfig.from_mapping(document)
+
+
+def test_sync_hold_rejects_legacy_gripper_setpoint():
+    document = _document()
+    document["controller"]["sync_hold_control"]["gripper_setpoint"] = 0.4
+    with pytest.raises(ConfigError, match="sync_hold_control contains unknown fields.*gripper_setpoint"):
+        TeleopConfig.from_mapping(document)
 
 
 @pytest.mark.parametrize("mode", ["position_velocity", "position_only"])

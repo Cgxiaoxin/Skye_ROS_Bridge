@@ -18,8 +18,13 @@ from skye_factr_teleop import sync_trial
 
 @pytest.fixture(params=["left", "right"])
 def config(request):
-    return load_config(Path(__file__).parents[1] / "config" /
-                       f"grav_comp_m6_{request.param}.yaml", require_runtime=True)
+    config = load_config(Path(__file__).parents[1] / "config" /
+                         f"grav_comp_m6_{request.param}.yaml", require_runtime=True)
+    # Keep the duration cases independent of the packaged rest-pose tuning.
+    barrier = config.controller.limit_barrier_control
+    return replace(config, controller=replace(
+        config.controller, limit_barrier_control=replace(
+            barrier, gripper=replace(barrier.gripper, gripper_setpoint=0.4))))
 
 
 @pytest.mark.parametrize("velocity,acceleration,jerk,duration", [
@@ -83,7 +88,9 @@ def test_multijoint_relative_cli_offline_preview(config, capsys):
                      "--start", "-1.46", "1.70", "0.14", "0.005", "0.10", "0.11", "0.17", "0.4",
                      "--deltas", "0", "0", "0", "0.05", "0", "-0.05", "0"])
     plan = json.loads(capsys.readouterr().out)
-    np.testing.assert_allclose(plan["target_position_rad"], [-1.46, 1.70, 0.14, 0.055, 0.10, 0.06, 0.17, 0.4])
+    setpoint = load_config(path).controller.limit_barrier_control.gripper.gripper_setpoint
+    np.testing.assert_allclose(plan["target_position_rad"],
+                               [-1.46, 1.70, 0.14, 0.055, 0.10, 0.06, 0.17, setpoint])
 
 
 @pytest.mark.parametrize("kwargs,match", [

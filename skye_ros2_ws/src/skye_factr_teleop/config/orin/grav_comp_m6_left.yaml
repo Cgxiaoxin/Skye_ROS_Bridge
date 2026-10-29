@@ -60,11 +60,11 @@ controller:
     gripper:
       limit_max: 0.52517
       limit_min: -0.0175
+      gripper_setpoint: 0.55
       kp: 0.301658022
       kd: 0.0315069084
 
   sync_hold_control:
-    gripper_setpoint: 0.55
     ruckig:
       gravity_comp_gain: [0.15, 0.15, 0.35, 0.35, 0.3, 0.3, 0.3]
       kp: [0.35, 0.35, 0.38, 0.38, 0.35, 0.35, 0.35, 0.35]

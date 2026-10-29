@@ -319,7 +319,7 @@ core.handle(
 cycle = core.step(now=tick_time)  # 调用方每个控制周期仅执行一次。
 ```
 
-被接受的同步请求会记录实测的 8 轴逻辑主臂位置和速度，并复制 7 个从臂位置与夹爪设定值。输入坐标必须事先映射到主臂逻辑坐标系。若省略夹爪目标，则使用 `controller.sync_hold_control.gripper_setpoint`。由于没有加速度测量，起始加速度设为零；目标速度和加速度也为零。每次同步都会新建轨迹。重复的同步请求不会替换目标或重启超时计时。
+被接受的同步请求会记录实测的 8 轴逻辑主臂位置和速度，并复制 7 个从臂位置与夹爪设定值。输入坐标必须事先映射到主臂逻辑坐标系。若省略夹爪目标，则使用 `controller.limit_barrier_control.gripper.gripper_setpoint`。该字段也用于 TELEOP 回弹，配置中放在夹爪 `limit_min` 与 `kp` 之间。迁移旧 YAML 时，应将该字段从 `sync_hold_control` 移走；后者现在只包含 `ruckig` 和 `hold`。由于没有加速度测量，起始加速度设为零；目标速度和加速度也为零。每次同步都会新建轨迹。重复的同步请求不会替换目标或重启超时计时。
 
 同步期间，轨迹跟踪力矩为 `ruckig.kp * (q_ref - q) + ruckig.kd * (dq_ref - dq)`。Ruckig 完成后进入 `HOLD_SETTLING`，对记录的最终目标保持。保持力矩为 `hold.kp * error - hold.kd * dq + hold.ki * integral`。对每个轴，仅当 `abs(error) <= hold.i_thresh` 时积分 `error * dt`；否则清零该轴积分。`hold.i_max` 对乘以 `hold.ki` 之前的累计误差限幅，单位为 rad·s。第一个保持周期从零积分开始。所有轴的实测位置误差和速度分别连续满足 `sync_position_tolerance`、`sync_velocity_tolerance` 达 `settle_duration` 后进入 `SYNCED`，并继续保持；任一轴超阈值就重新计时。超过 `settle_timeout` 则返回 `IDLE` 并关闭力矩。这四项配置位于 `controller.sync_hold_control.hold` 下；默认值需在真机上验证和调节。
 

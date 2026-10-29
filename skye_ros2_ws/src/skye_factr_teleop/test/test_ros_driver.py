@@ -1103,7 +1103,8 @@ def test_trial_cli_over_ros_with_fake_hardware(make_node, side, motion_source, t
         spin_until(lambda: node.core.mode == ControlMode.SYNCED)
         assert node._follower_session_active == (follower is not None)
         if follower is not None:
-            np.testing.assert_allclose(node.core._target, follower_target + [0.4])
+            setpoint = node.config.controller.limit_barrier_control.gripper.gripper_setpoint
+            np.testing.assert_allclose(node.core._target, follower_target + [setpoint])
         stop = node.create_publisher(String, "/mode/switch_stop", module.event_qos())
         spin_until(lambda: stop.get_subscription_count() > 0)
         stop.publish(String(data="switch_stop"))
@@ -1117,7 +1118,7 @@ def test_trial_cli_over_ros_with_fake_hardware(make_node, side, motion_source, t
             "IDLE", "TELEOP_SYNCING", "HOLD_SETTLING", "SYNCED", "IDLE"]
         assert record["follower_command_count"] == 0
         assert record["side"] == side
-        assert record["config"]["controller"]["sync_hold_control"]["gripper_setpoint"] == 0.4
+        assert record["config"]["controller"]["limit_barrier_control"]["gripper"]["gripper_setpoint"] == node.config.controller.limit_barrier_control.gripper.gripper_setpoint
         assert output.with_suffix(".trace.jsonl").stat().st_size > 0
         trace = [json.loads(line) for line in output.with_suffix(".trace.jsonl").read_text().splitlines()]
         assert sum("data" in row for row in trace) == sum(p["samples"] for p in record["phases"].values())

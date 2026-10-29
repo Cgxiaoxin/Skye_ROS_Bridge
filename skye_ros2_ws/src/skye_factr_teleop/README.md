@@ -477,7 +477,10 @@ cycle = core.step(now=tick_time)  # Once per caller's control cycle.
 Accepted sync captures the measured eight-axis logical leader position and
 velocity and copies the seven follower positions plus gripper setpoint.
 Coordinates must already be mapped to the logical leader frame. If omitted,
-the gripper target is `controller.sync_hold_control.gripper_setpoint`. Starting acceleration
+the gripper target is `controller.limit_barrier_control.gripper.gripper_setpoint`. This field
+also sets the TELEOP spring rest pose and is required between `limit_min` and `kp`
+in the packaged YAML. Remove it from `sync_hold_control` when migrating an older
+configuration; that block now contains only `ruckig` and `hold`. Starting acceleration
 is zero because no acceleration measurement is available; target velocity and
 acceleration are zero. A fresh trajectory is created per sync. Repeated sync
 requests do not replace the target or restart the timeout.

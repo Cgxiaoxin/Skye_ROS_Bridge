@@ -96,6 +96,7 @@ class JointBarrierConfig:
 class GripperBarrierConfig:
     limit_max: float
     limit_min: float
+    gripper_setpoint: float
     kp: float
     kd: float
 
@@ -150,7 +151,6 @@ class HoldControlConfig:
 
 @dataclass(frozen=True)
 class SyncHoldControlConfig:
-    gripper_setpoint: float
     ruckig: RuckigControlConfig
     hold: HoldControlConfig
 
@@ -415,13 +415,14 @@ def _joint_barrier(value: Any) -> JointBarrierConfig:
 def _gripper_barrier(value: Any) -> GripperBarrierConfig:
     path = "controller.limit_barrier_control.gripper"
     data = _map(value, path)
-    _only(data, {"limit_max", "limit_min", "kp", "kd"}, path)
+    _only(data, {"limit_max", "limit_min", "gripper_setpoint", "kp", "kd"}, path)
     grip_max = _num(_req(data, "limit_max", path), f"{path}.limit_max")
     grip_min = _num(_req(data, "limit_min", path), f"{path}.limit_min")
     if grip_min >= grip_max:
         raise ConfigError(f"{path}.limit_min must be below limit_max")
     return GripperBarrierConfig(
         grip_max, grip_min,
+        _num(_req(data, "gripper_setpoint", path), f"{path}.gripper_setpoint"),
         _nonnegative(_req(data, "kp", path), f"{path}.kp"),
         _nonnegative(_req(data, "kd", path), f"{path}.kd"),
     )
@@ -446,9 +447,8 @@ def _gripper_feedback(value: Any) -> GripperFeedbackConfig:
 def _sync_hold_control(value: Any) -> SyncHoldControlConfig:
     path = "controller.sync_hold_control"
     data = _map(value, path)
-    _only(data, {"gripper_setpoint", "ruckig", "hold"}, path)
+    _only(data, {"ruckig", "hold"}, path)
     return SyncHoldControlConfig(
-        _num(_req(data, "gripper_setpoint", path), f"{path}.gripper_setpoint"),
         _ruckig_control(_req(data, "ruckig", path)),
         _hold_control(_req(data, "hold", path)),
     )
