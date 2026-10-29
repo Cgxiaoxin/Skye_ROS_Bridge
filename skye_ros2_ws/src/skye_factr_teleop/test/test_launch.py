@@ -57,12 +57,16 @@ def expand_launch(monkeypatch, tmp_path):
         return []
 
     monkeypatch.setattr(ExecuteProcess, "execute", capture_process)
-    def expand(kind, *, gravity_test=False, limit_test=False, friction_test=False, **arguments):
+    def expand(kind, *, gravity_test=False, limit_test=False, friction_test=False,
+               hitl=False, **arguments):
         context = LaunchContext()
         context.launch_configurations.update(arguments)
+        if hitl and (gravity_test or limit_test or friction_test):
+            raise ValueError("hitl launch is only for start_teleop_*")
         launch_name = (f"gravity_test_m6_{kind}.launch.py" if gravity_test else
                        f"limit_test_m6_{kind}.launch.py" if limit_test else
                        f"friction_test_m6_{kind}.launch.py" if friction_test else
+                       f"start_teleop_m6_{kind}_hitl.launch.py" if hitl else
                        f"start_teleop_m6_{kind}.launch.py")
         path = PACKAGE_ROOT / "launch" / launch_name
         description = runpy.run_path(str(path))["generate_launch_description"]()
@@ -283,3 +287,31 @@ def test_friction_launch_rejects_gripper_id(expand_launch):
 def test_sync_diagnostics_launch_parameter_is_typed_bool(expand_launch):
     node, _, _, parameters = expand_launch("left", sync_diagnostics="true")[0]
     assert parameters[0][node.node_name]["ros__parameters"]["sync_diagnostics"] is True
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+@pytest.mark.parametrize("hitl", [False, True])
+def test_leader_remappings_pure_vs_hitl(side, hitl):
+    rules = dict(launch_support.leader_remappings(side, hitl=hitl))
+    assert rules["/joint_state"] == f"/gento/{side}_joint_states"
+    if hitl:
+        assert rules["/joint_control"] == f"/skye/teleop_action_{side}"
+        assert rules["/gripper/ctrl"] == f"/skye/teleop_gripper_{side}"
+    else:
+        assert rules["/joint_control"] == f"/gento/{side}_joint_control"
+        assert rules["/gripper/ctrl"] == f"/{side}_teleop_gripper/ctrl"
+
+
+def test_dual_hitl_launch_remaps_to_skye_teleop_branch(expand_launch):
+    result = expand_launch("dual", hitl=True, robot_profile="thor")
+    assert len(result) == 2
+    for side, (node, *_rest) in zip(("left", "right"), result):
+        assert node.node_name == f"/skye_factr_teleop_{side}"
+        assert node.expanded_remapping_rules == [
+            ("/joint_state", f"/gento/{side}_joint_states"),
+            ("/joint_control", f"/skye/teleop_action_{side}"),
+            ("/joint_move", f"/{side}_joint_move"),
+            ("/leader_arm/current_state", f"/{side}_leader_arm/current_state"),
+            ("/leader_arm/target_joint_state", f"/{side}_leader_arm/target_joint_state"),
+            ("/gripper/ctrl", f"/skye/teleop_gripper_{side}"),
+        ]

@@ -27,7 +27,32 @@ def _existing_file(value, share, argument):
     return str(path)
 
 
-def _launch_setup(context, *, sides):
+def leader_remappings(side, *, hitl=False):
+    """Return remaps for one leader node.
+
+    Pure teleop writes follower relative commands on ``/gento/{side}_joint_control``.
+    HITL teleop publishes to ``/skye/teleop_action_*`` so ``control_arbiter`` is the
+    only writer of ``/gento/*_joint_control(_abs)``.
+    """
+    if side not in ("left", "right"):
+        raise ValueError(f"side must be left or right, got {side!r}")
+    joint_control = (
+        f"/skye/teleop_action_{side}" if hitl else f"/gento/{side}_joint_control"
+    )
+    gripper_ctrl = (
+        f"/skye/teleop_gripper_{side}" if hitl else f"/{side}_teleop_gripper/ctrl"
+    )
+    return [
+        ("/joint_state", f"/gento/{side}_joint_states"),
+        ("/joint_control", joint_control),
+        ("/joint_move", f"/{side}_joint_move"),
+        ("/leader_arm/current_state", f"/{side}_leader_arm/current_state"),
+        ("/leader_arm/target_joint_state", f"/{side}_leader_arm/target_joint_state"),
+        ("/gripper/ctrl", gripper_ctrl),
+    ]
+
+
+def _launch_setup(context, *, sides, hitl=False):
     share = Path(get_package_share_directory("skye_factr_teleop"))
     profile = LaunchConfiguration("robot_profile").perform(context)
     config_dir = share / "config"
@@ -58,22 +83,19 @@ def _launch_setup(context, *, sides):
                 "sync_diagnostics": ParameterValue(
                     LaunchConfiguration("sync_diagnostics"), value_type=bool),
             }],
-            remappings=[
-                ("/joint_state", f"/gento/{side}_joint_states"),
-                ("/joint_control", f"/gento/{side}_joint_control"),
-                ("/joint_move", f"/{side}_joint_move"),
-                ("/leader_arm/current_state", f"/{side}_leader_arm/current_state"),
-                ("/leader_arm/target_joint_state", f"/{side}_leader_arm/target_joint_state"),
-                ("/gripper/ctrl", f"/{side}_teleop_gripper/ctrl"),
-            ],
+            remappings=leader_remappings(side, hitl=hitl),
             output="screen",
         )
         for side, config in files
     ]
 
 
-def leader_launch_description(sides):
-    """Declare profile and one validated configuration YAML per arm."""
+def leader_launch_description(sides, *, hitl=False):
+    """Declare profile and one validated configuration YAML per arm.
+
+    ``hitl=True`` remaps leader commands onto ``/skye/teleop_*`` for
+    ``control_arbiter`` (do not mix with the pure-teleop launch).
+    """
     actions = [DeclareLaunchArgument(
         "robot_profile", default_value="thor", choices=["thor", "orin"],
         description="Select the packaged leader hardware/control configuration",
@@ -89,7 +111,8 @@ def leader_launch_description(sides):
                          "empty selects the robot_profile configuration; "
                          "absolute or relative to the package share"),
         ))
-    actions.append(OpaqueFunction(function=_launch_setup, kwargs={"sides": sides}))
+    actions.append(OpaqueFunction(
+        function=_launch_setup, kwargs={"sides": sides, "hitl": hitl}))
     return LaunchDescription(actions)
 
 
