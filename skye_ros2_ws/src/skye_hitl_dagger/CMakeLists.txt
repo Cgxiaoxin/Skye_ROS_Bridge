@@ -19,6 +19,7 @@ install(DIRECTORY skye_hitl_dagger/
   PATTERN "__pycache__" EXCLUDE
 )
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS scripts/control_arbiter scripts/hitl_keyboard
   scripts/episode_recorder scripts/pub_dummy_policy_chunk
   DESTINATION lib/${PROJECT_NAME})

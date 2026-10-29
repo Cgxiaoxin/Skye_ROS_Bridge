@@ -1,0 +1,11 @@
+# Must match skye_robot_driver/config/profiles/thor.yaml joint_signs/offsets.
+# Used by control_arbiter for follower→abs inverse mapping only (7-DoF arms).
+control_arbiter:
+  ros__parameters:
+    left_joint_order: [0, 1, 2, 3, 4, 5, 6]
+    right_joint_order: [0, 1, 2, 3, 4, 5, 6]
+    left_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    right_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    left_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    right_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    gripper_invert_on_driver: true
