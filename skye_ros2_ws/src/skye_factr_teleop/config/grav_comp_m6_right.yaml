@@ -66,7 +66,8 @@ controller:
 
   sync_hold_control:
     # 与当前左臂控制参数一致；撤回右臂独立积分/阻尼微调，统一采用约 5° 同步位置容差。
-    gripper_setpoint: 0.4
+    # TELEOP/SYNC 默认回弹目标（张开位）  limit_min/max = -0.0175 / 0.52517  最大0.52
+    gripper_setpoint: 0.5
     ruckig:
       gravity_comp_gain: [0.5, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]
       kp: [0.50, 0.60, 0.80, 0.50, 0.35, 0.35, 0.35, 0.35]

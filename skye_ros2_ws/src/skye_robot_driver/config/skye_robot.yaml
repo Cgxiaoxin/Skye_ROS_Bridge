@@ -69,8 +69,10 @@ skye_robot_driver:
     gripper_kd: 0.12
     gripper_rate_hz: 100.0
     gripper_feedback_timeout_ms: 1
+    # 0.0~1.6  最大1.6 大臂夹爪闭合位置，及范围
     gripper_pos_min: 0.0
     gripper_pos_max: 1.6
+    # 比例
     gripper_close_limit: 0.93
 
     # Robotiq keys present so declare_parameter defaults are documented;
