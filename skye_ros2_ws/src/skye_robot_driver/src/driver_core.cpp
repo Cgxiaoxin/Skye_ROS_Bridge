@@ -673,22 +673,32 @@ std::optional<DriverCore::DualArmState> DriverCore::read_state() const {
     return std::nullopt;
   }
 
+  return decode_state(*feedback);
+}
+
+DriverCore::DualArmState DriverCore::decode_state(const ROBOT_RT &feedback) {
+  DualArmState state;
+  const auto &left = feedback.m_ARMS[0].m_ARM_OUT;
+  const auto &right = feedback.m_ARMS[1].m_ARM_OUT;
   JointArray left_position_degrees{};
   JointArray right_position_degrees{};
   JointArray left_velocity_degrees{};
   JointArray right_velocity_degrees{};
   for (std::size_t i = 0; i < left_position_degrees.size(); ++i) {
-    left_position_degrees[i] =
-        feedback->m_ARMS[0].m_ARM_OUT.m_ARM_FBK_Joint_Pos[i];
-    right_position_degrees[i] =
-        feedback->m_ARMS[1].m_ARM_OUT.m_ARM_FBK_Joint_Pos[i];
-    left_velocity_degrees[i] =
-        feedback->m_ARMS[0].m_ARM_OUT.m_ARM_FBK_Joint_Vel[i];
-    right_velocity_degrees[i] =
-        feedback->m_ARMS[1].m_ARM_OUT.m_ARM_FBK_Joint_Vel[i];
+    left_position_degrees[i] = left.m_ARM_FBK_Joint_Pos[i];
+    right_position_degrees[i] = right.m_ARM_FBK_Joint_Pos[i];
+    left_velocity_degrees[i] = left.m_ARM_FBK_Joint_Vel[i];
+    right_velocity_degrees[i] = right.m_ARM_FBK_Joint_Vel[i];
+    state.left_sensor_torque[i] = left.m_ARM_FBK_Joint_SensorTor[i];
+    state.right_sensor_torque[i] = right.m_ARM_FBK_Joint_SensorTor[i];
+    state.left_external_torque[i] = left.m_ARM_FBK_Joint_ExternalTorEst[i];
+    state.right_external_torque[i] = right.m_ARM_FBK_Joint_ExternalTorEst[i];
   }
+  std::copy_n(left.m_ARM_FBK_Flange_FTSensor, state.left_flange_wrench.size(),
+              state.left_flange_wrench.begin());
+  std::copy_n(right.m_ARM_FBK_Flange_FTSensor, state.right_flange_wrench.size(),
+              state.right_flange_wrench.begin());
 
-  DualArmState state;
   state.left_position = sdk_degrees_to_ros_radians(left_position_degrees);
   state.right_position = sdk_degrees_to_ros_radians(right_position_degrees);
   state.left_velocity = sdk_degrees_to_ros_radians(left_velocity_degrees);

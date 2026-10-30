@@ -2,6 +2,8 @@
 
 Skye / Gento 双臂 **C++ ROS2** 遥操驱动（本机开发；Orin/Thor 换 `lib/aarch64/libGentoSDK.so` 后重编即可）。
 
+连接 Thor 并查看关节、力矩和法兰六维力数据，见 [Thor 大臂消息查看](skye_ros2_ws/src/skye_robot_driver/Thor大臂消息查看.md)。
+
 ## 目录
 
 ```text

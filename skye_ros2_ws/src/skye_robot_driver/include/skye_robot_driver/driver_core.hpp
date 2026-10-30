@@ -34,12 +34,20 @@ class DriverCore {
   };
 
   using JointArray = std::array<double, 7>;
+  // SDK flange array order is interpreted as Fx, Fy, Fz, Tx, Ty, Tz.
+  using WrenchArray = std::array<double, 6>;
 
   struct DualArmState {
     JointArray left_position{};
     JointArray right_position{};
     JointArray left_velocity{};
     JointArray right_velocity{};
+    JointArray left_sensor_torque{};
+    JointArray right_sensor_torque{};
+    JointArray left_external_torque{};
+    JointArray right_external_torque{};
+    WrenchArray left_flange_wrench{};
+    WrenchArray right_flange_wrench{};
   };
 
   struct ImpedanceGains {
@@ -155,6 +163,8 @@ class DriverCore {
   bool emergency_stop();
   bool send_position(Arm arm, const JointArray &target_rad);
   std::optional<DualArmState> read_state() const;
+  // Decode without hardware I/O; only positions and velocities change units.
+  static DualArmState decode_state(const ROBOT_RT &feedback);
   std::optional<int> get_cmd_cycle_time_ms() const;
   bool linked() const;
   const std::string &last_error() const;
