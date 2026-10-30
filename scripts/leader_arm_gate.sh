@@ -71,7 +71,15 @@ fi
 docker exec -e "SIDE=${SIDE}" -e "ACTION=on" "${CONTAINER}" bash -lc '
 set -euo pipefail
 source /marvin_ws/install/setup.bash
-export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-21}"
+# Default Orin/21; Thor scripts should export ROS_DOMAIN_ID=20 or ROBOT_PROFILE=thor first.
+if [[ -z "${ROS_DOMAIN_ID:-}" ]]; then
+  if declare -F robot_ros_domain_id >/dev/null 2>&1 && [[ -n "${ROBOT_PROFILE:-}" ]]; then
+    ROS_DOMAIN_ID="$(robot_ros_domain_id "${ROBOT_PROFILE}")"
+  else
+    ROS_DOMAIN_ID=21
+  fi
+fi
+export ROS_DOMAIN_ID
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml
 export ROS_LOCALHOST_ONLY=0

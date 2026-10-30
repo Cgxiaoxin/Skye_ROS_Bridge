@@ -12,11 +12,17 @@ validate_robot_profile "${ROBOT_PROFILE}" || exit 1
 export ROBOT_PROFILE
 WS="${REPO_ROOT}/skye_ros2_ws"
 
-export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-21}"
+if [[ -z "${ROS_DOMAIN_ID:-}" ]]; then
+  ROS_DOMAIN_ID="$(robot_ros_domain_id "${ROBOT_PROFILE}")"
+fi
+export ROS_DOMAIN_ID
 unset ROS_LOCALHOST_ONLY || true
 export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
 
 FASTRTPS_XML="${REPO_ROOT}/marvin_ws/fastrtps_no_shm.xml"
+if [[ ! -f "${FASTRTPS_XML}" && -f "${REPO_ROOT}/marvin_ws1/fastrtps_no_shm.xml" ]]; then
+  FASTRTPS_XML="${REPO_ROOT}/marvin_ws1/fastrtps_no_shm.xml"
+fi
 if [[ -n "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" && -f "${FASTRTPS_DEFAULT_PROFILES_FILE}" ]]; then
   FASTRTPS_XML="${FASTRTPS_DEFAULT_PROFILES_FILE}"
 fi

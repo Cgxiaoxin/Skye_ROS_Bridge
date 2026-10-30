@@ -66,9 +66,9 @@ colcon build --packages-select skye_robot_driver \
 source install/setup.bash
 
 # 必须显式 export；不设则默认为 0。A/B/D 必须完全相同。
-# 本流程约定 73（与 phase7 checklist 一致）。
-# 切勿残留旧 Thor/Orin Docker 流程的 21（见 docs/Thor_Orin_遥操启动.md）。
-export ROS_DOMAIN_ID=73
+# 约定：Thor=20，Orin=21（两机隔离，勿混用）。
+# 推荐直接：source skye_ros2_ws/scripts/setup_factr_teleop_env.sh thor|orin
+export ROS_DOMAIN_ID=20   # Thor；Orin 改为 21
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 echo "ROS_DOMAIN_ID=$ROS_DOMAIN_ID"   # 启动前自检，三端应打印同一数字
 
@@ -104,7 +104,7 @@ FTDI `latency_timer` 设为 `1`（USB 重插或重启后需重设）。完整命
 
 ### 3.2 启动
 
-先确认 A/B/D 都已按第 2 节 `source` + `export ROS_DOMAIN_ID=73`。
+先确认 A/B/D 都已按第 2 节 `source` + 同一 `ROS_DOMAIN_ID`（thor=20 / orin=21）。
 
 **终端 A — 大臂（提供只读反馈）：**
 
@@ -123,14 +123,14 @@ ros2 launch skye_factr_teleop "start_teleop_m6_${SIDE}.launch.py" \
 **终端 D — 确认大臂反馈可读、姿态安全（先自检再 echo）：**
 
 ```bash
-echo "ROS_DOMAIN_ID=$ROS_DOMAIN_ID"   # 须与 A/B 相同（约定 73）
+echo "ROS_DOMAIN_ID=$ROS_DOMAIN_ID"   # 须与 A/B 相同（thor=20 / orin=21）
 ros2 topic list | grep -E 'left_joint_states|switch_sync'   # 应立刻有输出
 ros2 topic echo --once "/gento/${SIDE}_joint_states" sensor_msgs/msg/JointState
 # 核对 l_j1..l_j7 或 r_j1..r_j7，目标须在小臂安全范围内；大臂保持静止
 ```
 
 若 `topic list` 几乎只有 `/rosout`，或 `echo` / `pub --once` 一直卡住：多半是本终端
-`ROS_DOMAIN_ID` 与 A/B 不一致（常见残留旧流程的 `21`，或一端忘了 export 落在默认 `0`）。
+`ROS_DOMAIN_ID` 与 A/B 不一致（Thor 应为 `20`、Orin 应为 `21`，或一端忘了 export 落在默认 `0`）。
 先 `echo $ROS_DOMAIN_ID`，对齐后重开命令；**已 launch 的节点不会随你事后改 shell 变量换 domain**，
 必要时停掉 A/B，统一 domain 后再启。
 
@@ -212,7 +212,7 @@ ros2 run skye_factr_teleop skye_factr_teleop_trial \
 ## 5. 接入现有遥操系统时要注意什么
 
 1. **Domain / RMW 一致（最常见翻车点）**：  
-   - 本 reboot 流程约定 **`ROS_DOMAIN_ID=73`** + `rmw_fastrtps_cpp`。  
+   - 本 reboot 流程约定 **Thor=`ROS_DOMAIN_ID=20`，Orin=`21`** + `rmw_fastrtps_cpp`。  
    - 旧 Docker / `start_skye_for_factr.sh` / `Thor_Orin_遥操启动.md` 常用 **`21`**——**不要混用**。  
    - 未 `export` 时 ROS 默认为 **`0`**；若 A/B 在 `0`、命令端仍留着 `21`，就会出现
      `Waiting for at least 1 matching subscription(s)...` 或 `topic echo` 一直无输出。  
@@ -277,7 +277,7 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
 | 现象 | 常见原因 | 处理 |
 |---|---|---|
 | `package 'skye_factr_teleop' not found`（只搜 `/opt/ros/humble`） | 未 `source install/setup.bash` | 第 2 节重新 source；必要时先 colcon build |
-| `Waiting for at least 1 matching subscription(s)...` | 本终端 domain 与小臂节点不一致 | `echo $ROS_DOMAIN_ID`，对齐为 `73` 后重发；必要时重启 A/B |
+| `Waiting for at least 1 matching subscription(s)...` | 本终端 domain 与小臂节点不一致 | `echo $ROS_DOMAIN_ID`，对齐为 thor=`20` / orin=`21` 后重发；必要时重启 A/B |
 | `topic echo` 一直无数据 / `topic list` 几乎空 | 同上，或 `SIDE` 未设变成 `/gento/_joint_states` | 对齐 domain；显式 `SIDE=left` |
 | 小臂 launch 已起但仍软绵绵 | 正常：启动后是 IDLE、力矩关 | 在终端 D 发 `switch_sync` 才使能 |
 
