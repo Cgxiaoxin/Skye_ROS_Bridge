@@ -51,16 +51,9 @@ ros2 launch skye_robot_driver skye_robot_driver.launch.py
 - 只用 `libGentoSDK.so`（不要 PY so）
 - 同一控制器同时只允许一个驱动连接
 
-## 原生 `skye_factr_teleop` 通用启动流程
+## 大臂小臂通用启动流程
 
-原生 `skye_factr_teleop` 双臂启动使用统一入口（支持小臂 A/B 交叉连接主机）：
+原生 `skye_factr_teleop` 双臂启动使用统一入口：[统一启动说明](skye_ros2_ws/src/skye_factr_teleop/大小臂通用启动指南.md)
 
-```bash
-bash scripts/teleop.sh configure thor  # 本机首次设置大臂；另一套用 orin
-bash scripts/teleop.sh build           # 首次或源码更新后执行
-bash scripts/teleop.sh check --fix-latency
-bash scripts/teleop.sh start
-```
-
-小臂由 USB 唯一序列号自动识别左右侧及标定，不需重命名 USB。
-具体选项、操作终端及停止流程见[统一启动说明](skye_ros2_ws/src/skye_factr_teleop/user_guide/unified_startup.md)。
+- 支持小臂 A/B 交叉连接 大臂 Thor/Orin
+- 小臂由 USB 唯一序列号自动识别左右侧及标定，不需重命名 USB。
