@@ -367,6 +367,19 @@ def test_record_status_timeout_keeps_goal_after_idle_clears_target(config):
     assert "J1: |position error|=0.100000 rad" in text and "J3:" not in text
 
 
+@pytest.mark.parametrize("operator_args,expected", [([], ""), (["--operator", "test"], "test")])
+def test_record_cli_operator_is_optional(monkeypatch, tmp_path, operator_args, expected):
+    recorded = []
+    monkeypatch.setattr(sync_trial, "_load", lambda args: None)
+    monkeypatch.setattr(sync_trial, "_record", lambda args, config: recorded.append(args))
+
+    sync_trial.main(["record", "--side", "right", "--config", "right.yaml",
+                     "--output", str(tmp_path / "record.json"), *operator_args])
+
+    assert len(recorded) == 1
+    assert recorded[0].operator == expected
+
+
 def test_record_cli_removes_progress_option(tmp_path, capsys):
     with pytest.raises(SystemExit) as caught:
         sync_trial.main(["record", "--side", "left", "--config", "not-loaded.yaml",

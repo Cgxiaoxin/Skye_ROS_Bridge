@@ -26,11 +26,12 @@ from .config import load_config
 from .state_machine import ControlMode
 from .control_core import (
     ControlCore, GravityTestSettings, LimitTestSettings, FrictionTestSettings,
-    gripper_command_norm,
+    gripper_command_norm, transform_leader_state,
 )
 from .dynamics import PinocchioDynamics
 from .trajectory import RuckigTrajectory
 from .dynamixel_driver import DynamixelDriver
+from .sync_trial import preview_move
 
 
 def state_qos():
@@ -412,7 +413,31 @@ class SkyeFactrTeleopNode(Node):
         if not self._fresh_follower():
             self.get_logger().warning("Synchronization requires fresh follower state")
             return
-        self._start_motion(self._follower.position, follower_session=True)
+        target = self._follower.position.copy()
+        try:
+            position, velocity = self._hardware.read_state()
+            state = transform_leader_state(
+                position, velocity, self.core.joint_offsets, self.core.joint_signs,
+            )
+        except Exception as exc:
+            self._fault(exc, phase="sync_preflight")
+            return
+        try:
+            plan = preview_move(
+                self.config, np.append(state.arm_position, state.gripper_position),
+                np.append(state.arm_velocity, state.gripper_velocity), target=target,
+            )
+        except Exception as exc:
+            self.get_logger().error(
+                f"Synchronization rejected [side={self.side}, phase=sync_preflight]: {exc}"
+            )
+            return
+        self.get_logger().info(
+            f"Synchronization preflight passed [side={self.side}]: "
+            f"trajectory={plan['trajectory_duration_s']:.3f}s, "
+            f"joint_delta_rad={(target - state.arm_position).tolist()}"
+        )
+        self._start_motion(target, follower_session=True)
 
     def _on_gravity_test(self, message):
         if self._closed or message.data != "switch_gravity_test":

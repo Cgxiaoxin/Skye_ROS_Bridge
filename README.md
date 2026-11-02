@@ -2,20 +2,6 @@
 
 Skye / Gento 双臂 **C++ ROS2** 遥操驱动（本机开发；Orin/Thor 换 `lib/aarch64/libGentoSDK.so` 后重编即可）。
 
-连接 Thor 并查看关节、力矩和法兰六维力数据，见 [Thor 大臂消息查看](skye_ros2_ws/src/skye_robot_driver/Thor大臂消息查看.md)。
-
-原生 `skye_factr_teleop` 双臂启动使用统一入口（支持小臂 A/B 交叉连接主机）：
-
-```bash
-bash scripts/teleop.sh configure thor  # 本机首次设置大臂；另一套用 orin
-bash scripts/teleop.sh build           # 首次或源码更新后执行
-bash scripts/teleop.sh check --fix-latency
-bash scripts/teleop.sh start
-```
-
-小臂由 USB 唯一序列号自动识别左右侧及标定，不需重命名 USB。
-具体选项、操作终端及停止流程见[统一启动说明](skye_ros2_ws/src/skye_factr_teleop/user_guide/unified_startup.md)。
-
 ## 目录
 
 ```text
@@ -64,3 +50,17 @@ ros2 launch skye_robot_driver skye_robot_driver.launch.py
 - 控制器 IP：Thor `6.6.7.191` / Orin `6.6.7.190`；UDP `50000–50010`
 - 只用 `libGentoSDK.so`（不要 PY so）
 - 同一控制器同时只允许一个驱动连接
+
+## 原生 `skye_factr_teleop` 通用启动流程
+
+原生 `skye_factr_teleop` 双臂启动使用统一入口（支持小臂 A/B 交叉连接主机）：
+
+```bash
+bash scripts/teleop.sh configure thor  # 本机首次设置大臂；另一套用 orin
+bash scripts/teleop.sh build           # 首次或源码更新后执行
+bash scripts/teleop.sh check --fix-latency
+bash scripts/teleop.sh start
+```
+
+小臂由 USB 唯一序列号自动识别左右侧及标定，不需重命名 USB。
+具体选项、操作终端及停止流程见[统一启动说明](skye_ros2_ws/src/skye_factr_teleop/user_guide/unified_startup.md)。
