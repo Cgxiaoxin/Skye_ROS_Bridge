@@ -213,7 +213,7 @@ def main(argv=None):
         if not (WS / "install" / package / "lib" / package / executable).is_file():
             raise RuntimeError(f"缺少 {executable}，请执行 build。")
     if args.action == "check":
-        print("检查通过（配置、串口、延迟、网络及安装入口）；电机只读检查仍按 checklist 执行。")
+        print("检查通过（配置、串口、延迟、网络及安装入口）。")
         return 0
     print("启动大小臂：大臂将连接控制器；小臂初始 IDLE。同步和遥操需手动触发。", flush=True)
     print("Ctrl+C 统一退出；试验结束请先按 checklist 完成 stop / hold。", flush=True)

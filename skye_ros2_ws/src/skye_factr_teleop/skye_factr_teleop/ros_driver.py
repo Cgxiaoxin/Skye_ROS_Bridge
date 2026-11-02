@@ -269,6 +269,13 @@ class SkyeFactrTeleopNode(Node):
 
     def _create_ros_interfaces(self):
         self._state_pub = self.create_publisher(String, "/teleop/state", latched_state_qos())
+        self._sync_progress_pub = None
+        if not self._test_only:
+            self._sync_progress_pub = self.create_publisher(
+                String, f"/leader_arm/{self.side}/sync_progress",
+                QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE,
+                           durability=DurabilityPolicy.TRANSIENT_LOCAL),
+            )
         self._current_pub = self.create_publisher(JointState, "/leader_arm/current_state", state_qos())
         self._target_pub = self.create_publisher(JointState, "/leader_arm/target_joint_state", state_qos())
         self._command_pub = self.create_publisher(JointState, "/joint_control", command_qos())
@@ -373,7 +380,7 @@ class SkyeFactrTeleopNode(Node):
             if result.mode == ControlMode.IDLE:
                 self._follower_session_active = False
             self._publish_cycle(result)
-            self._log_sync_progress(result, cycle_time)
+            self._publish_sync_progress(result, cycle_time)
             self._publish_diagnostics(result, cycle_time)
             self._publish_friction_phase()
         except Exception as exc:
@@ -413,9 +420,14 @@ class SkyeFactrTeleopNode(Node):
         if self._closed or message.data != "switch_sync":
             return
         if self.core.mode != ControlMode.IDLE:
+            if self.core.mode == ControlMode.SYNCED:
+                self._report_sync(f"[{self.side}] SYNCED：已同步，继续保持目标姿态", "synced")
+            elif self.core.mode not in (ControlMode.TELEOP_SYNCING, ControlMode.HOLD_SETTLING):
+                self._report_sync(f"[{self.side}] 同步被拒绝：当前状态 {self.core.mode.name}，请先 stop", "failed")
             return
         if not self._fresh_follower():
             self.get_logger().warning("Synchronization requires fresh follower state")
+            self._report_sync(f"[{self.side}] 同步被拒绝：缺少新鲜的大臂关节状态", "failed")
             return
         target = self._follower.position.copy()
         try:
@@ -432,11 +444,11 @@ class SkyeFactrTeleopNode(Node):
                 np.append(state.arm_velocity, state.gripper_velocity), target=target,
             )
         except Exception as exc:
-            self.get_logger().error(
-                f"Synchronization rejected [side={self.side}, phase=sync_preflight]: {exc}"
-            )
+            text = f"Synchronization rejected [side={self.side}, phase=sync_preflight]: {exc}"
+            self.get_logger().error(text)
+            self._report_sync(text, "failed")
             return
-        self.get_logger().info(
+        self._report_sync(
             f"Synchronization preflight passed [side={self.side}]: "
             f"trajectory={plan['trajectory_duration_s']:.3f}s, "
             f"joint_delta_rad={(target - state.arm_position).tolist()}"
@@ -555,6 +567,7 @@ class SkyeFactrTeleopNode(Node):
     def _publish_state(self):
         state = self.core.mode.name
         if state != self._published_state and self.context.ok():
+            previous = self._published_state
             self._state_pub.publish(String(data=state))
             self._published_state = state
             if not self._closed and not self._test_only:
@@ -567,15 +580,29 @@ class SkyeFactrTeleopNode(Node):
                 }
                 reason = self.core.sync_status["transition_reason"]
                 if state == "IDLE" and reason in ("sync_timeout", "settle_timeout"):
-                    self.get_logger().warning(
+                    self._report_sync(
                         f"[{self.side}] 同步失败：{reason}；已停止并关闭力矩"
                     )
+                elif state in ("TELEOP_SYNCING", "HOLD_SETTLING", "SYNCED"):
+                    self._report_sync(
+                        f"[{self.side}] {state}：{descriptions[state]}",
+                        "synced" if state == "SYNCED" else "active",
+                    )
+                elif state == "IDLE" and previous in ("TELEOP_SYNCING", "HOLD_SETTLING", "SYNCED"):
+                    self._report_sync(f"[{self.side}] IDLE：同步已停止，已关闭力矩", "stopped")
                 else:
                     self.get_logger().info(
                         f"[{self.side}] {state}：{descriptions.get(state, state)}"
                     )
 
-    def _log_sync_progress(self, result, now):
+    def _report_sync(self, text, outcome="active"):
+        if self._sync_progress_pub is not None and self.context.ok():
+            self._sync_progress_pub.publish(String(data=json.dumps({
+                "side": self.side, "text": text, "outcome": outcome,
+                "stamp_s": time.time(),
+            }, ensure_ascii=False)))
+
+    def _publish_sync_progress(self, result, now):
         """Report final-goal blockers at 1 Hz, immediately on phase change/timeout."""
         if self._sync_goal is None:
             return
@@ -603,9 +630,9 @@ class SkyeFactrTeleopNode(Node):
         lines = [f"[{self.side}] {mode}：{np.count_nonzero(within)}/8 轴当前达标（相对最终同步目标）"]
         lines.extend(f"[{self.side}] {line}" for line in details.splitlines())
         if timed_out:
-            self.get_logger().warning("\n".join(lines))
-        else:
-            self.get_logger().info("\n".join(lines))
+            reason = self.core.sync_status["transition_reason"]
+            lines.insert(0, f"[{self.side}] 同步失败：{reason}；已停止并关闭力矩")
+        self._report_sync("\n".join(lines), "failed" if timed_out else "active")
         self._sync_progress_mode = mode
         self._sync_progress_at = now
         if timed_out:
@@ -660,9 +687,9 @@ class SkyeFactrTeleopNode(Node):
 
     def _fault(self, exc, *, phase=None):
         phase = phase or self.core.mode.name
-        self.get_logger().error(
-            f"Control stopped after failure [side={self.side}, phase={phase}]: {exc}"
-        )
+        text = f"Control stopped after failure [side={self.side}, phase={phase}]: {exc}"
+        self.get_logger().error(text)
+        self._report_sync(text, "failed")
         if exc.__cause__ is not None:
             self.get_logger().error(f"Additional error context: {exc.__cause__}")
         self.shutdown_control()

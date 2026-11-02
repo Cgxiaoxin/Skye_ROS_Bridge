@@ -156,6 +156,31 @@ def test_environment_exports_detected_hardware_without_loading_ros(usb, capsys):
     assert "sudo" not in script
 
 
+def test_sourced_environment_routes_only_sync_command(tmp_path):
+    # Exercise the real source script with an environment producer that needs no USB.
+    source = SCRIPTS.parent / "skye_ros2_ws/scripts/setup_factr_teleop_env.sh"
+    copied = tmp_path / "skye_ros2_ws/scripts/setup_factr_teleop_env.sh"
+    copied.parent.mkdir(parents=True)
+    copied.write_text(source.read_text())
+    producer = tmp_path / "scripts/teleop.py"
+    producer.parent.mkdir()
+    producer.write_text('print("export ROBOT_PROFILE=orin ROS_DOMAIN_ID=197")\n')
+    # Replace command dispatch after sourcing so no ROS command can actually run.
+    shell = '''
+set -u
+source "$1" --robot orin --device b || exit
+command() { builtin printf 'ARG:%s\\n' "$@"; }
+ros2 topic pub --once /mode/switch_sync std_msgs/msg/String '{data: switch_sync}'
+ros2 topic pub --once /mode/switch_teleop std_msgs/msg/String '{data: switch_teleop}'
+ros2 --help
+'''
+    result = subprocess.run(["bash", "-c", shell, "test-env", str(copied)],
+                            capture_output=True, text=True, check=True)
+    assert "ARG:/usr/bin/python3\nARG:-m\nARG:skye_factr_teleop.sync_monitor\n" in result.stdout
+    assert "ARG:ros2\nARG:topic\nARG:pub\nARG:--once\nARG:/mode/switch_teleop\n" in result.stdout
+    assert result.stdout.endswith("ARG:ros2\nARG:--help\n")
+
+
 def test_system_launch_passes_explicit_crossed_configs(usb, monkeypatch, tmp_path):
     monkeypatch.setenv("ROS_LOG_DIR", str(tmp_path / "ros_logs"))
     pytest.importorskip("launch_ros")

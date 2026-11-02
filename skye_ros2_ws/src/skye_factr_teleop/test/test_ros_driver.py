@@ -153,7 +153,8 @@ def make_node(context, monkeypatch, tmp_path):
         monkeypatch.setattr(node, "_ros_now", lambda: clock.now)
         pubs = list(node.publishers)
         if record_publishers:
-            for name in ("_state_pub", "_current_pub", "_target_pub", "_command_pub", "_gripper_pub"):
+            for name in ("_state_pub", "_current_pub", "_target_pub", "_command_pub", "_gripper_pub",
+                         "_sync_progress_pub"):
                 if getattr(node, name, None) is not None:
                     setattr(node, name, Recorder())
             if diagnostics:
@@ -189,6 +190,9 @@ def test_interfaces_qos_and_disabled_startup(make_node, side):
     assert pubs["/gripper/ctrl"].qos_profile.reliability == ReliabilityPolicy.BEST_EFFORT
     assert pubs["/gripper/ctrl"].qos_profile.depth == 1
     assert pubs["/teleop/state"].qos_profile.durability == DurabilityPolicy.TRANSIENT_LOCAL
+    progress_qos = pubs[f"/leader_arm/{side}/sync_progress"].qos_profile
+    assert progress_qos.reliability == ReliabilityPolicy.RELIABLE
+    assert progress_qos.durability == DurabilityPolicy.TRANSIENT_LOCAL
     for topic in ("/leader_arm/current_state", "/leader_arm/target_joint_state"):
         assert pubs[topic].qos_profile.reliability == ReliabilityPolicy.RELIABLE
         assert pubs[topic].qos_profile.durability == DurabilityPolicy.VOLATILE
@@ -409,6 +413,8 @@ def test_sync_preflight_rejection_never_enables_torque(make_node, monkeypatch, s
     assert len(errors) == 1
     assert f"side={side}, phase=sync_preflight" in errors[0]
     assert reason in errors[0]
+    feedback = json.loads(node._sync_progress_pub.messages[-1].data)
+    assert feedback["outcome"] == "failed" and reason in feedback["text"]
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
@@ -439,8 +445,10 @@ def test_sync_preflight_uses_logical_pose_and_accepts_large_feasible_move(make_n
     np.testing.assert_allclose(rig.trajectories[0].target[:7], observed[0][2])
     assert node.core.mode == ControlMode.TELEOP_SYNCING
     assert rig.hardware.torque_enabled
-    assert f"side={side}" in logs[0] and "trajectory=" in logs[0]
-    assert "joint_delta_rad=[-4.0," in logs[0]
+    feedback = json.loads(node._sync_progress_pub.messages[0].data)["text"]
+    assert f"side={side}" in feedback and "trajectory=" in feedback
+    assert "joint_delta_rad=[-4.0," in feedback
+    assert logs == []
 
 
 def test_sync_preflight_read_failure_uses_existing_fault_cleanup(make_node, monkeypatch):
@@ -819,18 +827,20 @@ def test_terminal_sync_progress_uses_final_goal_and_is_rate_limited(make_node, m
     rig.clock.now += 0.002
     node._tick()
     assert not node._closed
-    progress = logs[-1]
+    feedback = node._sync_progress_pub.messages
+    progress = json.loads(feedback[-1].data)["text"]
     assert f"[{side}] TELEOP_SYNCING：6/8" in progress
     assert f"J1: |position error|=0.300000 rad > {hold.sync_position_tolerance[0]:.6f} rad" in progress
     assert "J2: |velocity|=0.100000 rad/s > 0.050000 rad/s" in progress
     assert "J3:" not in progress and "gripper(ID8):" not in progress
-    count = len(logs)
+    count = len(feedback)
     rig.clock.now += 0.5
     node._tick()
-    assert len(logs) == count
+    assert len(feedback) == count
     rig.clock.now += 0.51
     node._tick()
-    assert len(logs) == count + 1
+    assert len(feedback) == count + 1
+    assert logs == []
 
 
 def test_terminal_sync_logs_phase_changes_settling_and_success_once(make_node, monkeypatch):
@@ -838,6 +848,7 @@ def test_terminal_sync_logs_phase_changes_settling_and_success_once(make_node, m
     node = rig.node
     logs = []
     monkeypatch.setattr(node, "get_logger", lambda: SimpleNamespace(info=logs.append))
+    monkeypatch.setattr(node, "_report_sync", lambda text, outcome="active": logs.append(text))
     node._on_joint_move(packet())
     assert "TELEOP_SYNCING" in logs[-1]
     rig.trajectories[0].finished = True
@@ -871,7 +882,9 @@ def test_terminal_sync_timeout_reports_current_blockers_once(make_node, monkeypa
     node = rig.node
     warnings = []
     monkeypatch.setattr(node, "get_logger", lambda: SimpleNamespace(
-        info=lambda message: None, warning=warnings.append))
+        info=lambda message: None,
+        warning=lambda message: pytest.fail("sync progress leaked to terminal A")))
+    monkeypatch.setattr(node, "_report_sync", lambda text, outcome="active": warnings.append(text))
     node._on_joint_move(packet())
     if phase == "hold":
         rig.trajectories[0].finished = True
@@ -955,6 +968,8 @@ def test_dual_ros_graph_types_remaps_and_isolation(make_node, context):
             node = rig.node
             expected_pubs = {
                 "/teleop/state": "std_msgs/msg/String",
+                f"/leader_arm/{side}/sync_progress": "std_msgs/msg/String",
+                "/gripper/ctrl": "sensor_msgs/msg/JointState",
                 f"/{side}_leader_arm/current_state": "sensor_msgs/msg/JointState",
                 f"/{side}_leader_arm/target_joint_state": "sensor_msgs/msg/JointState",
                 f"/gento/{side}_joint_control": "sensor_msgs/msg/JointState",
