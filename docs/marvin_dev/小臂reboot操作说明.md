@@ -57,7 +57,7 @@
 （`source` 与 `export` 不会跨终端继承；漏做就会「节点已起、命令端看不见」）。
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws
+cd skye_ros2_ws
 source /opt/ros/humble/setup.bash
 # 首次或源码/launch 变更后：
 colcon build --packages-up-to skye_factr_teleop --symlink-install

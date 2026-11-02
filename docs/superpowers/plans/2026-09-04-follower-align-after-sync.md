@@ -145,7 +145,7 @@ def test_cancel_returns_idle():
 - [ ] **Step 3: Run tests — expect FAIL**
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws
+cd skye_ros2_ws
 # until package builds, run via PYTHONPATH:
 PYTHONPATH=src/skye_follower_align python3 -m pytest src/skye_follower_align/test/test_align_logic.py -v
 ```

@@ -142,7 +142,7 @@ In `skye_robot.yaml` under `ros__parameters:`:
 - [ ] **Step 4: Build and smoke-check publishers exist**
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws
+cd skye_ros2_ws
 source /opt/ros/humble/setup.bash
 ./scripts/build.sh
 source install/setup.bash
@@ -156,7 +156,7 @@ Expected: topic listed; Reliability `RELIABLE`; History depth ≥10.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge
+cd "$(git rev-parse --show-toplevel)"
 git add \
   skye_ros2_ws/src/skye_robot_driver/include/skye_robot_driver/driver_node.hpp \
   skye_ros2_ws/src/skye_robot_driver/src/driver_node.cpp \
@@ -250,7 +250,7 @@ Append to `_REMAPS`:
 - [ ] **Step 4: Build and verify**
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws
+cd skye_ros2_ws
 source /opt/ros/humble/setup.bash
 ./scripts/build.sh && source install/setup.bash
 ros2 topic list | grep gripper_action_applied
@@ -311,7 +311,7 @@ def test_next_episode_path_skips_existing(tmp_path: Path):
 - [ ] **Step 2: Run test — expect fail (module missing)**
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws
+cd skye_ros2_ws
 source /opt/ros/humble/setup.bash
 PYTHONPATH=src/skye_data_recorder pytest src/skye_data_recorder/test/test_next_episode_path.py -v
 ```
@@ -424,7 +424,7 @@ Copy `next_episode_path` logic from HITL `episode_recorder_node.py` unchanged.
 - [ ] **Step 4: Re-run unit test — expect pass**
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws
+cd skye_ros2_ws
 colcon build --packages-select skye_data_recorder --symlink-install
 source install/setup.bash
 pytest src/skye_data_recorder/test/test_next_episode_path.py -v

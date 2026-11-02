@@ -51,7 +51,7 @@
 - [ ] **Step 1: Confirm clean enough working tree**
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge
+cd "$(git rev-parse --show-toplevel)"
 git status -sb
 git branch --show-current   # must be main
 git rev-parse HEAD          # expect d591505 or later tip user committed
@@ -124,7 +124,7 @@ If `git commit --no-edit` fails because merge already committed, skip.
 - [ ] **Step 5: Build driver**
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws
+cd skye_ros2_ws
 ./scripts/build.sh
 ```
 
@@ -141,7 +141,7 @@ to `skye_driver_core` (robotiq branch already has this).
 - [ ] **Step 6: Run unit tests**
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws
+cd skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 colcon test --packages-select skye_robot_driver --event-handlers console_direct+
@@ -453,14 +453,14 @@ exec ros2 launch skye_robot_driver skye_robot_driver.launch.py \
 - [ ] **Step 3: Rebuild so install launch updates**
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws && ./scripts/build.sh
+cd skye_ros2_ws && ./scripts/build.sh
 ```
 
 - [ ] **Step 4: Dry-check launch resolution (no hardware)**
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws/install/setup.bash
+source skye_ros2_ws/install/setup.bash
 ros2 launch skye_robot_driver skye_robot_driver.launch.py \
   robot_profile:=thor connect_on_startup:=false --show-args
 ros2 launch skye_robot_driver skye_robot_driver.launch.py \
@@ -647,7 +647,7 @@ Patch **profile** files first; if install files exist, patch them too so immedia
 - [ ] **Step 8: Dry-run sync**
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge
+cd "$(git rev-parse --show-toplevel)"
 ROBOT_PROFILE=thor ./scripts/sync_marvin_overlay.sh
 ROBOT_PROFILE=orin ./scripts/sync_marvin_overlay.sh
 # restore thor for this machine

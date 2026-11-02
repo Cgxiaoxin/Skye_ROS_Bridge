@@ -2,6 +2,8 @@
 
 本机为 **遥操设备 B（Orin）**。用主机包 `skye_factr_teleop`，**不进 Docker、不用** `marvin_ws` **小臂**。
 
+> 除「本机取值」表里的 FTDI 序列号、domain、小臂参数外，本文命令一律用**仓库内相对路径**，换机器可直接用。
+
 | 项               | 本机取值                                                           |
 | --------------- | -------------------------------------------------------------- |
 | `robot_profile` | `orin`                                                         |
@@ -10,21 +12,46 @@
 | 右臂 FTDI         | `FTAO51EA`                                                     |
 | 小臂配置            | `skye_factr_teleop/config/orin/grav_comp_m6_{left,right}.yaml` |
 
-Thor 对照：[`双臂启动遥操.md`](./双臂启动遥操.md)（Thor domain=`20`）。旧 Docker：`docs/Thor_Orin_遥操启动.md`。
+Thor 对照：[`双臂启动遥操.md`](./双臂启动遥操.md)（Thor domain=`20`）。旧 Docker：[`Thor_Orin_遥操启动.md`](../Thor_Orin_遥操启动.md)。
 
 串口已写在 Orin yaml。**换线 / by-id 对不上**时再绑一次（见下「换 FTDI」）。
 
 ---
 
-## 一分钟流程（照抄）
+## 前置依赖（每台新机器一次）
 
-开 **3 个终端**，每个都先：
+`package.xml` 声明的运行时依赖，缺任何一个都会在启动瞬间崩：
 
 ```bash
-source /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws/scripts/setup_factr_teleop_env.sh orin
+sudo apt install -y ros-humble-dynamixel-sdk python3-serial ros-humble-pinocchio
+```
+
+- `dynamixel_sdk` 缺 → `setup_factr_teleop_env.sh` 报 `No module named 'dynamixel_sdk'`
+- `python3-serial` 缺 → `dynamixel_sdk` 内部 `import serial` 失败，报 `No module named 'serial'`
+- `pinocchio` 缺 → launch 起来后 `ros_driver.py` 报 `No module named 'pinocchio'`
+
+自检与编译（仓库根目录）：
+
+```bash
+/usr/bin/python3 -c 'import pinocchio, dynamixel_sdk, serial; print("ok")'
+bash scripts/teleop.sh build
+```
+
+---
+
+## 一分钟流程（照抄）
+
+开 **3 个终端**，每个都先（在仓库根目录）：
+
+```bash
+cd "$(git rev-parse --show-toplevel)"                          # 任意目录 → 仓库根目录
+source skye_ros2_ws/scripts/setup_factr_teleop_env.sh --robot orin
 unset FASTRTPS_DEFAULT_PROFILES_FILE   # 避免指向已删除的 marvin_ws/fastrtps xml
 echo "DOMAIN=$ROS_DOMAIN_ID PROFILE=$ROBOT_PROFILE"   # 期望 21 / orin
 ```
+
+> `source` 之后 shell 会自动 **cd 到 `skye_ros2_ws`**，并导出 `DRIVER_CONFIG` /
+> `LEFT_CONFIG` / `RIGHT_CONFIG`。后面要跑仓库根目录的脚本时，先 `cd "$(git rev-parse --show-toplevel)"` 回去。
 
 | 终端 | 做什么 |
 |---|---|
@@ -39,7 +66,7 @@ ros2 launch skye_robot_driver skye_robot_driver.launch.py \
   robot_profile:=orin "params_file:=$DRIVER_CONFIG"
 ```
 
-看到连上控制器、切入 `STATE_IMP_JOINT` 即可。
+看到连上控制器、切入 `STATE_IMP_JOINT` 即可。`$DRIVER_CONFIG` 由上面的 `source` 提供；跳过那步会变成空参数。
 
 ### B — 双小臂（先串口）
 
@@ -47,20 +74,28 @@ ros2 launch skye_robot_driver skye_robot_driver.launch.py \
 ls -l /dev/serial/by-id/
 # 期望含 FTAO51EA（右）、FTB8HNOT（左）；须与 orin yaml 的 dynamixel_port 一致
 
-echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
-echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB1/latency_timer
+# latency_timer 只有 root 能写；ttyUSB 编号会变，按 by-id 推导：
+for l in /dev/serial/by-id/*FTDI*; do
+  d=$(basename "$(readlink -f "$l")")
+  echo 1 | sudo tee "/sys/bus/usb-serial/devices/$d/latency_timer"
+done
 
-# 遇到需要重新绑定小臂FTDI 的情况：
+# 需要重新绑定小臂 FTDI 时（先回仓库根目录）：
+cd "$(git rev-parse --show-toplevel)"
 pkill -f skye_factr_teleop_driver || true
 export ROBOT_PROFILE=orin
 python3 scripts/bind_leader_arms.py
 # 按提示拔【左臂】USB → 回车 → 插回 → 回车
+# 脚本末尾的 "latency 失败 ... Permission denied" 属正常（它没有 root）；
+# 绑定本身已成功，latency 用上面的 for 循环补一次。
 
 ros2 launch skye_factr_teleop start_teleop_m6_dual.launch.py \
   robot_profile:=orin sync_diagnostics:=true
 ```
 
-**必须** `robot_profile:=orin`。漏写会落到 Thor 配置目录；`joint_signs` 等仍以 orin yaml 为准。  
+**必须**写 `robot_profile:=orin`：这个 launch 的默认值**硬编码为 `thor`**，并且**不读环境变量**，
+`export ROBOT_PROFILE=orin` 对它无效（只有大臂 launch 有 env 回退）。漏写就按 Thor 配置跑（`joint_signs` 等全是 Thor 的）。
+
 启动后是 **IDLE、力矩关**，小臂不会自己动。
 
 ### D — 同步 → 遥操（托住双小臂）
@@ -130,13 +165,15 @@ USB 重插或重启后 `latency_timer` 会复位，启小臂前再写一次 `1`�
 `serial port does not exist: ...FTDI...` 时，**不要手改一堆路径**，在仓库根目录：
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 # 两臂上电、USB 插好；先停掉占用串口的 teleop
 pkill -f skye_factr_teleop_driver || true
 
 export ROBOT_PROFILE=orin
 python3 scripts/bind_leader_arms.py
 # 正好 2 路：按提示拔【左臂】USB → 回车 → 插回 → 回车
-# 脚本写入 skye_factr_teleop config/orin + install（若非 symlink）并设 latency=1
+# 脚本写入 skye_factr_teleop config/orin + install（若非 symlink）
+# latency=1 一步会因权限失败，属正常，见上面「B」的 for 循环
 ```
 
 预览：`python3 scripts/bind_leader_arms.py --dry-run`。然后重新开终端 B。
@@ -146,10 +183,10 @@ python3 scripts/bind_leader_arms.py
 ## 改配置 / 重编注意
 
 - Launch 读的是 `install/.../share/.../config/orin/`（symlink-install 时链到 `src`）。
-- 只改 `src` 后若 share **不是** symlink：跑上面的 bind（会双写），或  
-`colcon build --packages-select skye_factr_teleop --symlink-install`  
+- 只改 `src` 后若 share **不是** symlink：跑上面的 bind（会双写），或
+`colcon build --packages-select skye_factr_teleop --symlink-install`
 然后 **重启 B**。
-- 脚本打印的 `LEFT_CONFIG`/`RIGHT_CONFIG` 仍是 Thor 路径占位；真正用哪份由 `robot_profile:=orin` 决定。
+- 脚本打印的 `LEFT_CONFIG`/`RIGHT_CONFIG` 已是本机 profile 路径；真正用哪份由 `robot_profile:=orin` 决定。
 
 ---
 
@@ -157,10 +194,13 @@ python3 scripts/bind_leader_arms.py
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
+| `No module named 'pinocchio'` | 缺 `ros-humble-pinocchio` | `sudo apt install -y ros-humble-pinocchio` |
+| `No module named 'dynamixel_sdk'` / `'serial'` | 缺 SDK / pyserial | `sudo apt install -y ros-humble-dynamixel-sdk python3-serial` |
 | `serial port does not exist: ...FTDI...` | yaml by-id ≠ 本机插着的 FTDI | `ROBOT_PROFILE=orin python3 scripts/bind_leader_arms.py` 后重启 B |
+| bind 打印 `latency 失败 ... Permission denied` | `/sys` 需 root | 正常现象；用「B」的 for 循环补写 |
 | by-id 目录空 / 只有一根 | USB 未起来 | 查供电线缆；拔插 / `udevadm` |
 | `latency_timer ... expected 1` | 时延未设 | 写 `latency_timer=1` 后重启 B |
-| `Waiting for subscription` / sync 无反应 | A/B/D domain 不一致 | 都 `source ... orin`，确认 `21`，**重启** A/B |
+| `Waiting for subscription` / sync 无反应 | A/B/D domain 不一致 | 都 `source ... --robot orin`，确认 `21`，**重启** A/B |
 | B 狂刷 `Rejected follower state: ... stale` | 大臂反馈时间戳不可用；**sync 不会启动** | 三端同为 21；`unset` 坏的 FASTRTPS 路径；必要时 `ROS_LOCALHOST_ONLY=1` 排除局域网串台后再试 |
 | `Synchronization requires fresh follower state` | 同上，没有新鲜 `/gento/*_joint_states` | 先 `ros2 topic hz /gento/left_joint_states` 有约 250 Hz 再 sync |
 | `gripper_setpoint` unknown / yaml 字段报错 | install 代码与 yaml 版本不一致 | `colcon build --packages-select skye_factr_teleop --symlink-install` 后重启 B |
@@ -173,6 +213,22 @@ python3 scripts/bind_leader_arms.py
 pkill -f skye_robot_driver || true
 pkill -f gento_robot_driver || true
 ```
+
+---
+
+## 通用 vs 本机特有
+
+| 内容 | 换机器是否通用 |
+|---|---|
+| 前置依赖、`bash scripts/teleop.sh build` | 通用（每台新机器装一次） |
+| `robot_profile:=orin`、`sync_diagnostics:=true`、`--robot orin` | 通用 |
+| sync / teleop / stop 话题、`/gento/hold_current` | 通用（代码里的固定接口） |
+| 相对路径命令 | 通用（任意 clone 目录都能跑） |
+| `ROS_DOMAIN_ID=21`（Thor 为 20） | **本组约定**，A/B/D 三端必须一致 |
+| 左 `FTB8HNOT` / 右 `FTAO51EA` | **本机特有**，换机器必须重跑 `bind_leader_arms.py` |
+| `config/orin/grav_comp_m6_*.yaml` 里的 `dynamixel_port` / `current_limit_ma` | **随机器走**，由绑定与实测决定 |
+| `ttyUSB*` 编号、`latency_timer` | **每次拔插/重启都会变**，按 by-id 推导 |
+| 控制器 IP（Thor `6.6.7.191` / Orin `6.6.7.190`） | 按机型固定，见大臂 profile |
 
 ---
 
