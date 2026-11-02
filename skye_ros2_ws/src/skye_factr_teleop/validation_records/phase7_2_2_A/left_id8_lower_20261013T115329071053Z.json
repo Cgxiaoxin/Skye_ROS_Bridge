@@ -7,15 +7,15 @@
   "boundary": "lower",
   "effective_lower_rad": -0.0175,
   "effective_upper_rad": 0.52517,
-  "config_path": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml",
+  "config_path": "/home/lyy/projects/skye_ros_bridge/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml",
   "usb_by_id": "usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0",
   "gain_scale": 1.0,
   "current_limit_ma": 20.0,
   "ramp_seconds": 2.0,
   "max_duration_seconds": 10.0,
-  "trace_path": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_2_2_A/left_id8_lower_20261013T115329071053Z.trace.jsonl",
+  "trace_path": "/home/lyy/projects/skye_ros_bridge/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_2_2_A/left_id8_lower_20261013T115329071053Z.trace.jsonl",
   "process_exit": "normal",
-  "torque_disable_readback_path": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_2_2_A/left_id8_lower_20261013T115329071053Z_torque_disable.json",
+  "torque_disable_readback_path": "/home/lyy/projects/skye_ros_bridge/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_2_2_A/left_id8_lower_20261013T115329071053Z_torque_disable.json",
   "state_events": [
     {
       "time_s": 2.0476409070033696,

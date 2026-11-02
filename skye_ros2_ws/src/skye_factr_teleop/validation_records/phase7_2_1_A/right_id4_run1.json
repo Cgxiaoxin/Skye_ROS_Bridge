@@ -2,7 +2,7 @@
   "date_utc": "2026-10-12T10:53:11.563605+00:00",
   "operator": "lyy",
   "side": "right",
-  "config_path": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml",
+  "config_path": "/home/lyy/projects/skye_ros_bridge/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml",
   "usb_by_id": "usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0",
   "urdf_package": "skye_factr_description",
   "urdf": "urdf/m6right_isomorphism.urdf",
@@ -14,7 +14,7 @@
   "current_limit_ma": 30.0,
   "ramp_seconds": 2.0,
   "max_duration_seconds": 10.0,
-  "trace_path": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_2_1_A/right_id4_run1.trace.jsonl",
+  "trace_path": "/home/lyy/projects/skye_ros_bridge/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_2_1_A/right_id4_run1.trace.jsonl",
   "process_exit": "PENDING",
   "torque_disable_readback_path": null,
   "state_events": [

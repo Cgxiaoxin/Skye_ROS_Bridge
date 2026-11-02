@@ -95,12 +95,12 @@ pgrep -af 'factr_teleop|skye_factr_teleop|dynamixel' || true
 在一个终端中执行，后续左右侧命令继续使用同一终端：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-select skye_factr_description skye_factr_teleop
 source install/setup.bash
 # 根据设备更换为A/B后缀
-RECORD_ROOT=/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase2_5_1_A
+RECORD_ROOT=/home/lyy/projects/skye_ros_bridge/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase2_5_1_A
 mkdir -p "$RECORD_ROOT"
 ```
 
@@ -333,11 +333,11 @@ cat "/sys/bus/usb-serial/devices/${TTY_NAME}/latency_timer"
 先构建并加载工作区：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-select skye_factr_description skye_factr_teleop
 source install/setup.bash
-RECORD_ROOT=/home/lyy/projects/leader_for_skye/skye_ros2_ws/validation_records/phase2_5_1
+RECORD_ROOT=/home/lyy/projects/skye_ros_bridge/skye_ros2_ws/validation_records/phase2_5_1
 mkdir -p "$RECORD_ROOT"
 ```
 
@@ -453,7 +453,7 @@ URDF 方向的推荐判定步骤：
 本节截图统一保存到：
 
 ```text
-/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_assets/phase2_5_1/urdf_direction_reference
+/home/lyy/projects/skye_ros_bridge/skye_ros2_ws/src/skye_factr_teleop/validation_assets/phase2_5_1/urdf_direction_reference
 ```
 
 #### 终端 1：启动 URDF 发布器
@@ -461,7 +461,7 @@ URDF 方向的推荐判定步骤：
 查看左侧时，直接执行：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-select skye_factr_description
 source install/setup.bash
@@ -477,7 +477,7 @@ ros2 run robot_state_publisher robot_state_publisher "$URDF_PATH"
 查看右侧时，直接执行：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-select skye_factr_description
 source install/setup.bash
@@ -496,7 +496,7 @@ ros2 run robot_state_publisher robot_state_publisher "$URDF_PATH"
 #### 终端 2：启动并配置 RViz
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=92
@@ -521,7 +521,7 @@ RViz 打开后按以下顺序设置：
 查看左侧时，直接执行：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=92
@@ -534,7 +534,7 @@ ros2 run joint_state_publisher_gui joint_state_publisher_gui "$URDF_PATH"
 查看右侧时，直接执行：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=92
@@ -700,7 +700,7 @@ RViz 坐标轴颜色为红色 `+X`、绿色 `+Y`、蓝色 `+Z`。对于 `URDF ax
 ```bash
 SIDE=left
 CONFIG=src/skye_factr_teleop/config/grav_comp_m6_left.yaml
-RECORD_ROOT=/home/lyy/projects/leader_for_skye/skye_ros2_ws/validation_records/phase2_5_1
+RECORD_ROOT=/home/lyy/projects/skye_ros_bridge/skye_ros2_ws/validation_records/phase2_5_1
 mkdir -p "$RECORD_ROOT"
 ```
 
@@ -900,11 +900,11 @@ ID 8；完整首次验收应列出 ID 1--7，使每个关节最终都有通过�
 左侧连续角度采样时间：18:02:45--18:07:32 +08:00
 右侧连续角度采样时间：19:18:08--19:20:27 +08:00
 侧别：left + right
-记录根目录：/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase2_5_1
+记录根目录：/home/lyy/projects/skye_ros_bridge/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase2_5_1
 左侧 USB by-id：usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0
 右侧 USB by-id：usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0
-左侧配置文件：/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml
-右侧配置文件：/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml
+左侧配置文件：/home/lyy/projects/skye_ros_bridge/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml
+右侧配置文件：/home/lyy/projects/skye_ros_bridge/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml
 舵机型号与 ID：ID 1--2 XM430-W350（model 1020）；ID 3--8 XC330-T288（model 1220）
 舵机标识照片：validation_assets/phase2_5_1/servo_identification/
 URDF 方向参考：validation_assets/phase2_5_1/urdf_direction_reference/

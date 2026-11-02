@@ -32,7 +32,7 @@ git -C /home/lyy/projects/FACTR_Teleop show \
 
 ## 2. 本仓库与新包的许可证边界
 
-- `leader_for_skye` 仓库根目录的 `LICENSE` 是 MIT License，版权声明为
+- `skye_ros_bridge` 仓库根目录的 `LICENSE` 是 MIT License，版权声明为
   `Copyright (c) 2026 alex_cg`；它继续适用于未另行声明许可的仓库内容。
 - 计划创建的 `skye_ros2_ws/src/skye_factr_teleop/` 是独立 ROS 包。该包采用
   Apache-2.0，并在包目录内放置自己的 `LICENSE`、第三方声明和包元数据。
@@ -271,7 +271,7 @@ ROS APT 的 `ros-humble-ruckig` 0.9.2 已卸载。该包只提供 C++ 头文件�
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/skye_ros_bridge/skye_ros2_ws/install/setup.bash
 /usr/bin/python3 -c \
   "import rclpy, numpy, yaml, dynamixel_sdk, pinocchio, ruckig"
 ```

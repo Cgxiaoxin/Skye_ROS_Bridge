@@ -16,7 +16,7 @@
 先进入 ROS 工作空间。源码变化后构建并加载环境：
 
 ~~~bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-up-to skye_factr_teleop --symlink-install
 source install/setup.bash
@@ -27,7 +27,7 @@ source install/setup.bash
 准备脚本只读 YAML，不打开串口；默认生成 `off → on` 配对会话。端口脚本核对设备 A USB by-id，并写入、回读 FTDI `latency_timer=1`。确认串口没有被其他进程占用：
 
 ~~~bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 python3 src/skye_factr_teleop/scripts/prepare_friction_trial.py && \
@@ -43,7 +43,7 @@ python3 src/skye_factr_teleop/scripts/prepare_friction_trial.py && \
 
 ~~~bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/skye_ros_bridge/skye_ros2_ws/install/setup.bash
 source /tmp/skye_factr_friction_trial.env
 ros2 run skye_factr_teleop skye_factr_friction_test_recorder -- \
   --side "$SIDE" --joint-id "$JOINT_ID" --config "$CONFIG" \
@@ -57,7 +57,7 @@ ros2 run skye_factr_teleop skye_factr_friction_test_recorder -- \
 
 ~~~bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/skye_ros_bridge/skye_ros2_ws/install/setup.bash
 source /tmp/skye_factr_friction_trial.env
 ros2 launch skye_factr_teleop "$LAUNCH_FILE" \
   config_path:="$CONFIG" joint_id:="$JOINT_ID" gain_scale:="$GAIN_SCALE" \
@@ -73,7 +73,7 @@ ros2 launch skye_factr_teleop "$LAUNCH_FILE" \
 
 ~~~bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/skye_ros_bridge/skye_ros2_ws/install/setup.bash
 source /tmp/skye_factr_friction_trial.env
 ros2 topic echo /teleop/state std_msgs/msg/String --qos-durability transient_local
 ~~~
@@ -82,7 +82,7 @@ ros2 topic echo /teleop/state std_msgs/msg/String --qos-durability transient_loc
 
 ~~~bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/skye_ros_bridge/skye_ros2_ws/install/setup.bash
 source /tmp/skye_factr_friction_trial.env
 ros2 topic echo "/leader_arm/$SIDE/friction_test_phase" \
   std_msgs/msg/String --qos-durability transient_local
@@ -92,7 +92,7 @@ ros2 topic echo "/leader_arm/$SIDE/friction_test_phase" \
 
 ~~~bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/skye_ros_bridge/skye_ros2_ws/install/setup.bash
 source /tmp/skye_factr_friction_trial.env
 ros2 topic echo /leader_arm/current_state sensor_msgs/msg/JointState
 ~~~
@@ -101,7 +101,7 @@ ros2 topic echo /leader_arm/current_state sensor_msgs/msg/JointState
 
 ~~~bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/skye_ros_bridge/skye_ros2_ws/install/setup.bash
 source /tmp/skye_factr_friction_trial.env
 ros2 topic echo "/leader_arm/$SIDE/friction_test_current_ma" \
   std_msgs/msg/Float64MultiArray
@@ -111,7 +111,7 @@ ros2 topic echo "/leader_arm/$SIDE/friction_test_current_ma" \
 
 ~~~bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/skye_ros_bridge/skye_ros2_ws/install/setup.bash
 source /tmp/skye_factr_friction_trial.env
 ros2 run skye_factr_teleop skye_factr_friction_test_monitor -- \
   --side "$SIDE" --joint-id "$JOINT_ID"
@@ -125,7 +125,7 @@ D5 收到命令电流后在**同一行**持续刷新最新绝对值，不逐行�
 
 ~~~bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/skye_ros_bridge/skye_ros2_ws/install/setup.bash
 source /tmp/skye_factr_friction_trial.env
 printf '本轮侧别: %s\n' "${SIDE:?SIDE 未设置，请重新准备会话}"
 ros2 topic pub --once "/mode/${SIDE:?SIDE 未设置}/switch_friction_test" std_msgs/msg/String '{data: switch_friction_test}'
@@ -135,7 +135,7 @@ ros2 topic pub --once "/mode/${SIDE:?SIDE 未设置}/switch_friction_test" std_m
 
 ~~~bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/skye_ros_bridge/skye_ros2_ws/install/setup.bash
 source /tmp/skye_factr_friction_trial.env
 ros2 run skye_factr_teleop skye_factr_friction_test_switch -- --side "${SIDE:?SIDE 未设置}"
 ~~~
@@ -150,7 +150,7 @@ ros2 run skye_factr_teleop skye_factr_friction_test_switch -- --side "${SIDE:?SI
 
 ~~~bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/skye_ros_bridge/skye_ros2_ws/install/setup.bash
 ros2 topic pub --once /mode/switch_stop std_msgs/msg/String '{data: switch_stop}'
 ~~~
 
@@ -161,7 +161,7 @@ ros2 topic pub --once /mode/switch_stop std_msgs/msg/String '{data: switch_stop}
 在终端 B 用 Ctrl+C 正常退出 launch，确认节点进程已结束。保持供电和支撑，不重启总线、不拔插 USB，立即做独立只读 Torque Disable 回读。只有回读通过、且终端 A 已生成本轮 JSON，才用**同一份**配对记录归档：
 
 ~~~bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 source /tmp/skye_factr_friction_trial.env

@@ -28,7 +28,7 @@
 编译仅在源码或安装资源有变更时执行，不启动硬件：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-up-to skye_factr_teleop --symlink-install
 colcon build --packages-select skye_robot_driver --cmake-args -DAMENT_CMAKE_SYMLINK_INSTALL=OFF
@@ -41,7 +41,7 @@ colcon build --packages-select skye_robot_driver --cmake-args -DAMENT_CMAKE_SYML
 所有操作终端均执行：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=73

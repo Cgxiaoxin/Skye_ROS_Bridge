@@ -36,7 +36,7 @@
 **编译并加载工作区**（首次使用或源码、launch、安装配置变更后执行）：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-up-to skye_factr_teleop --symlink-install
 ```
@@ -113,7 +113,7 @@ rg -n 'dynamixel_port:' "$CONFIG"
 以下为连接真机后的操作命令。所有终端使用同一主机工作区和 ROS 环境，各执行：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=73

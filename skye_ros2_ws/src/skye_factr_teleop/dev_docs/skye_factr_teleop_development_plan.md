@@ -9,7 +9,7 @@
 在以下目录实现一个独立的 ROS 2 Humble 包：
 
 ```text
-/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop
+/home/lyy/projects/skye_ros_bridge/skye_ros2_ws/src/skye_factr_teleop
 ```
 
 该包以开源 `FACTR_Teleop` 的 Apache-2.0 源码为基线，实现：
@@ -236,7 +236,7 @@ ruckig         未安装或当前 Python 路径不可见
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/skye_ros_bridge/skye_ros2_ws/install/setup.bash
 /usr/bin/python3 -c \
   "import rclpy, numpy, yaml, dynamixel_sdk, pinocchio, ruckig"
 ```
@@ -328,7 +328,7 @@ skye_factr_teleop_driver = skye_factr_teleop.ros_driver:main
 阶段验收：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 colcon build --packages-select skye_factr_description skye_factr_teleop \
   --symlink-install
 ```
@@ -1033,7 +1033,7 @@ colcon test-result --verbose
 ### 任务 6.1：全包测试
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 colcon build --packages-select skye_factr_description skye_factr_teleop \
   --symlink-install
 colcon test --packages-select skye_factr_teleop

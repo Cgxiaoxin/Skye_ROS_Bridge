@@ -3,7 +3,7 @@
   "started_at": "2026-10-10T13:59:43+08:00",
   "mode": "hardware",
   "side": "right",
-  "config": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml",
+  "config": "/home/lyy/projects/skye_ros_bridge/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml",
   "configured_port": "usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0",
   "resolved_port": "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0",
   "baudrate": 4000000,

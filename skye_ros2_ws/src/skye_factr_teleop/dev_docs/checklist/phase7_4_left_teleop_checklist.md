@@ -38,7 +38,7 @@
 先退出旧的小臂控制节点和占用串口的工具。编译不连接硬件：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-up-to skye_factr_teleop --symlink-install
 colcon build --packages-select skye_robot_driver \
@@ -58,7 +58,7 @@ ros2 run skye_factr_teleop skye_factr_teleop_trial --help
 所有终端执行以下环境设置，沿用独立 ROS domain 73：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=73

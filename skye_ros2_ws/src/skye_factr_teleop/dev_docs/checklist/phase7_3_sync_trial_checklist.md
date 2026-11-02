@@ -37,7 +37,7 @@
 在主机执行：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-select skye_factr_teleop --symlink-install
 source install/setup.bash
@@ -58,7 +58,7 @@ Ruckig 预计耗时 `4.7 s`。`--start` 只用于离线预览，不能与 `--exe
 终端 A、B、C 各执行以下公共设置：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 SIDE=left
@@ -761,7 +761,7 @@ ros2 run skye_factr_teleop skye_factr_sync_trial move \
 使用 Bash；每个终端先执行以下命令。修改配置后须重启驱动，保证驱动与工具使用同一份文件。
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
