@@ -42,8 +42,9 @@ controller:
     enable_speed: 0.05
     gain: [0.15, 0.15, 0.15, 0.1, 0.1, 0.1, 0.2]
 
+  # 暂关闭零空间，后续计算最佳拟合角度
   null_space_regulation:
-    enable: true
+    enable: false
     null_space_joint_target: [0.0, -0.8, 0.0, -1.3, 0.0, -0.5, 0.0]
     kp: 0.1
     kd: 0.01
