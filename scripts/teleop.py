@@ -152,6 +152,10 @@ def parser():
         command.add_argument("--side", choices=("dual", "left", "right"), default="dual")
         command.add_argument("--device", choices=("auto", "a", "b"), default="auto", help="USB 小臂，默认自动识别")
         command.add_argument("--domain", type=int, help="默认 Thor=20、Orin=21；支持 ROS_DOMAIN_ID")
+        if action == "env":
+            # 兼容文档里的简写：source setup_factr_teleop_env.sh orin
+            command.add_argument("profile", nargs="?", choices=("thor", "orin"),
+                                 help="等同 --robot，便于 source 脚本时简写")
         if action == "check":
             command.add_argument("--fix-latency", action="store_true", help="将 FTDI 延迟设置为 1 ms")
         elif action == "start":
@@ -172,7 +176,7 @@ def main(argv=None):
                         "--cmake-args", "-DAMENT_CMAKE_SYMLINK_INSTALL=OFF",
                         "-DPython3_EXECUTABLE=/usr/bin/python3"], cwd=WS, env=env, check=True)
         return 0
-    profile = robot_profile(args.robot)
+    profile = robot_profile(args.robot or getattr(args, "profile", None))
     domain = args.domain
     if domain is None:
         domain = int(os.environ.get("ROS_DOMAIN_ID", "20" if profile == "thor" else "21"))

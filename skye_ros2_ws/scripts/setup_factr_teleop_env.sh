@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Source in operator/recorder terminals. USB calibration is selected separately
-# from the saved follower profile. Accepts --robot, --device, --side and --domain.
+# from the saved follower profile. Accepts --robot, --device, --side and --domain,
+# plus a bare profile for short form: source ...setup_factr_teleop_env.sh orin
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   echo "ERROR: source this script, do not execute it." >&2
