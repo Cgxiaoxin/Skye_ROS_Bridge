@@ -6,7 +6,7 @@ name: grav_comp_m6_right # 主遥操未使用；仅辅助检查程序核对名�
 # controller 和 current_limit_ma 参考 Thor 对应侧配置同步；Orin 尚待实机验证。
 
 dynamixel:
-  dynamixel_port: usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0 # 遥操设备B（Orin）；2026-10-30 换臂后 by-id
+  dynamixel_port: usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0 # 遥操设备B（Orin）；当前本机 FTDI
   servo_types:
     - XM430-W350
     - XM430-W350
@@ -23,7 +23,7 @@ dynamixel:
   # 使用 Dynamixel Wizard 核实：ID 1..7 在主臂 URDF 零姿态、ID 8 在夹爪定义零位时，Present Position 均约为 0。
   joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # rad，按物理舵机 ID 1..8
   # Physical leader-servo directions only; not a follower semantic mapping.
-  joint_signs: [1, -1, 1, -1, 1, 1, -1, 1] # 遥操设备B（Orin）（checked 26/9/21）
+  joint_signs: [1, -1, 1, -1, 1, -1, -1, -1] # 遥操设备B（Orin）（checked 26/9/21）
 
 controller:
   frequency: 500

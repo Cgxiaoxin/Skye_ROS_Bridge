@@ -1,18 +1,18 @@
 # Orin 双臂启动遥操
 
-本机为 **遥操设备 B（Orin）**。用主机包 `skye_factr_teleop`，**不进 Docker、不用 `marvin_ws` 小臂**。
+本机为 **遥操设备 B（Orin）**。用主机包 `skye_factr_teleop`，**不进 Docker、不用** `marvin_ws` **小臂**。
 
-| 项 | 本机取值 |
-|---|---|
-| `robot_profile` | `orin` |
-| `ROS_DOMAIN_ID` | **`21`**（A / B / D 必须相同） |
-| 左臂 FTDI | `FTBEO9L1` |
-| 右臂 FTDI | `FTBEO8WL` |
-| 小臂配置 | `skye_factr_teleop/config/orin/grav_comp_m6_{left,right}.yaml` |
+| 项               | 本机取值                                                           |
+| --------------- | -------------------------------------------------------------- |
+| `robot_profile` | `orin`                                                         |
+| `ROS_DOMAIN_ID` | `21`（A / B / D 必须相同）                                           |
+| 左臂 FTDI         | `FTB8HNOT`（以本机 `/dev/serial/by-id` 与 yaml 为准）                  |
+| 右臂 FTDI         | `FTAO51EA`                                                     |
+| 小臂配置            | `skye_factr_teleop/config/orin/grav_comp_m6_{left,right}.yaml` |
 
 Thor 对照：[`双臂启动遥操.md`](./双臂启动遥操.md)（Thor domain=`20`）。旧 Docker：`docs/Thor_Orin_遥操启动.md`。
 
-日常 **不必** `bind_leader_arms.py`。串口已写在 Orin yaml。
+串口已写在 Orin yaml。**换线 / by-id 对不上**时再绑一次（见下「换 FTDI」）。
 
 ---
 
@@ -45,16 +45,22 @@ ros2 launch skye_robot_driver skye_robot_driver.launch.py \
 
 ```bash
 ls -l /dev/serial/by-id/
-# 期望含 FTBEO8WL（右）、FTBEO9L1（左）
+# 期望含 FTAO51EA（右）、FTB8HNOT（左）；须与 orin yaml 的 dynamixel_port 一致
 
 echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
 echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB1/latency_timer
+
+# 遇到需要重新绑定小臂FTDI 的情况：
+pkill -f skye_factr_teleop_driver || true
+export ROBOT_PROFILE=orin
+python3 scripts/bind_leader_arms.py
+# 按提示拔【左臂】USB → 回车 → 插回 → 回车
 
 ros2 launch skye_factr_teleop start_teleop_m6_dual.launch.py \
   robot_profile:=orin sync_diagnostics:=true
 ```
 
-**必须** `robot_profile:=orin`。漏写会落到 Thor 配置目录；本机换臂后串口 by-id 虽与 Thor 同名，但 `joint_signs` 等参数仍以 orin yaml 为准。  
+**必须** `robot_profile:=orin`。漏写会落到 Thor 配置目录；`joint_signs` 等仍以 orin yaml 为准。  
 启动后是 **IDLE、力矩关**，小臂不会自己动。
 
 ### D — 同步 → 遥操（托住双小臂）
@@ -101,8 +107,8 @@ ros2 service call /gento/hold_current std_srvs/srv/Trigger '{}'
 `ttyUSB*` 编号会变，以 **by-id** 为准：
 
 ```text
-..._FTBEO8WL-if00-port0 -> ../../ttyUSB?   # 右
-..._FTBEO9L1-if00-port0 -> ../../ttyUSB?   # 左
+..._FTAO51EA-if00-port0 -> ../../ttyUSB?   # 右
+..._FTB8HNOT-if00-port0 -> ../../ttyUSB?   # 左
 ```
 
 没有 by-id：检查供电/线缆，或：
@@ -116,13 +122,31 @@ USB 重插或重启后 `latency_timer` 会复位，启小臂前再写一次 `1`�
 
 ---
 
+## 换 FTDI / 串口对不上（推荐）
+
+`serial port does not exist: ...FTDI...` 时，**不要手改一堆路径**，在仓库根目录：
+
+```bash
+# 两臂上电、USB 插好；先停掉占用串口的 teleop
+pkill -f skye_factr_teleop_driver || true
+
+export ROBOT_PROFILE=orin
+python3 scripts/bind_leader_arms.py
+# 正好 2 路：按提示拔【左臂】USB → 回车 → 插回 → 回车
+# 脚本写入 skye_factr_teleop config/orin + install（若非 symlink）并设 latency=1
+```
+
+预览：`python3 scripts/bind_leader_arms.py --dry-run`。然后重新开终端 B。
+
+---
+
 ## 改配置 / 重编注意
 
 - Launch 读的是 `install/.../share/.../config/orin/`（symlink-install 时链到 `src`）。
-- 只改 `src` 后若 share **不是** symlink：  
-  `colcon build --packages-select skye_factr_teleop --symlink-install`  
-  然后 **重启 B**。
-- 脚本打印的 `LEFT_CONFIG`/`RIGHT_CONFIG` 仍是 Thor 路径占位；真正用哪份由 **`robot_profile:=orin`** 决定。
+- 只改 `src` 后若 share **不是** symlink：跑上面的 bind（会双写），或  
+`colcon build --packages-select skye_factr_teleop --symlink-install`  
+然后 **重启 B**。
+- 脚本打印的 `LEFT_CONFIG`/`RIGHT_CONFIG` 仍是 Thor 路径占位；真正用哪份由 `robot_profile:=orin` 决定。
 
 ---
 
@@ -130,8 +154,8 @@ USB 重插或重启后 `latency_timer` 会复位，启小臂前再写一次 `1`�
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| `serial port ... FTB8HNOT` / `FTAO51EA` | 仍是旧 Orin by-id（换臂前） | 确认 orin yaml 已是 `FTBEO9L1`/`FTBEO8WL`，必要时 rebuild |
-| `...FTBEO9L1` / `FTBEO8WL` 不存在 | USB 未起来 | 查 by-id；拔插 / `udevadm` |
+| `serial port does not exist: ...FTDI...` | yaml by-id ≠ 本机插着的 FTDI | `ROBOT_PROFILE=orin python3 scripts/bind_leader_arms.py` 后重启 B |
+| by-id 目录空 / 只有一根 | USB 未起来 | 查供电线缆；拔插 / `udevadm` |
 | `latency_timer ... expected 1` | 时延未设 | 写 `latency_timer=1` 后重启 B |
 | `Waiting for subscription` / sync 无反应 | A/B/D domain 不一致 | 都 `source ... orin`，确认 `21`，**重启** A/B |
 | B 狂刷 `Rejected follower state: ... stale` | 大臂反馈时间戳不可用；**sync 不会启动** | 三端同为 21；`unset` 坏的 FASTRTPS 路径；必要时 `ROS_LOCALHOST_ONLY=1` 排除局域网串台后再试 |
