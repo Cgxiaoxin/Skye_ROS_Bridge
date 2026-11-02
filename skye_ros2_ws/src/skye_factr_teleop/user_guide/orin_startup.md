@@ -1,5 +1,8 @@
 # Orin 双臂遥操启动（精简版）
 
+推荐使用[统一启动入口](unified_startup.md)：大臂配置在本机设置一次，小臂 A/B 及左右侧按 USB 自动识别，
+支持交叉连接。下文保留 Orin + 小臂 B 的手动启动方式。
+
 大臂和小臂均在 Orin 宿主机运行，使用当前 `skye_factr_teleop` 包。小臂为遥操设备 B；所有终端统一 `ROS_DOMAIN_ID=22`，两个驱动均显式指定 `robot_profile:=orin`。
 
 ## 1. 首次准备
