@@ -47,7 +47,7 @@ def test_cross_pairing_and_environment(usb, monkeypatch, robot, device):
     teleop.main(["start", "--robot", robot])
     command, env = captured[0]
     assert f"robot_profile:={robot}" in command
-    assert env["ROS_DOMAIN_ID"] == ("73" if robot == "thor" else "22")
+    assert env["ROS_DOMAIN_ID"] == ("20" if robot == "thor" else "21")
     for side in configs:
         assert f"{side}_config:={configs[side]}" in command
 
