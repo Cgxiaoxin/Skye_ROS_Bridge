@@ -13,6 +13,10 @@ skye_robot_driver:
     left_acceleration_ratio: 100 
     right_acceleration_ratio: 100 
     state_publish_hz: 250.0
+    # SDK flange sensor axes/origin must be confirmed before assigning TF frames.
+    # These labels do not transform the wrench. Empty = unspecified frame.
+    left_flange_frame_id: ""
+    right_flange_frame_id: ""
     cmd_cycle_time_ms: 4
     connect_on_startup: true
     left_joint_order: [0, 1, 2, 3, 4, 5, 6]

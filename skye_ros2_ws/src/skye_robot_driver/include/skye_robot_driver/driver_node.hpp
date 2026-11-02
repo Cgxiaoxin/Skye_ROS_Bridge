@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 
+#include "geometry_msgs/msg/wrench_stamped.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "skye_robot_driver/srv/set_mode.hpp"
@@ -79,6 +80,8 @@ class DriverNode : public rclcpp::Node {
   bool gripper_enabled_{false};
   bool gripper_invert_left_{true};
   bool gripper_invert_right_{true};
+  std::string left_flange_frame_id_;
+  std::string right_flange_frame_id_;
   std::array<int, 7> left_joint_order_{0, 1, 2, 3, 4, 5, 6};
   std::array<int, 7> right_joint_order_{0, 1, 2, 3, 4, 5, 6};
   JointArray left_signs_{};
@@ -131,6 +134,12 @@ class DriverNode : public rclcpp::Node {
   rclcpp::Publisher<JointState>::SharedPtr state_publisher_;
   rclcpp::Publisher<JointState>::SharedPtr left_state_publisher_;
   rclcpp::Publisher<JointState>::SharedPtr right_state_publisher_;
+  rclcpp::Publisher<JointState>::SharedPtr left_external_torque_publisher_;
+  rclcpp::Publisher<JointState>::SharedPtr right_external_torque_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr
+      left_flange_wrench_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr
+      right_flange_wrench_publisher_;
   rclcpp::Publisher<std_msgs::msg::Int16MultiArray>::SharedPtr
       robot_state_publisher_;
   rclcpp::Publisher<JointState>::SharedPtr left_gripper_state_publisher_;

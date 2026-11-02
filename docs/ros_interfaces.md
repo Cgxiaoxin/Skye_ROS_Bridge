@@ -1,6 +1,8 @@
 # ROS 接口（与 marvin `/gento/*` 对齐）
 
-单位：**rad**。  
+关节位置单位：**rad**，关节速度：**rad/s**；力反馈的 SDK 单位与坐标系约定见
+[Thor 大臂消息查看](../skye_ros2_ws/src/skye_robot_driver/Thor大臂消息查看.md)。
+
 指令 QoS：`KeepLast(1)` + `BEST_EFFORT`。  
 状态 QoS：`KeepLast(1)` + `RELIABLE`（供 FACTR sync）。  
 数采 applied QoS：`KeepLast(≥10，默认 20)` + `RELIABLE`（仅 `*_action_applied`；与指令分离，降漏录）。  
@@ -31,9 +33,13 @@ ros2 topic echo --once /gento/robot_state --qos-reliability reliable
 
 | 方向 | Topic | 类型 | 说明 |
 |------|-------|------|------|
-| 发布 | `/gento/joint_states` | `sensor_msgs/JointState` | 14 轴 rad / rad·s⁻¹；HITL/录包 |
-| 发布 | `/gento/left_joint_states` | `JointState` | 7 轴左大臂；FACTR sync |
-| 发布 | `/gento/right_joint_states` | `JointState` | 7 轴右大臂；FACTR sync |
+| 发布 | `/gento/joint_states` | `sensor_msgs/JointState` | 14 轴 rad / rad·s⁻¹；`effort[14]` 为传感器力矩，先左后右；HITL/录包 |
+| 发布 | `/gento/left_joint_states` | `JointState` | 7 轴左大臂；`effort[7]` 为传感器力矩；FACTR sync |
+| 发布 | `/gento/right_joint_states` | `JointState` | 7 轴右大臂；`effort[7]` 为传感器力矩；FACTR sync |
+| 发布 | `/gento/left_joint_external_torque` | `JointState` | 左臂 `name[7]` + `effort[7]` 外部力矩估计；position/velocity 为空 |
+| 发布 | `/gento/right_joint_external_torque` | `JointState` | 右臂对应的外部力矩估计 |
+| 发布 | `/gento/left_flange_wrench` | `geometry_msgs/WrenchStamped` | 左法兰六维力/力矩反馈；默认 frame_id 为空，分量约定见驱动说明 |
+| 发布 | `/gento/right_flange_wrench` | `geometry_msgs/WrenchStamped` | 右法兰对应反馈 |
 | 发布 | `/gento/robot_state` | `std_msgs/Int16MultiArray` | `[left_fx_state, right_fx_state]` |
 | 订阅 | `/gento/left_joint_control` | `JointState` | 7 轴 position（rad） |
 | 订阅 | `/gento/right_joint_control` | `JointState` | 7 轴 position（rad） |

@@ -5,6 +5,31 @@
 当前已测双臂正常同步、遥操及停止保持流程验收完成，左右独立失能回读 PASS，详见第 10.2 节。
 前文步骤保留供后续复测使用。
 
+## 统一启动入口（支持小臂交叉接主机）
+
+可用[统一启动说明](../../user_guide/unified_startup.md)替代下文分散的编译、环境、FTDI 延迟设置与驱动启动命令。
+大臂 Thor/Orin 与小臂 A/B 分别选择；小臂按 USB 唯一序列号自动确定左右配置，不需重命名。
+
+在仓库根目录执行：
+
+```bash
+bash scripts/teleop.sh configure thor  # 本机首次选择目标大臂；另一套用 orin
+bash scripts/teleop.sh build           # 首次或源码更新后执行
+bash scripts/teleop.sh check --fix-latency
+bash scripts/teleop.sh start           # 一个终端启动大小臂；不自动 sync / teleop
+```
+
+记录与操作终端各加载一次：
+
+```bash
+source skye_ros2_ws/scripts/setup_factr_teleop_env.sh
+```
+
+此时左右配置变量跟随实际 USB，而不跟随大臂配置。临时切换可加 `--robot`、`--device`、`--side`、`--domain`，
+启动与操作终端须保持一致。下文原始命令和 USB 表是 Thor + 小臂 A 的验收基线，交叉连接时不再手动套用其路径。
+统一入口不替代第 4.3 节电机只读检查、第 5.5 节运行反馈检查及后续同步、遥操、stop / hold、失能回读步骤；
+先完成启动前只读检查，再执行 `start`。统一启动终端退出时同时退出大小臂，不能沿用旧流程只退出终端 B 的做法。
+
 ## 1. 当前范围与参数
 
 - [ ] 左臂全流程已由操作者确认完成；右臂已有非零、近零同步及人工支撑下遥操、停止保持记录。

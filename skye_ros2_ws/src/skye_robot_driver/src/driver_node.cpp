@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "skye_robot_driver/feedback_messages.hpp"
 #include "skye_robot_driver/gripper_common.hpp"
 
 namespace skye_robot_driver {
@@ -42,19 +43,6 @@ const std::array<std::string, kArmDof> kLeftJointNames{
     "l_j1", "l_j2", "l_j3", "l_j4", "l_j5", "l_j6", "l_j7"};
 const std::array<std::string, kArmDof> kRightJointNames{
     "r_j1", "r_j2", "r_j3", "r_j4", "r_j5", "r_j6", "r_j7"};
-
-sensor_msgs::msg::JointState make_arm_joint_state(
-    const rclcpp::Time &stamp,
-    const std::array<std::string, kArmDof> &names,
-    const DriverCore::JointArray &position,
-    const DriverCore::JointArray &velocity) {
-  sensor_msgs::msg::JointState message;
-  message.header.stamp = stamp;
-  message.name.assign(names.begin(), names.end());
-  message.position.assign(position.begin(), position.end());
-  message.velocity.assign(velocity.begin(), velocity.end());
-  return message;
-}
 
 rclcpp::QoS control_qos() {
   // Accepts FACTR (typically RELIABLE) publishers; drops old cmds.
@@ -133,6 +121,10 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       declare_parameter<int>("right_acceleration_ratio", right_vel);
   const auto state_publish_hz =
       declare_parameter<double>("state_publish_hz", 250.0);
+  left_flange_frame_id_ =
+      declare_parameter<std::string>("left_flange_frame_id", "");
+  right_flange_frame_id_ =
+      declare_parameter<std::string>("right_flange_frame_id", "");
   const auto connect_on_startup =
       declare_parameter<bool>("connect_on_startup", true);
   const auto control_mode_str =
@@ -323,6 +315,16 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       create_publisher<JointState>("/left_joint_states", st_qos);
   right_state_publisher_ =
       create_publisher<JointState>("/right_joint_states", st_qos);
+  left_external_torque_publisher_ =
+      create_publisher<JointState>("/left_joint_external_torque", st_qos);
+  right_external_torque_publisher_ =
+      create_publisher<JointState>("/right_joint_external_torque", st_qos);
+  left_flange_wrench_publisher_ =
+      create_publisher<geometry_msgs::msg::WrenchStamped>(
+          "/left_flange_wrench", st_qos);
+  right_flange_wrench_publisher_ =
+      create_publisher<geometry_msgs::msg::WrenchStamped>(
+          "/right_flange_wrench", st_qos);
   robot_state_publisher_ =
       create_publisher<std_msgs::msg::Int16MultiArray>("/robot_state", st_qos);
   const int applied_depth =
@@ -1257,6 +1259,7 @@ void DriverNode::publish_state() {
     message.name.assign(kJointNames.begin(), kJointNames.end());
     message.position.reserve(kJointNames.size());
     message.velocity.reserve(kJointNames.size());
+    message.effort.reserve(kJointNames.size());
     message.position.insert(
         message.position.end(), state->left_position.begin(),
         state->left_position.end());
@@ -1269,12 +1272,27 @@ void DriverNode::publish_state() {
     message.velocity.insert(
         message.velocity.end(), state->right_velocity.begin(),
         state->right_velocity.end());
+    message.effort.insert(
+        message.effort.end(), state->left_sensor_torque.begin(),
+        state->left_sensor_torque.end());
+    message.effort.insert(
+        message.effort.end(), state->right_sensor_torque.begin(),
+        state->right_sensor_torque.end());
     state_publisher_->publish(message);
     left_state_publisher_->publish(make_arm_joint_state(
-        stamp, kLeftJointNames, state->left_position, state->left_velocity));
+        stamp, kLeftJointNames, state->left_position, state->left_velocity,
+        &state->left_sensor_torque));
     right_state_publisher_->publish(make_arm_joint_state(
         stamp, kRightJointNames, state->right_position,
-        state->right_velocity));
+        state->right_velocity, &state->right_sensor_torque));
+    left_external_torque_publisher_->publish(make_external_torque_state(
+        stamp, kLeftJointNames, state->left_external_torque));
+    right_external_torque_publisher_->publish(make_external_torque_state(
+        stamp, kRightJointNames, state->right_external_torque));
+    left_flange_wrench_publisher_->publish(make_flange_wrench(
+        stamp, left_flange_frame_id_, state->left_flange_wrench));
+    right_flange_wrench_publisher_->publish(make_flange_wrench(
+        stamp, right_flange_frame_id_, state->right_flange_wrench));
   }
 
   std_msgs::msg::Int16MultiArray robot_state;

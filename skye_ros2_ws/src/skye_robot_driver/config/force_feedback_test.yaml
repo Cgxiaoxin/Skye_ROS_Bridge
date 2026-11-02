@@ -1,0 +1,11 @@
+# Standalone feedback test parameters. The existing launch overlays the selected
+# thor/orin controller IP; invoke via scripts/start_force_feedback_test.sh.
+skye_robot_driver:
+  ros__parameters:
+    control_mode: "idle"
+    connect_on_startup: false
+    enable_gripper: false
+    state_publish_hz: 250.0
+    cmd_cycle_time_ms: 4
+    left_flange_frame_id: ""
+    right_flange_frame_id: ""
