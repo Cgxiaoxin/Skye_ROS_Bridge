@@ -31,7 +31,7 @@ from .control_core import (
 from .dynamics import PinocchioDynamics
 from .trajectory import RuckigTrajectory
 from .dynamixel_driver import DynamixelDriver
-from .sync_trial import preview_move
+from .sync_trial import preview_move, _sync_conditions
 
 
 def state_qos():
@@ -145,6 +145,9 @@ class SkyeFactrTeleopNode(Node):
         self._published_friction_phase = None
         self._diagnostic_sequence = 0
         self._previous_cycle_time = None
+        self._sync_goal = None
+        self._sync_progress_mode = None
+        self._sync_progress_at = None
         try:
             self._configure()
             self._create_ros_interfaces()
@@ -370,6 +373,7 @@ class SkyeFactrTeleopNode(Node):
             if result.mode == ControlMode.IDLE:
                 self._follower_session_active = False
             self._publish_cycle(result)
+            self._log_sync_progress(result, cycle_time)
             self._publish_diagnostics(result, cycle_time)
             self._publish_friction_phase()
         except Exception as exc:
@@ -505,6 +509,9 @@ class SkyeFactrTeleopNode(Node):
         try:
             self._hardware.set_torque_enabled(True)
             self.core.handle("switch_sync", now=self._monotonic(), follower_position=target)
+            self._sync_goal = self.core.sync_target_position
+            self._sync_progress_mode = None
+            self._sync_progress_at = None
             self._follower_session_active = follower_session
             self._publish_state()
         except Exception as exc:
@@ -550,6 +557,59 @@ class SkyeFactrTeleopNode(Node):
         if state != self._published_state and self.context.ok():
             self._state_pub.publish(String(data=state))
             self._published_state = state
+            if not self._closed and not self._test_only:
+                descriptions = {
+                    "IDLE": "空闲，等待同步指令",
+                    "TELEOP_SYNCING": "同步轨迹运动中",
+                    "HOLD_SETTLING": "轨迹完成，检查到位及持续稳定时间",
+                    "SYNCED": "同步成功（八轴已连续满足位置和速度阈值）",
+                    "TELEOP": "遥操中",
+                }
+                reason = self.core.sync_status["transition_reason"]
+                if state == "IDLE" and reason in ("sync_timeout", "settle_timeout"):
+                    self.get_logger().warning(
+                        f"[{self.side}] 同步失败：{reason}；已停止并关闭力矩"
+                    )
+                else:
+                    self.get_logger().info(
+                        f"[{self.side}] {state}：{descriptions.get(state, state)}"
+                    )
+
+    def _log_sync_progress(self, result, now):
+        """Report final-goal blockers at 1 Hz, immediately on phase change/timeout."""
+        if self._sync_goal is None:
+            return
+        mode = result.mode.name
+        timed_out = (mode == "IDLE" and self.core.sync_status["transition_reason"]
+                     in ("sync_timeout", "settle_timeout"))
+        if mode not in ("TELEOP_SYNCING", "HOLD_SETTLING") and not timed_out:
+            if mode == "IDLE":
+                self._sync_goal = None
+            return
+        if (not timed_out and mode == self._sync_progress_mode
+                and self._sync_progress_at is not None
+                and now - self._sync_progress_at < 1.0):
+            return
+        hold = self.config.controller.sync_hold_control.hold
+        position = np.append(result.state.arm_position, result.state.gripper_position)
+        velocity = np.append(result.state.arm_velocity, result.state.gripper_velocity)
+        within = ((np.abs(self._sync_goal - position) <= hold.sync_position_tolerance)
+                  & (np.abs(velocity) <= hold.sync_velocity_tolerance))
+        packet = {
+            "position_rad": position, "velocity_rad_s": velocity,
+            "mode": mode, "sync_status": self.core.sync_status,
+        }
+        details = _sync_conditions(packet, self._sync_goal, hold)
+        lines = [f"[{self.side}] {mode}：{np.count_nonzero(within)}/8 轴当前达标（相对最终同步目标）"]
+        lines.extend(f"[{self.side}] {line}" for line in details.splitlines())
+        if timed_out:
+            self.get_logger().warning("\n".join(lines))
+        else:
+            self.get_logger().info("\n".join(lines))
+        self._sync_progress_mode = mode
+        self._sync_progress_at = now
+        if timed_out:
+            self._sync_goal = None
 
     def _publish_friction_phase(self):
         if self._friction_phase_pub is None or not self.context.ok():

@@ -794,6 +794,107 @@ def test_settle_timeout_diagnostics_preserve_reason_after_target_cleared(make_no
     assert diagnostic["sync_status"]["transition_from"] == "HOLD_SETTLING"
 
 
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_terminal_sync_progress_uses_final_goal_and_is_rate_limited(make_node, monkeypatch, side):
+    rig = make_node(side)
+    node = rig.node
+    logs = []
+    monkeypatch.setattr(node, "get_logger", lambda: SimpleNamespace(info=logs.append))
+    message = packet(side)
+    message.position = [0.3] + [0.0] * 6
+    node._on_joint_move(message)
+    goal = node.core.sync_target_position
+    goal[:] = 99  # Diagnostic callers cannot change the control target.
+    goal = node.core.sync_target_position
+    position = goal.copy()
+    position[0] = 0.0
+    velocity = np.zeros(8)
+    hold = node.config.controller.sync_hold_control.hold
+    velocity[1] = 2 * hold.sync_velocity_tolerance[1]
+    rig.hardware.inject_state(position * node.core.joint_signs,
+                              velocity * node.core.joint_signs)
+    # Tracking the current trajectory sample perfectly is not final-goal convergence.
+    rig.trajectories[0].position = position.copy()
+    rig.trajectories[0].velocity = velocity.copy()
+    rig.clock.now += 0.002
+    node._tick()
+    assert not node._closed
+    progress = logs[-1]
+    assert f"[{side}] TELEOP_SYNCING：6/8" in progress
+    assert f"J1: |position error|=0.300000 rad > {hold.sync_position_tolerance[0]:.6f} rad" in progress
+    assert "J2: |velocity|=0.100000 rad/s > 0.050000 rad/s" in progress
+    assert "J3:" not in progress and "gripper(ID8):" not in progress
+    count = len(logs)
+    rig.clock.now += 0.5
+    node._tick()
+    assert len(logs) == count
+    rig.clock.now += 0.51
+    node._tick()
+    assert len(logs) == count + 1
+
+
+def test_terminal_sync_logs_phase_changes_settling_and_success_once(make_node, monkeypatch):
+    rig = make_node()
+    node = rig.node
+    logs = []
+    monkeypatch.setattr(node, "get_logger", lambda: SimpleNamespace(info=logs.append))
+    node._on_joint_move(packet())
+    assert "TELEOP_SYNCING" in logs[-1]
+    rig.trajectories[0].finished = True
+    goal = node.core.sync_target_position
+    rig.hardware.inject_state(goal * node.core.joint_signs, np.zeros(8))
+    rig.clock.now += 0.002
+    node._tick()
+    assert any("HOLD_SETTLING：轨迹完成" in line for line in logs)
+    assert "8/8" in logs[-1] and "Continuous settling: 0.000 / 0.250 s" in logs[-1]
+    rig.clock.now += 0.252
+    node._tick()
+    assert node.core.mode == ControlMode.SYNCED
+    assert sum("SYNCED：同步成功" in line for line in logs) == 1
+    count = len(logs)
+    rig.clock.now += 1.0
+    node._tick()
+    assert len(logs) == count
+    node._on_stop(None)
+    assert "IDLE" in logs[-1]
+    node._on_joint_move(packet(stamp=rig.clock.now))
+    rig.clock.now += 0.002
+    node._tick()
+    assert "TELEOP_SYNCING：" in logs[-1] and "/8" in logs[-1]
+
+
+@pytest.mark.parametrize("phase,reason", [
+    ("ruckig", "sync_timeout"), ("hold", "settle_timeout"),
+])
+def test_terminal_sync_timeout_reports_current_blockers_once(make_node, monkeypatch, phase, reason):
+    rig = make_node()
+    node = rig.node
+    warnings = []
+    monkeypatch.setattr(node, "get_logger", lambda: SimpleNamespace(
+        info=lambda message: None, warning=warnings.append))
+    node._on_joint_move(packet())
+    if phase == "hold":
+        rig.trajectories[0].finished = True
+        rig.clock.now += 0.002
+        node._tick()
+    sync = node.config.controller.sync_hold_control
+    rig.clock.now += sync.ruckig.trajectory_timeout if phase == "ruckig" else sync.hold.settle_timeout
+    # No intermediate progress sample: the timeout must use the latest measured state.
+    position = np.zeros(8)
+    position[0] = -0.2
+    rig.hardware.inject_state(position * node.core.joint_signs, np.zeros(8))
+    node._tick()
+    assert node.core.mode == ControlMode.IDLE and not rig.hardware.torque_enabled
+    assert node.core.sync_target_position is None
+    assert any(f"同步失败：{reason}" in line for line in warnings)
+    assert "J1: |position error|=0.300000 rad" in warnings[-1]
+    assert "gripper(ID8)" in warnings[-1]
+    count = len(warnings)
+    rig.clock.now += 0.002
+    node._tick()
+    assert len(warnings) == count
+
+
 def test_constructor_failure_closes_partially_open_device(make_node):
     hardware = Hardware()
 

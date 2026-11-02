@@ -389,6 +389,11 @@ class ControlCore:
         return self._last_transition
 
     @property
+    def sync_target_position(self) -> np.ndarray | None:
+        """Final eight-axis synchronization goal, independent of trajectory samples."""
+        return None if self._target is None else self._target.copy()
+
+    @property
     def sync_status(self) -> dict:
         """Read-only timing and transition evidence for synchronization diagnostics."""
         transition = self._last_transition
