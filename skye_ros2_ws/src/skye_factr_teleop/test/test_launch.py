@@ -184,9 +184,9 @@ def test_profile_configuration_matches_leader_devices_and_preserves_gains():
     assert thor_left.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0"
     assert thor_right.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0"
     assert thor_right.dynamixel.joint_signs == (1, -1, 1, -1, 1, 1, 1, 1)
-    assert left.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0"
-    assert right.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0"
-    assert right.dynamixel.joint_signs == (1, -1, 1, -1, 1, 1, 1, -1)
+    assert left.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0"
+    assert right.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0"
+    assert right.dynamixel.joint_signs == (1, -1, 1, -1, 1, 1, -1, 1)
     assert left.controller.joint_gravity_comp.gain == (0.25, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0)
     assert right.controller.joint_gravity_comp.gain == (0.25, 0.2, 1.0, 1.0, 1.0, 0.8, 1.0)
     assert thor_left.controller.limit_barrier_control.enable

@@ -6,7 +6,7 @@ name: grav_comp_m6_left # 主遥操未使用；仅辅助检查程序核对名称
 # controller 和 current_limit_ma 参考 Thor 对应侧配置同步；Orin 尚待实机验证。
 
 dynamixel:
-  dynamixel_port: usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0 # 遥操设备B（Orin）
+  dynamixel_port: usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0 # 遥操设备B（Orin）；2026-10-30 换臂后 by-id
   servo_types:
     - XM430-W350
     - XM430-W350
