@@ -73,6 +73,7 @@ controller:
       max_velocity: [0.80, 0.80, 0.80, 0.80, 0.80, 0.80, 0.80, 0.80]  # rad/s
       max_acceleration: [1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]  # rad/s²
       max_jerk: [5.00, 5.00, 5.00, 5.00, 5.00, 5.00, 5.00, 5.00]  # rad/s³
+      # 轨迹时间上限参考 Thor 对应侧配置；Orin 尚待实机验证。 
       trajectory_timeout: 30.0
     hold:
       gravity_comp_gain: [0.5, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]
@@ -83,7 +84,9 @@ controller:
       i_thresh: [0.50, 1.00, 0.25, 0.25, 0.15, 0.15, 0.15, 0.15] # rad；误差超过阈值时该轴积分清零
       sync_position_tolerance: [0.16, 0.16, 0.16, 0.16, 0.16, 0.16, 0.16, 0.08] # rad，七轴约 5°；夹爪保持 0.05
       sync_velocity_tolerance: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+      # sync 容差time
       settle_duration: 0.25
+      # 到位收敛时间上限
       settle_timeout: 25.0
 
   force_feedback_control:

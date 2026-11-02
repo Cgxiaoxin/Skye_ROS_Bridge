@@ -93,7 +93,7 @@ skye_robot_driver:
     gripper_robotiq_pos_min_mm: 0.0
     # Orin 闭合开度以 profiles/orin.yaml 为准（实机：左 2 / 右 13）。
     gripper_left_robotiq_pos_min_mm: 2.0
-    gripper_right_robotiq_pos_min_mm: 13.0
+    gripper_right_robotiq_pos_min_mm: 8.0
     gripper_robotiq_pos_max_mm: 50.0
     gripper_left_robotiq_pos_max_mm: 50.0
     gripper_right_robotiq_pos_max_mm: 50.0

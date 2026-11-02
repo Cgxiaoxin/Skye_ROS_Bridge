@@ -15,10 +15,10 @@ skye_robot_driver:
     gripper_left_robotiq_485_channel: "485A"
     gripper_right_robotiq_485_channel: "485A"
     # 2026-09-04 实测：L/R 实体互换后仍为 ARM0|ARM1 + 485A + slave=9。
-    # 闭合开度经遥操复测：左 2 mm / 右 13 mm（与「随实体对调」假设相反，以实机为准）。
+    # 闭合开度经遥操复测：左 2 mm / 右 5 mm（2026-11-02 由 13 mm 依次微调至 8 mm、5 mm；与「随实体对调」假设相反，以实机为准）。
     gripper_left_robotiq_slave_id: 9
     gripper_right_robotiq_slave_id: 9
     gripper_left_robotiq_pos_min_mm: 2.0
-    gripper_right_robotiq_pos_min_mm: 13.0
+    gripper_right_robotiq_pos_min_mm: 5.0
     gripper_left_robotiq_pos_max_mm: 50.0
     gripper_right_robotiq_pos_max_mm: 50.0
