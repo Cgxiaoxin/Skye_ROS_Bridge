@@ -70,6 +70,9 @@ ros2 launch skye_factr_teleop start_teleop_m6_dual.launch.py \
 ros2 topic hz /gento/left_joint_states
 ros2 topic hz /gento/right_joint_states
 
+# 查看是否同步到位
+ros2 run skye_factr_teleop skye_factr_dual_trial   --phase sync --left-config "$LEFT_CONFIG" --right-config "$RIGHT_CONFIG"   --operator lyy --duration 180
+
 ros2 topic pub --once /mode/switch_sync std_msgs/msg/String '{data: switch_sync}'
 # 看 B 日志走到 SYNCED（两侧），再：
 ros2 topic pub --once /mode/switch_teleop std_msgs/msg/String '{data: switch_teleop}'
