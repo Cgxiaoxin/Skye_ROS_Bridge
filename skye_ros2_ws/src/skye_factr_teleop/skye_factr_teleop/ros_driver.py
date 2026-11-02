@@ -99,8 +99,13 @@ def validate_joint_state(
     stamp = sec + nanosec * 1e-9
     if stamp == 0:
         raise ValueError("JointState requires a nonzero timestamp")
-    if ros_now - stamp > max_age or stamp - ros_now > future_tolerance:
-        raise ValueError("JointState timestamp is stale or in the future")
+    age = ros_now - stamp
+    if age > max_age or -age > future_tolerance:
+        raise ValueError(
+            "JointState timestamp is stale or in the future "
+            f"(age={age:+.4f}s max_age={max_age:.3f}s "
+            f"future_tol={future_tolerance:.3f}s)"
+        )
     return JointSample(position, stamp, received_at)
 
 
