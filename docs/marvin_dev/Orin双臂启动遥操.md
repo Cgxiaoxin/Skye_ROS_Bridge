@@ -1,155 +1,93 @@
 # Orin 双臂启动遥操
 
-本机为 **遥操设备 B（Orin）**。流程用主机包 `skye_factr_teleop`，**不进 Docker / 不用 `marvin_ws` 小臂**。
+本机为 **遥操设备 B（Orin）**。用主机包 `skye_factr_teleop`，**不进 Docker、不用 `marvin_ws` 小臂**。
 
-Thor 侧对照见 [`双臂启动遥操.md`](./双臂启动遥操.md)。旧 Docker 流程见仓库根目录 `docs/Thor_Orin_遥操启动.md`。
+| 项 | 本机取值 |
+|---|---|
+| `robot_profile` | `orin` |
+| `ROS_DOMAIN_ID` | **`21`**（A / B / D 必须相同） |
+| 左臂 FTDI | `FTBEO9L1` |
+| 右臂 FTDI | `FTBEO8WL` |
+| 小臂配置 | `skye_factr_teleop/config/orin/grav_comp_m6_{left,right}.yaml` |
 
----
+Thor 对照：[`双臂启动遥操.md`](./双臂启动遥操.md)（Thor domain=`20`）。旧 Docker：`docs/Thor_Orin_遥操启动.md`。
 
-## 与 Thor 的关键差异
-
-| 项 | Thor | Orin（本机） |
-|---|---|---|
-| `robot_profile` | `thor` | **`orin`** |
-| 小臂配置目录 | `config/grav_comp_m6_*.yaml` | `config/orin/grav_comp_m6_*.yaml` |
-| 左臂 FTDI by-id | `FTBEO9L1` | **`FTB8HNOT`** |
-| 右臂 FTDI by-id | `FTBEO8WL` | **`FTAO51EA`** |
-| Domain | **`20`** | **`21`**（A/B/D 必须一致；两机勿混用） |
-
-日常 **不必** 跑 `bind_leader_arms.py`（那是旧 Docker/`marvin_ws` 用的）。串口已写在 Orin yaml；换 FTDI 再改对应 `dynamixel_port`。
+日常 **不必** `bind_leader_arms.py`。串口已写在 Orin yaml。
 
 ---
 
-## 0. 启动前：串口自检
+## 一分钟流程（照抄）
 
-两路小臂 USB 插好上电后：
-
-```bash
-ls -l /dev/serial/by-id/
-ls -l /dev/ttyUSB*
-```
-
-期望类似：
-
-```text
-..._FTAO51EA-if00-port0 -> ../../ttyUSB0   # 右
-..._FTB8HNOT-if00-port0 -> ../../ttyUSB1   # 左
-```
-
-`ttyUSB` 编号可变，以 **by-id 序列号** 为准。缺失时：确认线缆/供电，或 `sudo udevadm trigger && sudo udevadm settle` 后再 `ls`。
-
-设 FTDI 低时延（USB 重插或重启后需重做）：
-
-```bash
-echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
-echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB1/latency_timer
-```
-
----
-
-## 1. 每个终端先做
+开 **3 个终端**，每个都先：
 
 ```bash
 source /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws/scripts/setup_factr_teleop_env.sh orin
-echo "ROS_DOMAIN_ID=$ROS_DOMAIN_ID"   # Orin 期望 21（Thor 用 thor → 20）
+unset FASTRTPS_DEFAULT_PROFILES_FILE   # 避免指向已删除的 marvin_ws/fastrtps xml
+echo "DOMAIN=$ROS_DOMAIN_ID PROFILE=$ROBOT_PROFILE"   # 期望 21 / orin
 ```
 
-会 `source` ROS + 工作区，并按 profile 设 `ROS_DOMAIN_ID`（orin=`21`，thor=`20`）与 `RMW_IMPLEMENTATION=rmw_fastrtps_cpp`。
+| 终端 | 做什么 |
+|---|---|
+| **A 大臂** | 下面「A」 |
+| **B 双小臂** | 先做「串口」，再下面「B」 |
+| **D 控制** | 托住小臂后再发 sync / teleop；**不要在 A/B 里发** |
 
-**注意：**
-
-- 脚本打印的 `LEFT_CONFIG` / `RIGHT_CONFIG` 指向 Thor 路径，只是环境变量占位；**真正用哪份 yaml 由 launch 的 `robot_profile:=orin` 决定**，一般不用再传 `left_config` / `right_config`。
-- 若本终端残留了旧流程的 `FASTRTPS_DEFAULT_PROFILES_FILE` 且文件已不存在，会刷 `[XMLPARSER Error] realpath failed`。消息仍可能发出，但建议清掉或改成有效路径：
-
-```bash
-unset FASTRTPS_DEFAULT_PROFILES_FILE
-# 或：
-# export FASTRTPS_DEFAULT_PROFILES_FILE=/data/coding/tianji/Skye_ROS_Bridge/marvin_ws1/fastrtps_no_shm.xml
-```
-
-- **已在跑的节点不会随你事后改 shell 变量换 domain**；改 domain 后须重启 A/B。
-
----
-
-## 2. 启动（三个终端）
-
-| 终端 | 角色 | 命令 |
-|---|---|---|
-| A | 大臂 | 见下 |
-| B | 双小臂 | 见下 |
-| D | 模式切换 | 第 3 节（**不要**在 A/B 发 `switch_*`） |
-
-### 终端 A — 大臂
+### A — 大臂
 
 ```bash
-source /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws/scripts/setup_factr_teleop_env.sh
-
 ros2 launch skye_robot_driver skye_robot_driver.launch.py \
   robot_profile:=orin "params_file:=$DRIVER_CONFIG"
 ```
 
-看到连接成功、切入阻抗关节模式即可。日志里应加载 `profiles/orin.yaml`。
+看到连上控制器、切入 `STATE_IMP_JOINT` 即可。
 
-### 终端 B — 双小臂
-
-先做第 0 节串口 + `latency_timer`，再：
+### B — 双小臂（先串口）
 
 ```bash
-source /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws/scripts/setup_factr_teleop_env.sh
+ls -l /dev/serial/by-id/
+# 期望含 FTBEO8WL（右）、FTBEO9L1（左）
+
+echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
+echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB1/latency_timer
 
 ros2 launch skye_factr_teleop start_teleop_m6_dual.launch.py \
   robot_profile:=orin sync_diagnostics:=true
 ```
 
-**必须带 `robot_profile:=orin`。** 漏写会默认 Thor，去找 `FTBEO9L1` / `FTBEO8WL`，报 `serial port does not exist`。
+**必须** `robot_profile:=orin`。漏写会落到 Thor 配置目录；本机换臂后串口 by-id 虽与 Thor 同名，但 `joint_signs` 等参数仍以 orin yaml 为准。  
+启动后是 **IDLE、力矩关**，小臂不会自己动。
 
-启动后两侧仍是 **IDLE、力矩关闭**。配置来自：
-
-- `skye_ros2_ws/src/skye_factr_teleop/config/orin/grav_comp_m6_left.yaml`
-- `skye_ros2_ws/src/skye_factr_teleop/config/orin/grav_comp_m6_right.yaml`
-
-（launch 读的是 `install/.../share/.../config/orin/`；若只改了 `src` 且非 symlink install，需同步到 install 或 `colcon build --packages-select skye_factr_teleop`。）
-
----
-
-## 3. 同步 → 遥操（终端 D，托住双小臂）
+### D — 同步 → 遥操（托住双小臂）
 
 ```bash
-source /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws/scripts/setup_factr_teleop_env.sh
-echo "ROS_DOMAIN_ID=$ROS_DOMAIN_ID"   # 须与 A/B 同为 21
-```
+# 先确认大臂反馈在本 domain 可读：
+ros2 topic hz /gento/left_joint_states
+ros2 topic hz /gento/right_joint_states
 
-`/mode/switch_*` 一次作用左右两侧。
-
-```bash
 ros2 topic pub --once /mode/switch_sync std_msgs/msg/String '{data: switch_sync}'
-# 两侧都 SYNCED 后：
+# 看 B 日志走到 SYNCED（两侧），再：
 ros2 topic pub --once /mode/switch_teleop std_msgs/msg/String '{data: switch_teleop}'
 # 静止 5～10 s，再慢动
 ```
 
-状态机要点：
+状态：
 
 ```text
-IDLE ──switch_sync──► … ──► SYNCED   （使能；跟大臂反馈；不发 joint_control）
-SYNCED ──switch_teleop──► TELEOP     （开始发 /gento/{left,right}_joint_control）
-任意 ──switch_stop──► IDLE           （关小臂力矩；不自动 hold 大臂）
+IDLE ──switch_sync──► … ──► SYNCED   # 小臂使能，跟大臂；还不发大臂命令
+SYNCED ──switch_teleop──► TELEOP     # 开始发 /gento/{left,right}_joint_control
+任意 ──switch_stop──► IDLE           # 关小臂力矩；不自动 hold 大臂
 ```
 
-可选确认：
+确认：
 
 ```bash
 ros2 topic echo /teleop/state --once \
   --qos-durability transient_local --qos-reliability reliable
-ros2 topic echo --once /gento/left_joint_states
-ros2 topic echo --once /gento/right_joint_states
 ```
 
-TELEOP 后小臂 J8（扳机）映射大臂夹爪：`/left|right_teleop_gripper/ctrl`。
+TELEOP 后扳机 J8 → 大臂夹爪：`/left|right_teleop_gripper/ctrl`。
 
----
-
-## 4. 停止（托住双小臂）
+### 停止（托住双小臂）
 
 ```bash
 ros2 topic pub --once /mode/switch_stop std_msgs/msg/String '{data: switch_stop}'
@@ -158,19 +96,51 @@ ros2 service call /gento/hold_current std_srvs/srv/Trigger '{}'
 
 ---
 
-## 5. 常见问题
+## 串口说明
+
+`ttyUSB*` 编号会变，以 **by-id** 为准：
+
+```text
+..._FTBEO8WL-if00-port0 -> ../../ttyUSB?   # 右
+..._FTBEO9L1-if00-port0 -> ../../ttyUSB?   # 左
+```
+
+没有 by-id：检查供电/线缆，或：
+
+```bash
+sudo udevadm trigger && sudo udevadm settle
+ls -l /dev/serial/by-id/
+```
+
+USB 重插或重启后 `latency_timer` 会复位，启小臂前再写一次 `1`。
+
+---
+
+## 改配置 / 重编注意
+
+- Launch 读的是 `install/.../share/.../config/orin/`（symlink-install 时链到 `src`）。
+- 只改 `src` 后若 share **不是** symlink：  
+  `colcon build --packages-select skye_factr_teleop --symlink-install`  
+  然后 **重启 B**。
+- 脚本打印的 `LEFT_CONFIG`/`RIGHT_CONFIG` 仍是 Thor 路径占位；真正用哪份由 **`robot_profile:=orin`** 决定。
+
+---
+
+## 常见问题
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| `serial port does not exist: ...FTBEO*` | 未设 `robot_profile:=orin` | 小臂 launch 加 `robot_profile:=orin` |
-| `...FTAO51EA` / `FTB8HNOT` 不存在 | USB 未识别 | 第 0 节自检；拔插或 `udevadm trigger` |
-| `ruckig.max_velocity is required` | Orin yaml 缺轨迹上限 | 在 `config/orin/grav_comp_m6_*.yaml` 填 `max_velocity` / `max_acceleration` / `max_jerk`，并同步到 install |
-| `latency_timer ... expected 1` | FTDI 时延未设 | 第 0 节写 `latency_timer=1` 后重启小臂 |
-| 发了 `switch_sync` 无反应 / `Waiting for subscription` | Domain 不一致 | A/B/D 都 `echo $ROS_DOMAIN_ID`，统一后**重启**对应 launch |
-| `Rejected follower state: ... stale or in the future` | 大臂时间戳与小臂对不上（常见 domain/时钟问题） | 确认同 domain；必要时重启 A/B；检查系统时间 |
-| `[XMLPARSER Error] realpath failed` | `FASTRTPS_DEFAULT_PROFILES_FILE` 指向失效路径 | `unset` 或改成存在的 xml（见第 1 节） |
+| `serial port ... FTB8HNOT` / `FTAO51EA` | 仍是旧 Orin by-id（换臂前） | 确认 orin yaml 已是 `FTBEO9L1`/`FTBEO8WL`，必要时 rebuild |
+| `...FTBEO9L1` / `FTBEO8WL` 不存在 | USB 未起来 | 查 by-id；拔插 / `udevadm` |
+| `latency_timer ... expected 1` | 时延未设 | 写 `latency_timer=1` 后重启 B |
+| `Waiting for subscription` / sync 无反应 | A/B/D domain 不一致 | 都 `source ... orin`，确认 `21`，**重启** A/B |
+| B 狂刷 `Rejected follower state: ... stale` | 大臂反馈时间戳不可用；**sync 不会启动** | 三端同为 21；`unset` 坏的 FASTRTPS 路径；必要时 `ROS_LOCALHOST_ONLY=1` 排除局域网串台后再试 |
+| `Synchronization requires fresh follower state` | 同上，没有新鲜 `/gento/*_joint_states` | 先 `ros2 topic hz /gento/left_joint_states` 有约 250 Hz 再 sync |
+| `gripper_setpoint` unknown / yaml 字段报错 | install 代码与 yaml 版本不一致 | `colcon build --packages-select skye_factr_teleop --symlink-install` 后重启 B |
+| `[XMLPARSER Error] realpath failed` | `FASTRTPS_DEFAULT_PROFILES_FILE` 失效 | `unset FASTRTPS_DEFAULT_PROFILES_FILE` |
+| 小臂只轻微动一下就停 | 常见是 stale 拒绝跟随，或旧 install 仍是 50 mA 验证电流 | 先看 B 是否刷 stale；再确认 orin yaml 的 `current_limit_ma` 已是 Thor 基线并已进 install |
 
-杀残留大臂驱动（仅一台 SDK 客户端）：
+杀残留大臂（只能有一个 SDK 客户端）：
 
 ```bash
 pkill -f skye_robot_driver || true
@@ -181,8 +151,8 @@ pkill -f gento_robot_driver || true
 
 ## 相关
 
-- Thor 双臂（同 reboot 包）：[`双臂启动遥操.md`](./双臂启动遥操.md)
-- 完整说明 / 排障：[`小臂reboot操作说明.md`](./小臂reboot操作说明.md)
-- 环境脚本：`skye_ros2_ws/scripts/setup_factr_teleop_env.sh`
-- Orin 小臂配置：`skye_ros2_ws/src/skye_factr_teleop/config/orin/`
-- 大臂参数：`skye_ros2_ws/src/skye_robot_driver/config/skye_robot.yaml` + `profiles/orin.yaml`
+- Thor：[`双臂启动遥操.md`](./双臂启动遥操.md)
+- 排障总览：[`小臂reboot操作说明.md`](./小臂reboot操作说明.md)
+- 环境：`skye_ros2_ws/scripts/setup_factr_teleop_env.sh`
+- Orin 小臂参数：`skye_ros2_ws/src/skye_factr_teleop/config/orin/`
+- 大臂：`skye_robot_driver/config/skye_robot.yaml` + `profiles/orin.yaml`
