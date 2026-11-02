@@ -30,4 +30,14 @@ if [[ "$_SKYE_TELEOP_RESULT" == 1 ]]; then
   return 1
 fi
 unset _SKYE_TELEOP_RESULT
+# Keep the documented command, with synchronization feedback in this terminal.
+# Other ros2 commands retain their standard behavior.
+ros2() {
+  if [[ $# -eq 6 && "$1" == topic && "$2" == pub && "$3" == --once &&
+        "$4" == /mode/switch_sync && "$5" == std_msgs/msg/String ]]; then
+    command /usr/bin/python3 -m skye_factr_teleop.sync_monitor "$@"
+  else
+    command ros2 "$@"
+  fi
+}
 echo "skye_factr_teleop env ready: robot=$ROBOT_PROFILE domain=$ROS_DOMAIN_ID"
