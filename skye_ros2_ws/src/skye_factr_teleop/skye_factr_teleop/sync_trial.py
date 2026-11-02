@@ -77,14 +77,27 @@ def preview_move(config, position, velocity, *, joint_id=None, delta=None, targe
                       barrier.gripper.limit_min)
     upper = np.append(np.asarray(barrier.joint.limit_max) - barrier.joint.safety_margin,
                       barrier.gripper.limit_max)
+    names = [f"J{i}" for i in range(1, 8)] + ["gripper(ID8)"]
+
+    def bound_details(values):
+        return "; ".join(
+            f"{names[i]}={values[i]:.6f} rad, allowed=[{lower[i]:.6f}, {upper[i]:.6f}] rad"
+            for i in range(8) if values[i] < lower[i] or values[i] > upper[i]
+        )
+
     if np.any(position < lower) or np.any(position > upper):
-        raise ValueError("current pose is outside configured safe bounds; reposition before trial")
+        raise ValueError("current pose is outside configured safe bounds; reposition before trial: "
+                         + bound_details(position))
     if np.any(goal < lower) or np.any(goal > upper):
-        raise ValueError("target is outside configured safe bounds")
+        raise ValueError("target is outside configured safe bounds: " + bound_details(goal))
     # Intended for stopped, supported starts; large measured velocity changes the path.
-    if np.any(np.abs(velocity) > np.minimum(sync.hold.sync_velocity_tolerance,
-                                           sync.ruckig.max_velocity)):
-        raise ValueError("leader is moving; wait for a stationary start")
+    velocity_limit = np.minimum(sync.hold.sync_velocity_tolerance, sync.ruckig.max_velocity)
+    if np.any(np.abs(velocity) > velocity_limit):
+        details = "; ".join(
+            f"{names[i]}: |velocity|={abs(velocity[i]):.6f} rad/s > {velocity_limit[i]:.6f} rad/s"
+            for i in range(8) if abs(velocity[i]) > velocity_limit[i]
+        )
+        raise ValueError("leader is moving; wait for a stationary start: " + details)
     inp = InputParameter(8)
     inp.current_position, inp.current_velocity = position.tolist(), velocity.tolist()
     inp.current_acceleration = [0.0] * 8
@@ -103,7 +116,9 @@ def preview_move(config, position, velocity, *, joint_id=None, delta=None, targe
                          f"before {sync.ruckig.trajectory_timeout:.3f}s timeout; shorten move")
     for i, bounds in enumerate(trajectory.position_extrema):
         if bounds.min < lower[i] - 1e-9 or bounds.max > upper[i] + 1e-9:
-            raise ValueError(f"trajectory leaves configured safe bounds on axis {i + 1}")
+            raise ValueError(f"trajectory leaves configured safe bounds on axis {i + 1} "
+                             f"({names[i]}): extrema=[{bounds.min:.6f}, {bounds.max:.6f}] rad, "
+                             f"allowed=[{lower[i]:.6f}, {upper[i]:.6f}] rad")
     return {"start_position_rad": position.tolist(), "start_velocity_rad_s": velocity.tolist(),
             "target_position_rad": goal.tolist(), "trajectory_duration_s": trajectory.duration}
 
@@ -541,7 +556,7 @@ def main(argv=None):
     move.add_argument("--wait-seconds", type=float, default=5.0,
                       help="connection/acknowledgement timeout and margin beyond configured sync timeouts")
     record.add_argument("--output", type=Path, required=True)
-    record.add_argument("--operator", required=True)
+    record.add_argument("--operator", default="", help="optional operator name")
     record.add_argument("--duration", type=float, default=120.0, help="maximum recording seconds; does not stop motion")
     args = parser.parse_args(argv)
     try:

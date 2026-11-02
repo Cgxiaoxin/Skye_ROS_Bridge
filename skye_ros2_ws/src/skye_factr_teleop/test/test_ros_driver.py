@@ -371,6 +371,93 @@ def test_friction_test_destroy_disables_torque(make_node):
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
+@pytest.mark.parametrize("case,reason", [
+    ("start", "J6=0.810000 rad, allowed=[-0.800000, 0.800000] rad"),
+    ("target", "J7=0.750000 rad, allowed=[-0.700000, 0.700000] rad"),
+    ("velocity", "J2: |velocity|=0.060000 rad/s > 0.050000 rad/s"),
+    ("duration", "timeout"),
+])
+def test_sync_preflight_rejection_never_enables_torque(make_node, monkeypatch, side, case, reason):
+    rig = make_node(side)
+    node = rig.node
+    position, velocity = np.zeros(8), np.zeros(8)
+    message = packet(side)
+    if case == "start":
+        position[5] = 0.81
+    elif case == "target":
+        message.position[6] = 0.75
+    elif case == "velocity":
+        velocity[1] = 0.06
+    else:
+        sync = node.config.controller.sync_hold_control
+        node.config = replace(node.config, controller=replace(
+            node.config.controller, sync_hold_control=replace(
+                sync, ruckig=replace(sync.ruckig, trajectory_timeout=0.1))))
+    rig.hardware.inject_state(position * node.core.joint_signs, velocity * node.core.joint_signs)
+    errors, torque_calls = [], []
+    monkeypatch.setattr(node, "get_logger", lambda: SimpleNamespace(error=errors.append))
+    monkeypatch.setattr(rig.hardware, "set_torque_enabled", torque_calls.append)
+    node._on_follower(message)
+
+    node._on_sync(String(data="switch_sync"))
+
+    assert node.core.mode == ControlMode.IDLE
+    assert not rig.hardware.torque_enabled
+    assert torque_calls == []
+    assert rig.trajectories == []
+    assert not node._closed and not node._follower_session_active
+    assert len(errors) == 1
+    assert f"side={side}, phase=sync_preflight" in errors[0]
+    assert reason in errors[0]
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_sync_preflight_uses_logical_pose_and_accepts_large_feasible_move(make_node, monkeypatch, side):
+    rig = make_node(side, parameters={"joint_offsets": [0.2] * 8})
+    node = rig.node
+    position = np.array([2.0, 0, 0, 0, 0, 0, 0, 0.4])
+    rig.hardware.inject_state(position * node.core.joint_signs + node.core.joint_offsets,
+                              np.zeros(8))
+    message = packet(side)
+    message.position = [-2.0] + [0.0] * 6
+    node._on_follower(message)
+    preview = module.preview_move
+    observed, logs = [], []
+
+    def checked_preview(config, q, dq, *, target):
+        assert not rig.hardware.torque_enabled
+        observed.append((q.copy(), dq.copy(), target.copy()))
+        return preview(config, q, dq, target=target)
+
+    monkeypatch.setattr(module, "preview_move", checked_preview)
+    monkeypatch.setattr(node, "get_logger", lambda: SimpleNamespace(info=logs.append))
+
+    node._on_sync(String(data="switch_sync"))
+
+    np.testing.assert_allclose(observed[0][0], position)
+    np.testing.assert_allclose(observed[0][1], np.zeros(8))
+    np.testing.assert_allclose(rig.trajectories[0].target[:7], observed[0][2])
+    assert node.core.mode == ControlMode.TELEOP_SYNCING
+    assert rig.hardware.torque_enabled
+    assert f"side={side}" in logs[0] and "trajectory=" in logs[0]
+    assert "joint_delta_rad=[-4.0," in logs[0]
+
+
+def test_sync_preflight_read_failure_uses_existing_fault_cleanup(make_node, monkeypatch):
+    rig = make_node()
+    rig.node._on_follower(packet())
+    rig.hardware.fail_next_read(RuntimeError("read failed"))
+    errors = []
+    monkeypatch.setattr(rig.node, "get_logger", lambda: SimpleNamespace(error=errors.append))
+
+    rig.node._on_sync(String(data="switch_sync"))
+
+    assert rig.node._closed and rig.node.core.mode == ControlMode.IDLE
+    assert not rig.hardware.torque_enabled and rig.trajectories == []
+    assert "phase=sync_preflight" in errors[0] and "read failed" in errors[0]
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
 def test_sync_hold_teleop_stop_and_published_shapes(make_node, side):
     rig = make_node(side)
     node = rig.node
