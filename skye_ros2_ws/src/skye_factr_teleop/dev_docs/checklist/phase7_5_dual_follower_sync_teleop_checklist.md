@@ -55,7 +55,7 @@ Ruckig 上限作用于同步参考轨迹，不是实测速度上限，也不限�
 在一个 Bash 终端执行。以下命令不启动硬件：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-up-to skye_factr_teleop --symlink-install
 ```
@@ -85,7 +85,7 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- --help
 后文每个新终端先执行本段一次；这些环境及配置路径不随轮次变化，不用每轮重新设置。
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=73

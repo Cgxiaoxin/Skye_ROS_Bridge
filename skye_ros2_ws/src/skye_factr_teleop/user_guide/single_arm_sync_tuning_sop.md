@@ -42,7 +42,7 @@
 
 ### 3.1 统一环境与配置
 
-所有终端都执行以下公共设置。这里使用当前仓库路径；历史清单中的 `leader_for_skye` 路径不直接照抄。
+所有终端都执行以下公共设置。这里使用当前仓库路径；历史清单中的 `Skye_ROS_Bridge` 路径不直接照抄。
 
 ```bash
 cd /home/lyy/projects/skye_ros_bridge/skye_ros2_ws

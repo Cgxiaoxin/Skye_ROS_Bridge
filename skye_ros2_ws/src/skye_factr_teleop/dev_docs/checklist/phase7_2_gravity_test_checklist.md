@@ -31,7 +31,7 @@
 首次测试或更新源码、YAML 后，从工作区目录构建遥操包及其 URDF 依赖，并加载工作区：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 
 source /opt/ros/humble/setup.bash
 colcon build --packages-up-to skye_factr_teleop --symlink-install
@@ -46,7 +46,7 @@ ros2 pkg executables skye_factr_teleop
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/install/setup.bash
 ```
 
 启动前检查是否仍有程序占用 leader 串口：
@@ -77,28 +77,28 @@ pgrep -af 'factr_teleop|skye_factr_teleop|dynamixel' || true
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/install/setup.bash
 
 ros2 run skye_factr_teleop skye_factr_gravity_test_recorder -- \
   --side left --joint-id 1 --operator 'lyy' \
-  --config /home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
+  --config /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
   --gain-scale 0.1 --current-limit-ma 20 \
   --ramp-seconds 2 --max-duration-seconds 10 \
-  --output /home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_2_1_A/left_id1_run1.json
+  --output /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_2_1_A/left_id1_run1.json
 ```
 
 右臂 ID 1 示例：
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/install/setup.bash
 
 ros2 run skye_factr_teleop skye_factr_gravity_test_recorder -- \
   --side right --joint-id 1 --operator 'lyy' \
-  --config /home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml \
+  --config /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml \
   --gain-scale 0.1 --current-limit-ma 20 \
   --ramp-seconds 2 --max-duration-seconds 10 \
-  --output /home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_2_1_A/right_id1_run1.json
+  --output /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase7_2_1_A/right_id1_run1.json
 ```
 
 返回 `IDLE` 后，记录器自动结束采样，只问操作者三个短答案：
@@ -151,10 +151,10 @@ cat "/sys/bus/usb-serial/devices/${TTY_NAME}/latency_timer"
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/install/setup.bash
 
 ros2 launch skye_factr_teleop gravity_test_m6_left.launch.py \
-  config_path:=/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
+  config_path:=/home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml \
   joint_id:=1 \
   gain_scale:=0.1 \
   ramp_seconds:=2.0 \
@@ -212,10 +212,10 @@ cat "/sys/bus/usb-serial/devices/${TTY_NAME}/latency_timer"
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/install/setup.bash
 
 ros2 launch skye_factr_teleop gravity_test_m6_right.launch.py \
-  config_path:=/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml \
+  config_path:=/home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_right.yaml \
   joint_id:=1 \
   gain_scale:=0.1 \
   ramp_seconds:=2.0 \
@@ -313,7 +313,7 @@ ros2 topic pub --once /mode/switch_stop std_msgs/msg/String '{data: switch_stop}
 左臂：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
@@ -327,7 +327,7 @@ ros2 run skye_factr_teleop skye_factr_dynamixel_readonly_check -- \
 右臂：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 

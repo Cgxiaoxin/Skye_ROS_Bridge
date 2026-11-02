@@ -38,10 +38,10 @@ Skye/M6 扩展。这不再属于严格意义上的 clean-room 实现，但仍坚
 最终选择：
 
 ```text
-/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop
+/home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/src/skye_factr_teleop
 ```
 
-不放在仓库根目录 `/home/lyy/projects/leader_for_skye`，原因是 `skye_ros2_ws` 已经是标准 colcon 工作区，且已有以下相关 ROS 2 包：
+不放在仓库根目录 `/home/lyy/projects/Skye_ROS_Bridge`，原因是 `skye_ros2_ws` 已经是标准 colcon 工作区，且已有以下相关 ROS 2 包：
 
 ```text
 skye_robot_driver
@@ -53,7 +53,7 @@ skye_data_recorder
 新包放入 `skye_ros2_ws/src` 后，可以统一构建和加载：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 colcon build --packages-select skye_factr_teleop
 source install/setup.bash
 ```

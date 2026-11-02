@@ -2,7 +2,7 @@
   "schema": "skye_factr_teleop.phase_2_5_1.v1",
   "started_at": "2026-10-13T19:36:56+08:00",
   "side": "left",
-  "config": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml",
+  "config": "/home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml",
   "configured_port": "usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0",
   "resolved_port": "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0",
   "ids": [

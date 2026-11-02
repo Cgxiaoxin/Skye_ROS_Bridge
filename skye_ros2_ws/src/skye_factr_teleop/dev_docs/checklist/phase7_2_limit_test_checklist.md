@@ -34,7 +34,7 @@
 首次测试或源码变更后执行：
 
 ~~~bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-up-to skye_factr_teleop --symlink-install
 source install/setup.bash
@@ -92,7 +92,7 @@ ros2 run skye_factr_teleop skye_factr_limit_test_recorder -- \
 节点启动后应处于 IDLE、Torque Disable，关节不会自动移动。终端 A 的记录器应显示“状态: IDLE”；若没有显示，先排查，不进入测试模式。
 
 ~~~bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 source /tmp/skye_factr_limit_trial.env
@@ -108,7 +108,7 @@ ros2 launch skye_factr_teleop "$LAUNCH_FILE" \
 
 ~~~bash
 source /opt/ros/humble/setup.bash
-source /home/lyy/projects/leader_for_skye/skye_ros2_ws/install/setup.bash
+source /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/install/setup.bash
 source /tmp/skye_factr_limit_trial.env
 ~~~
 
@@ -139,7 +139,7 @@ ros2 topic echo "/leader_arm/$SIDE/limit_test_current_ma" std_msgs/msg/Float64Mu
 在终端 C 发送一次模式请求：
 
 ~~~bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 source /tmp/skye_factr_limit_trial.env
