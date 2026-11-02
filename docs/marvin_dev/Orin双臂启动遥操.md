@@ -74,7 +74,8 @@ ros2 launch skye_robot_driver skye_robot_driver.launch.py \
 ls -l /dev/serial/by-id/
 # 期望含 FTAO51EA（右）、FTB8HNOT（左）；须与 orin yaml 的 dynamixel_port 一致
 
-# latency_timer 只有 root 能写；ttyUSB 编号会变，按 by-id 推导：
+# 一次性装 udev 规则后（sudo ./scripts/setup_ftdi_latency.sh）插拔/重启都自动为 1，
+# 下面这步可跳过；未装规则时 latency_timer 只有 root 能写，ttyUSB 编号会变，按 by-id 推导：
 for l in /dev/serial/by-id/*FTDI*; do
   d=$(basename "$(readlink -f "$l")")
   echo 1 | sudo tee "/sys/bus/usb-serial/devices/$d/latency_timer"
@@ -205,6 +206,7 @@ python3 scripts/bind_leader_arms.py
 | `Synchronization requires fresh follower state` | 同上，没有新鲜 `/gento/*_joint_states` | 先 `ros2 topic hz /gento/left_joint_states` 有约 250 Hz 再 sync |
 | `gripper_setpoint` unknown / yaml 字段报错 | install 代码与 yaml 版本不一致 | `colcon build --packages-select skye_factr_teleop --symlink-install` 后重启 B |
 | `[XMLPARSER Error] realpath failed` | `FASTRTPS_DEFAULT_PROFILES_FILE` 失效 | `unset FASTRTPS_DEFAULT_PROFILES_FILE` |
+| 启动时打几行 `sequence size exceeds remaining buffer` | DDS 反序列化某条样本失败（缓冲不足或对端消息定义不一致），该样本被丢弃 | 非致命；launch 已自动加载 `config/fastrtps_teleop.xml`（4 MB UDP 缓冲）+ `scripts/setup_host_tuning.sh`（rmem_default 8 MB） |
 | 小臂只轻微动一下就停 | 常见是 stale 拒绝跟随，或旧 install 仍是 50 mA 验证电流 | 先看 B 是否刷 stale；再确认 orin yaml 的 `current_limit_ma` 已是 Thor 基线并已进 install |
 
 杀残留大臂（只能有一个 SDK 客户端）：

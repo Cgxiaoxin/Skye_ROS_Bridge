@@ -3,11 +3,12 @@
 
 """Shared launch construction for the left, right, and dual M6 leaders."""
 
+import os
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, SetEnvironmentVariable
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -72,6 +73,17 @@ def _launch_setup(context, *, sides):
     ]
 
 
+def _dds_profile_actions():
+    """Select the packaged Fast DDS profile unless the caller already has one."""
+    if os.environ.get("FASTRTPS_DEFAULT_PROFILES_FILE"):
+        return []
+    path = (Path(get_package_share_directory("skye_factr_teleop"))
+            / "config" / "fastrtps_teleop.xml")
+    if not path.is_file():
+        return []
+    return [SetEnvironmentVariable("FASTRTPS_DEFAULT_PROFILES_FILE", str(path))]
+
+
 def leader_launch_description(sides):
     """Declare profile and one validated configuration YAML per arm."""
     actions = [DeclareLaunchArgument(
@@ -89,6 +101,7 @@ def leader_launch_description(sides):
                          "empty selects the robot_profile configuration; "
                          "absolute or relative to the package share"),
         ))
+    actions.extend(_dds_profile_actions())
     actions.append(OpaqueFunction(function=_launch_setup, kwargs={"sides": sides}))
     return LaunchDescription(actions)
 

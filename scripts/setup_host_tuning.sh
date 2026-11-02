@@ -19,7 +19,7 @@ CONF_BODY='# ROS 2 DDS over UDP tuning (skye teleop / Fast-DDS no-SHM)
 # Docs: docs/Q_log.md
 net.core.rmem_max=16777216
 net.core.wmem_max=16777216
-net.core.rmem_default=1048576
+net.core.rmem_default=8388608
 net.core.wmem_default=1048576
 '
 
