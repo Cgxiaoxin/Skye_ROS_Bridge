@@ -28,7 +28,7 @@ dynamixel:
   joint_signs: [1, -1, 1, -1, 1, 1, 1, 1] # 遥操设备A（Thor）（checked 26/10/9）
 
 controller:
-  frequency: 500
+  frequency: 250   # 500 -> 250: halve DDS command rate (500 Hz overflowed UDP rcvbuf)
 
   joint_gravity_comp:
     enable: true
