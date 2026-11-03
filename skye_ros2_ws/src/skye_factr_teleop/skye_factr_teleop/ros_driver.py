@@ -110,11 +110,12 @@ def validate_joint_state(
     return JointSample(position, stamp, received_at)
 
 
-def _hardware_factory(config, *, read_present_current=False):
+def _hardware_factory(config, *, read_present_current=False, read_present_temperature=False):
     return DynamixelDriver(
         range(1, 9), config.dynamixel.servo_types,
         config.dynamixel.dynamixel_port, baudrate=config.dynamixel.baudrate,
         read_present_current=read_present_current,
+        read_present_temperature=read_present_temperature,
     )
 
 
@@ -148,6 +149,7 @@ class SkyeFactrTeleopNode(Node):
         self._sync_goal = None
         self._sync_progress_mode = None
         self._sync_progress_at = None
+        self._last_temperature_publish_time = None
         try:
             self._configure()
             self._create_ros_interfaces()
@@ -166,6 +168,11 @@ class SkyeFactrTeleopNode(Node):
         self._sync_diagnostics = self._parameter("sync_diagnostics", False)
         if type(self._sync_diagnostics) is not bool:
             raise ValueError("sync_diagnostics must be a bool")
+        rate = self._parameter("temperature_publish_rate_hz", 1.0)
+        if (isinstance(rate, bool) or not isinstance(rate, (int, float))
+                or not np.isfinite(rate) or rate < 0):
+            raise ValueError("temperature_publish_rate_hz must be a finite non-negative number")
+        self._temperature_publish_rate_hz = float(rate)
         self._gravity_test_only = self._parameter("gravity_test_only", False)
         self._limit_test_only = self._parameter("limit_test_only", False)
         self._friction_test_only = self._parameter("friction_test_only", False)
@@ -280,6 +287,11 @@ class SkyeFactrTeleopNode(Node):
         self._target_pub = self.create_publisher(JointState, "/leader_arm/target_joint_state", state_qos())
         self._command_pub = self.create_publisher(JointState, "/joint_control", command_qos())
         self._gripper_pub = None
+        self._temperature_pub = None
+        if self._temperature_publish_rate_hz > 0:
+            self._temperature_pub = self.create_publisher(
+                Float64MultiArray, f"/leader_arm/{self.side}/temperature_c", state_qos(),
+            )
         self._diagnostic_pub = None
         if self._sync_diagnostics and not self._test_only:
             self._diagnostic_pub = self.create_publisher(
@@ -347,6 +359,7 @@ class SkyeFactrTeleopNode(Node):
                           else _hardware_factory(
                               self.config, read_present_current=(
                                   self._test_only or self._sync_diagnostics),
+                              read_present_temperature=self._temperature_publish_rate_hz > 0,
                           ))
         self._hardware.open(enable_torque=False)
         self.core = ControlCore(
@@ -380,6 +393,7 @@ class SkyeFactrTeleopNode(Node):
             if result.mode == ControlMode.IDLE:
                 self._follower_session_active = False
             self._publish_cycle(result)
+            self._publish_temperatures(cycle_time)
             self._publish_sync_progress(result, cycle_time)
             self._publish_diagnostics(result, cycle_time)
             self._publish_friction_phase()
@@ -684,6 +698,20 @@ class SkyeFactrTeleopNode(Node):
                 result.state.gripper_position, result.state.gripper_velocity,
             ]))
         self._publish_state()
+
+    def _publish_temperatures(self, cycle_time):
+        if self._temperature_pub is None:
+            return
+        if (self._last_temperature_publish_time is not None
+                and cycle_time - self._last_temperature_publish_time
+                < 1.0 / self._temperature_publish_rate_hz):
+            return
+        temperatures = self._hardware.present_temperatures_c
+        if temperatures is None:
+            return
+        temperatures = _vector(temperatures, 8, "present temperature")
+        self._temperature_pub.publish(Float64MultiArray(data=temperatures.tolist()))
+        self._last_temperature_publish_time = cycle_time
 
     def _fault(self, exc, *, phase=None):
         phase = phase or self.core.mode.name
