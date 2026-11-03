@@ -32,9 +32,77 @@ def usb(monkeypatch, tmp_path):
     return connect
 
 
+def test_device_for_robot():
+    assert teleop.device_for_robot("thor") == "a"
+    assert teleop.device_for_robot("orin") == "b"
+
+
+@pytest.mark.parametrize(
+    ("robot", "device_dir"),
+    [("thor", "config"), ("orin", "config/orin")],
+)
+def test_start_defaults_device_to_robot_pair(usb, monkeypatch, robot, device_dir):
+    device = "a" if robot == "thor" else "b"
+    configs = {side: usb(device, side) for side in ("left", "right")}
+    captured = []
+    monkeypatch.setattr(teleop, "check_ports", lambda *a, **kw: None)
+    monkeypatch.setattr(teleop, "ros_environment", lambda: {})
+    monkeypatch.setattr(teleop.os, "chdir", lambda *a: None)
+    monkeypatch.setattr(Path, "is_file", lambda path: True)
+    monkeypatch.setattr(
+        teleop.subprocess,
+        "run",
+        lambda cmd, **kw: subprocess.CompletedProcess(
+            cmd, 1 if cmd[0] == "pgrep" else 0
+        ),
+    )
+    monkeypatch.setattr(
+        teleop.os, "execvpe", lambda exe, cmd, env: captured.append((cmd, env))
+    )
+    assert teleop.main(["start", "--robot", robot, "--skip-precheck"]) == 0
+    command, env = captured[0]
+    assert f"robot_profile:={robot}" in command
+    for side, config in configs.items():
+        assert f"{side}_config:={config}" in command
+        assert device_dir in str(config)
+
+
+def test_skip_precheck_skips_port_ping_and_install_probe(usb, monkeypatch):
+    usb("a", "left")
+    usb("a", "right")
+    calls = []
+    monkeypatch.setattr(
+        teleop,
+        "check_ports",
+        lambda *a, **kw: calls.append("check_ports") or (_ for _ in ()).throw(
+            AssertionError("check_ports should not run")
+        ),
+    )
+    monkeypatch.setattr(teleop, "ros_environment", lambda: {})
+    monkeypatch.setattr(teleop.os, "chdir", lambda *a: None)
+    monkeypatch.setattr(Path, "is_file", lambda path: True)
+
+    def run(cmd, **kw):
+        calls.append(cmd[0])
+        if cmd[0] == "pgrep":
+            return subprocess.CompletedProcess(cmd, 1)
+        if cmd[0] == "ping":
+            raise AssertionError("ping should not run with --skip-precheck")
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(teleop.subprocess, "run", run)
+    captured = []
+    monkeypatch.setattr(
+        teleop.os, "execvpe", lambda exe, cmd, env: captured.append(cmd)
+    )
+    assert teleop.main(["start", "--robot", "thor", "--skip-precheck"]) == 0
+    assert "ping" not in calls
+    assert captured
+
+
 @pytest.mark.parametrize("robot", ["thor", "orin"])
-@pytest.mark.parametrize("device", ["a", "b"])
-def test_cross_pairing_and_environment(usb, monkeypatch, robot, device):
+def test_cross_pairing_and_environment(usb, monkeypatch, robot):
+    device = "a" if robot == "thor" else "b"
     configs = {side: usb(device, side) for side in ("left", "right")}
     captured = []
     monkeypatch.setattr(teleop, "check_ports", lambda *a, **kw: None)
@@ -50,6 +118,28 @@ def test_cross_pairing_and_environment(usb, monkeypatch, robot, device):
     assert env["ROS_DOMAIN_ID"] == ("20" if robot == "thor" else "21")
     for side in configs:
         assert f"{side}_config:={configs[side]}" in command
+
+
+def test_explicit_device_overrides_robot_pair(usb, monkeypatch):
+    configs = {side: usb("b", side) for side in ("left", "right")}
+    captured = []
+    monkeypatch.setattr(teleop, "check_ports", lambda *a, **kw: None)
+    monkeypatch.setattr(teleop, "ros_environment", lambda: {})
+    monkeypatch.setattr(teleop.os, "chdir", lambda *a: None)
+    monkeypatch.setattr(Path, "is_file", lambda path: True)
+    monkeypatch.setattr(
+        teleop.subprocess,
+        "run",
+        lambda cmd, **kw: subprocess.CompletedProcess(
+            cmd, 1 if cmd[0] == "pgrep" else 0
+        ),
+    )
+    monkeypatch.setattr(
+        teleop.os, "execvpe", lambda exe, cmd, env: captured.append(cmd)
+    )
+    assert teleop.main(["start", "--robot", "thor", "--device", "b", "--skip-precheck"]) == 0
+    for side, config in configs.items():
+        assert f"{side}_config:={config}" in captured[0]
 
 
 def test_missing_or_ambiguous_usb_never_selects_arbitrarily(usb):
@@ -74,7 +164,7 @@ def test_individual_sides_keep_their_own_calibration(usb):
 
 
 def test_dry_run_does_not_change_latency_or_load_ros(usb, monkeypatch, capsys):
-    usb("b", "right")
+    usb("a", "right")
     def unexpected(*args, **kwargs):
         pytest.fail("dry run attempted hardware/environment operation")
     monkeypatch.setattr(teleop, "check_ports", unexpected)
@@ -82,7 +172,7 @@ def test_dry_run_does_not_change_latency_or_load_ros(usb, monkeypatch, capsys):
     assert teleop.main(["start", "--robot", "thor", "--side", "right", "--dry-run"]) == 0
     output = capsys.readouterr().out
     assert "robot_profile:=thor" in output
-    assert "config/orin/grav_comp_m6_right.yaml" in output
+    assert "config/grav_comp_m6_right.yaml" in output
 
 
 def test_robot_configuration_has_no_silent_thor_fallback(monkeypatch, tmp_path):
@@ -144,8 +234,8 @@ def test_occupied_bus_prevents_latency_changes(usb, monkeypatch):
 
 
 def test_environment_exports_detected_hardware_without_loading_ros(usb, capsys):
-    left = usb("b", "left")
-    right = usb("b", "right")
+    left = usb("a", "left")
+    right = usb("a", "right")
     assert teleop.main(["env", "--robot", "thor", "--domain", "73"]) == 0
     script = capsys.readouterr().out
     assert f"LEFT_CONFIG={left}" in script

@@ -30,6 +30,27 @@ def robot_profile(explicit=None):
     return value
 
 
+def device_for_robot(profile: str) -> str:
+    key = profile.strip().lower()
+    if key == "thor":
+        return "a"
+    if key == "orin":
+        return "b"
+    raise RuntimeError(f"unsupported robot profile: {profile}")
+
+
+def install_executables_present() -> None:
+    for package, executable in (
+        ("skye_robot_driver", "skye_robot_driver"),
+        ("skye_factr_teleop", "skye_factr_teleop_driver"),
+    ):
+        path = WS / "install" / package / "lib" / package / executable
+        if not path.is_file():
+            raise RuntimeError(
+                f"缺少 {executable}，请先执行: bash scripts/teleop.sh build"
+            )
+
+
 def select_leaders(side, device="auto"):
     # Historical directories describe the leader hardware, not the host/follower.
     import yaml
@@ -160,6 +181,11 @@ def parser():
             command.add_argument("--fix-latency", action="store_true", help="将 FTDI 延迟设置为 1 ms")
         elif action == "start":
             command.add_argument("--dry-run", action="store_true", help="只显示识别结果和启动命令")
+            command.add_argument(
+                "--skip-precheck",
+                action="store_true",
+                help="跳过 ping/串口/latency/install 全量检查（仍拒绝已有 driver）",
+            )
     return result
 
 
@@ -182,7 +208,10 @@ def main(argv=None):
         domain = int(os.environ.get("ROS_DOMAIN_ID", "20" if profile == "thor" else "21"))
     if not 0 <= domain <= 232:
         raise RuntimeError("ROS domain 必须在 0..232 内。")
-    leaders = select_leaders(args.side, args.device)
+    device = args.device
+    if device == "auto":
+        device = device_for_robot(profile)
+    leaders = select_leaders(args.side, device)
     validate_configs(leaders)
     if args.action == "env":
         shell_environment(profile, domain, leaders)
@@ -194,7 +223,9 @@ def main(argv=None):
     if args.action == "start" and args.dry_run:
         print(shlex.join(command))
         return 0
-    check_ports(leaders, fix_latency=args.action == "start" or args.fix_latency)
+    skip_precheck = args.action == "start" and args.skip_precheck
+    if not skip_precheck:
+        check_ports(leaders, fix_latency=args.action == "start" or args.fix_latency)
     env = ros_environment()
     env.update(ROBOT_PROFILE=profile, ROS_DOMAIN_ID=str(domain),
                RMW_IMPLEMENTATION="rmw_fastrtps_cpp", ROS_LOCALHOST_ONLY="0")
@@ -202,20 +233,16 @@ def main(argv=None):
     for key in ("FASTRTPS_DEFAULT_PROFILES_FILE", "FASTDDS_DEFAULT_PROFILES_FILE"):
         if env.get(key) and not Path(env[key]).is_file():
             env.pop(key)
-    ip = "6.6.7.191" if profile == "thor" else "6.6.7.190"
-    subprocess.run(["ping", "-c", "1", "-W", "1", ip], check=True, stdout=subprocess.DEVNULL)
+    if not skip_precheck:
+        ip = "6.6.7.191" if profile == "thor" else "6.6.7.190"
+        subprocess.run(["ping", "-c", "1", "-W", "1", ip], check=True, stdout=subprocess.DEVNULL)
     existing = subprocess.run(
         ["pgrep", "-f", "lib/skye_robot_driver/[s]kye_robot_driver|[g]ento_robot_driver"],
         capture_output=True)
     if existing.returncode != 1:
         raise RuntimeError("已有大臂驱动运行或进程检查失败，请先正常停止旧驱动。")
-    for package, executable in (("skye_robot_driver", "skye_robot_driver"),
-                                ("skye_factr_teleop", "skye_factr_teleop_driver")):
-        subprocess.run(["ros2", "pkg", "prefix", package], env=env,
-                       stdout=subprocess.DEVNULL, check=True)
-        # Both packages use isolated installs in this workspace.
-        if not (WS / "install" / package / "lib" / package / executable).is_file():
-            raise RuntimeError(f"缺少 {executable}，请执行 build。")
+    if not skip_precheck:
+        install_executables_present()
     if args.action == "check":
         print("检查通过（配置、串口、延迟、网络及安装入口）。")
         return 0
@@ -223,6 +250,7 @@ def main(argv=None):
     print("Ctrl+C 统一退出；试验结束请先按 checklist 完成 stop / hold。", flush=True)
     os.chdir(WS)
     os.execvpe(command[0], command, env)
+    return 0
 
 
 if __name__ == "__main__":
