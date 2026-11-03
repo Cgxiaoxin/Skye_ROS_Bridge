@@ -11,7 +11,11 @@ from collections.abc import Callable
 from skye_operator_ui.playbooks import playbook_for
 from skye_operator_ui.process_step import ProcessStep
 from skye_operator_ui.session_state import SessionLogic, SessionState, UiMode
-from skye_operator_ui.teardown import run_safe_teardown
+from skye_operator_ui.teardown import (
+    marvin_container_name,
+    run_safe_teardown,
+    teardown_effective_bool,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +114,9 @@ class SessionSupervisor:
             step.terminate()
 
         try:
-            notes = run_safe_teardown(self.repo_root, self.cfg)
+            notes = run_safe_teardown(
+                self.repo_root, self.cfg, mode=self.logic.mode()
+            )
             for note in notes:
                 logger.warning("safe teardown: %s", note)
         except Exception:  # noqa: BLE001 - must still reach IDLE
@@ -272,6 +278,11 @@ class SessionSupervisor:
             commands = list(raw_commands)
         if skip_docker_rm:
             commands = [argv for argv in commands if not self._is_docker_rm_argv(argv)]
+        elif teardown_effective_bool(self.cfg, "docker_rm", self.logic.mode()):
+            if not any(self._is_docker_rm_argv(argv) for argv in commands):
+                commands = list(commands) + [
+                    ["docker", "rm", "-f", marvin_container_name(self.cfg)]
+                ]
         if keep_launch:
             skip_tokens = (
                 "skye_robot_driver",

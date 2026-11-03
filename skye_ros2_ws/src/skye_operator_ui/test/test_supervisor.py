@@ -224,6 +224,8 @@ def test_precheck_auto_cleans_residual_driver(tmp_path, monkeypatch):
         if argv[:2] == ["pkill", "-f"]:
             calls["cleanup"] += 1
             return R()
+        if len(argv) >= 3 and argv[0] == "docker" and argv[1] == "rm":
+            return R()
         raise AssertionError(f"unexpected argv: {argv}")
 
     monkeypatch.setattr("skye_operator_ui.supervisor.subprocess.run", fake_run)
@@ -252,6 +254,8 @@ def test_precheck_fails_if_residual_remains_after_cleanup(tmp_path, monkeypatch)
             return R()  # always residual
         if argv[:2] == ["pkill", "-f"]:
             return R()
+        if len(argv) >= 3 and argv[0] == "docker" and argv[1] == "rm":
+            return R()
         raise AssertionError(f"unexpected argv: {argv}")
 
     monkeypatch.setattr("skye_operator_ui.supervisor.subprocess.run", fake_run)
@@ -266,6 +270,33 @@ def test_precheck_fails_if_residual_remains_after_cleanup(tmp_path, monkeypatch)
     ok, reason = sup.start("thor", UiMode.dagger)
     assert not ok
     assert "残留" in reason
+
+
+def test_dagger_precheck_appends_docker_rm_when_absent(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(list(argv))
+        if argv[:2] == ["pgrep", "-fc"]:
+            return subprocess.CompletedProcess(argv, 1, "0", "")
+        if argv[:2] == ["pkill", "-f"]:
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        if argv[:3] == ["docker", "rm", "-f"]:
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        raise AssertionError(f"unexpected argv: {argv}")
+
+    monkeypatch.setattr("skye_operator_ui.supervisor.subprocess.run", fake_run)
+    monkeypatch.setattr("skye_operator_ui.supervisor.time.sleep", lambda _s: None)
+
+    cfg = _precheck_cfg(tmp_path)
+    sup = SessionSupervisor(
+        repo_root=str(tmp_path),
+        cfg=cfg,
+        health_fn=lambda _k: False,
+    )
+    ok, reason = sup.start("thor", UiMode.dagger)
+    assert ok, reason
+    assert any(c[:4] == ["docker", "rm", "-f", "skye_marvin_m6"] for c in calls)
 
 
 def test_teleop_record_precheck_runs_teleop_check(tmp_path, monkeypatch):

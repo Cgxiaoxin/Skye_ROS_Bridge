@@ -162,11 +162,58 @@ def test_teardown_host_disable_default(tmp_path, monkeypatch):
     assert not any(c[0:2] == ["docker", "run"] for c in calls)
 
 
+def test_teardown_teleop_mode_defaults_host_path(tmp_path, monkeypatch):
+    disable_script = Path(tmp_path) / "scripts" / "disable_leader_dynamixel.py"
+    disable_script.parent.mkdir(parents=True)
+    disable_script.write_text("# stub\n")
+    (Path(tmp_path) / "marvin_ws").mkdir()
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(
+        "skye_operator_ui.teardown.subprocess.run", fake_run
+    )
+    run_safe_teardown(str(tmp_path), {"teardown": {"disable_leader": True}}, mode=UiMode.teleop_record)
+
+    assert len(calls) == 1
+    assert str(disable_script) in calls[0]
+    assert not any(c[:3] == ["docker", "rm", "-f"] for c in calls)
+
+
+def test_teardown_dagger_mode_defaults_docker_rm_and_disable(tmp_path, monkeypatch):
+    disable_script = Path(tmp_path) / "scripts" / "disable_leader_dynamixel.py"
+    disable_script.parent.mkdir(parents=True)
+    disable_script.write_text("# stub\n")
+    (Path(tmp_path) / "marvin_ws").mkdir()
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(
+        "skye_operator_ui.teardown.subprocess.run", fake_run
+    )
+    run_safe_teardown(
+        str(tmp_path),
+        {"teardown": {"disable_leader": True, "marvin_image": "img:1"}},
+        mode=UiMode.dagger,
+    )
+
+    assert len(calls) == 2
+    assert calls[0][:4] == ["docker", "rm", "-f", "skye_marvin_m6"]
+    assert calls[1][0:3] == ["docker", "run", "--rm"]
+    assert "img:1" in calls[1]
+
+
 def test_supervisor_stop_invokes_safe_teardown(tmp_path, monkeypatch):
     calls = []
 
-    def fake_teardown(repo_root, cfg):
-        calls.append((repo_root, cfg.get("teardown", {})))
+    def fake_teardown(repo_root, cfg, *, mode=None):
+        calls.append((repo_root, cfg.get("teardown", {}), mode))
         return []
 
     monkeypatch.setattr(
@@ -191,3 +238,4 @@ def test_supervisor_stop_invokes_safe_teardown(tmp_path, monkeypatch):
     assert ok
     assert len(calls) == 1
     assert calls[0][0] == str(tmp_path)
+    assert calls[0][2] == UiMode.teleop_record

@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from skye_operator_ui.session_state import UiMode
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONTAINER = "skye_marvin_m6"
@@ -21,7 +23,29 @@ def _teardown_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
     return dict(raw) if isinstance(raw, dict) else {}
 
 
-def run_safe_teardown(repo_root: str, cfg: dict[str, Any]) -> list[str]:
+def marvin_container_name(cfg: dict[str, Any]) -> str:
+    tcfg = _teardown_cfg(cfg)
+    return str(tcfg.get("marvin_container_name") or DEFAULT_CONTAINER)
+
+
+def teardown_effective_bool(
+    cfg: dict[str, Any], key: str, mode: UiMode | None
+) -> bool:
+    """Mode defaults when ``teardown.<key>`` is omitted (teleop host, dagger docker)."""
+    tcfg = _teardown_cfg(cfg)
+    if key in tcfg:
+        return bool(tcfg[key])
+    if mode == UiMode.dagger:
+        return True
+    return False
+
+
+def run_safe_teardown(
+    repo_root: str,
+    cfg: dict[str, Any],
+    *,
+    mode: UiMode | None = None,
+) -> list[str]:
     """Optionally remove Marvin container then (optionally) disable leader Dynamixel.
 
     Disable prefers host Python when ``disable_via_docker`` is false (default).
@@ -29,18 +53,17 @@ def run_safe_teardown(repo_root: str, cfg: dict[str, Any]) -> list[str]:
     """
     tcfg = _teardown_cfg(cfg)
     notes: list[str] = []
-    name = str(tcfg.get("marvin_container_name") or DEFAULT_CONTAINER)
+    name = marvin_container_name(cfg)
     docker_timeout = float(tcfg.get("docker_rm_timeout_s", 20.0))
     disable_timeout = float(tcfg.get("disable_timeout_s", 60.0))
     disable_leader = bool(tcfg.get("disable_leader", True))
-    docker_rm = bool(tcfg.get("docker_rm", False))
+    docker_rm = teardown_effective_bool(cfg, "docker_rm", mode)
     image = str(
         tcfg.get("marvin_image")
         or os.environ.get("IMAGE")
         or DEFAULT_IMAGE
     )
-    # Host teleop era: prefer host disable script (dynamixel_sdk on host).
-    via_docker = bool(tcfg.get("disable_via_docker", False))
+    via_docker = teardown_effective_bool(cfg, "disable_via_docker", mode)
 
     if docker_rm:
         note = _docker_rm_f(name, timeout_s=docker_timeout)

@@ -85,3 +85,28 @@ cd skye_ros2_ws/src/skye_operator_ui/web && npm run build  # pass
 ## Notes
 
 - No JS test files exist in the web package; verified `TeleopPanel.svelte` manually by code inspection: `commandBusy = !!busyOp || !!pendingOp` gates all main buttons and both leader gate toggles.
+
+---
+
+# Task final fix report: Operator UI host teleop integration review
+
+**Date:** 2026-11-03  
+**Commit:** `2a7b158` — `fix(operator-ui): mode-aware teardown for DAgger vs teleop`
+
+## Status
+
+Complete — DAgger docker teardown/cleanup restored; teleop_record stays host path.
+
+## Changes
+
+1. **Teardown:** `teardown_effective_bool` + `run_safe_teardown(..., mode=)` — absent `docker_rm` / `disable_via_docker`: teleop_record → false/false, dagger → true/true.
+2. **Supervisor:** passes session mode on stop; dagger precheck appends `docker rm -f` when cleanup list lacks it.
+3. **Config/docs:** `default.yaml` documents mode profiles; `Operator_UI使用说明.md` matches behavior; removed unused `_TELEOP_MARVIN_LAUNCH`.
+4. **Tests:** mode default tests in `test_teardown.py`; dagger precheck docker rm in `test_supervisor.py`.
+
+## Verification
+
+```bash
+cd skye_ros2_ws/src/skye_operator_ui && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=. python -m pytest test/ -q
+# 115 passed, 1 skipped
+```

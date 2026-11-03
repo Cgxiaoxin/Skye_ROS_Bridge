@@ -17,11 +17,6 @@ from skye_operator_ui.session_state import UiMode
 # same contract as docs/Thor_Orin_遥操启动.md — and also exported as ROBOT_PROFILE
 # / ROBOT_IP so nested docker/launch paths stay consistent.
 
-_TELEOP_MARVIN_LAUNCH = (
-    "source /marvin_ws/install/setup.bash && "
-    "ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py "
-    "use_keyboard:=false"
-)
 _HITL_MARVIN_LAUNCH = (
     "source /marvin_ws/install/setup.bash && "
     "ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento_hitl.launch.py "
