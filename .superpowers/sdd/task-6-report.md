@@ -19,3 +19,10 @@
 
 ## Commit
 See git log for `feat(teleop): host leader arm gate without Marvin docker`.
+
+## Fix (Task 6 review — Important)
+- **Issue:** Manual `leader_arm_gate.sh … off` did not export `ROBOT_PROFILE`; `disable_leader_dynamixel.py` could not load YAML ports unless env was set externally (Operator UI sets it via `run_leader_arm_gate`).
+- **Change:** `export ROBOT_PROFILE="$PROFILE"` on the `off` branch before `disable_leader_dynamixel.py` (`PROFILE` from `${ROBOT_PROFILE:-thor}`).
+- **Test:** `scripts/tests/test_leader_arm_gate_script.py` — asserts export precedes disable in the `off` block.
+- **Pytest:** `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=skye_ros2_ws/src/skye_operator_ui python3 -m pytest skye_ros2_ws/src/skye_operator_ui/test/test_disable_leader_side.py skye_ros2_ws/src/skye_operator_ui/test/test_ros_bridge.py scripts/tests/test_leader_arm_gate_script.py -q` → **22 passed**.
+- **Commit:** `fix(teleop): export ROBOT_PROFILE on leader_arm_gate off`

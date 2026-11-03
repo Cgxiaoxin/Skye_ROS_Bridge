@@ -51,6 +51,7 @@ _source_ros() {
 if [[ "$ACTION" == "off" ]]; then
   pkill -f "$NODE" || true
   sleep 1
+  export ROBOT_PROFILE="$PROFILE"
   exec python3 "${SCRIPT_DIR}/disable_leader_dynamixel.py" --side "$SIDE"
 fi
 
