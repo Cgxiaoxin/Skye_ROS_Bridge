@@ -79,3 +79,27 @@ def test_stale_flag_when_stamp_old():
         now_s=NOW,
     )
     assert coach["left"]["stale"] is True
+
+
+def test_visible_on_fresh_failed_even_if_idle():
+    coach = build_sync_coach(
+        left=_side(outcome="failed"),
+        right=_side(outcome="active", stamp=999.0),
+        teleop_state="IDLE",
+        hitl_mode=None,
+        leader_arms={"left_enabled": True, "right_enabled": True},
+        now_s=NOW,
+    )
+    assert coach["visible"] is True
+
+
+def test_hidden_on_stale_failed():
+    coach = build_sync_coach(
+        left=_side(outcome="failed", stamp=NOW - 5.0),
+        right=None,
+        teleop_state="IDLE",
+        hitl_mode=None,
+        leader_arms={"left_enabled": True, "right_enabled": True},
+        now_s=NOW,
+    )
+    assert coach["visible"] is False

@@ -921,6 +921,24 @@ body {
   color: var(--wait);
 }
 
+.sync-coach-pill-fail {
+  background: var(--danger-tint);
+  color: var(--danger);
+}
+
+.sync-coach-fail {
+  margin: 0 0 0.55rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.sync-coach-fail-side {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--danger);
+}
+
 .sync-coach-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

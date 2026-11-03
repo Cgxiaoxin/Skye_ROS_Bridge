@@ -14,6 +14,22 @@ def _phase_active(teleop_state: str | None, hitl_mode: str | None) -> bool:
     return False
 
 
+def _fresh_outcome(
+    side: dict[str, Any] | None,
+    now_s: float,
+    fresh_s: float,
+    outcomes: set[str],
+) -> bool:
+    if not side or side.get("disabled"):
+        return False
+    stamp = side.get("stamp_s")
+    if not isinstance(stamp, (int, float)):
+        return False
+    if (now_s - float(stamp)) > fresh_s:
+        return False
+    return side.get("outcome") in outcomes
+
+
 def _decorate_side(
     raw: dict[str, Any] | None,
     *,
@@ -82,5 +98,9 @@ def build_sync_coach(
     right_view = _decorate_side(
         right, side="right", enabled=right_en, now_s=now_s, fresh_s=fresh_s
     )
-    visible = _phase_active(teleop_state, hitl_mode)
+    phase = _phase_active(teleop_state, hitl_mode)
+    fresh_failed = _fresh_outcome(left_view, now_s, fresh_s, {"failed"}) or _fresh_outcome(
+        right_view, now_s, fresh_s, {"failed"}
+    )
+    visible = phase or fresh_failed
     return {"visible": visible, "left": left_view, "right": right_view}

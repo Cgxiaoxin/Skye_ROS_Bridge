@@ -91,7 +91,7 @@ cd skye_ros2_ws/src/skye_operator_ui/web && npm run build  # pass
 # Task final fix report: Operator UI host teleop integration review
 
 **Date:** 2026-11-03  
-**Commit:** `2a7b158` — `fix(operator-ui): mode-aware teardown for DAgger vs teleop`
+**Commit:** `fb8515f` — `fix(operator-ui): mode-aware teardown for DAgger vs teleop`
 
 ## Status
 
@@ -110,3 +110,49 @@ Complete — DAgger docker teardown/cleanup restored; teleop_record stays host p
 cd skye_ros2_ws/src/skye_operator_ui && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=. python -m pytest test/ -q
 # 115 passed, 1 skipped
 ```
+
+---
+
+# Task final fix report: Sync Coach whole-branch review (I1/I2)
+
+**Date:** 2026-11-03  
+**Branch:** `integrate/dev-reboot-rebased`
+
+## Status
+
+Complete — Important findings I1 (fresh failed visibility) and I2 (failed outcome UI + TeleopPanel placement) fixed.
+
+## Changes
+
+### I1 — `sync_coach.py`
+
+- Added `_fresh_outcome()` for stamp freshness checks on enabled sides.
+- `visible = phase_active OR fresh_failed` — **not** fresh `active` outside phase (avoids TRANSIENT_LOCAL latch stickiness after SYNCED).
+- Fresh `outcome=failed` keeps coach visible briefly after sync phase ends (e.g. timeout while teleop → IDLE).
+
+### I2 — Web UI
+
+- **`SyncCoach.svelte`:** FAILED mode pill when any side failed; top failure banner; failed side cards use warn styling and show `raw_text` first line if it contains `同步失败`, else generic `同步失败；已停止并关闭力矩`.
+- **`TeleopPanel.svelte`:** `<SyncCoach>` placed immediately after sync button + leader-gate block, before other ops buttons (`sync-coach-slot` full-width in action grid).
+- **`styles.css`:** `.sync-coach-fail`, `.sync-coach-fail-side`, `.sync-coach-pill-fail`.
+
+### Tests — `test_sync_coach.py`
+
+- Kept `test_hidden_when_synced_even_if_progress_fresh` (outcome `active`, stamp fresh → hidden).
+- Added `test_visible_on_fresh_failed_even_if_idle`.
+- Added `test_hidden_on_stale_failed`.
+
+## Verification
+
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=skye_ros2_ws/src/skye_operator_ui:$PYTHONPATH python -m pytest skye_ros2_ws/src/skye_operator_ui/test/test_sync_coach.py skye_ros2_ws/src/skye_operator_ui/test/test_snapshot.py -v
+# 15 passed in 0.01s
+
+cd skye_ros2_ws/src/skye_operator_ui/web && npm run build
+# vite v5.4.21 — ✓ built in 355ms
+```
+
+## Concerns
+
+- None for this fix scope; DAgger panel still renders SyncCoach below its action grid (unchanged).
+
