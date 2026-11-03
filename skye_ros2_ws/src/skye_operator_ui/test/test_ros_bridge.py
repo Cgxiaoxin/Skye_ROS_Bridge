@@ -40,6 +40,7 @@ def _bare_bridge() -> RosBridge:
     bridge._robot_profile = None
     bridge._script_runner = lambda *args, **kwargs: (True, "")
     bridge._dispatch_lock = threading.Lock()
+    bridge._sync_progress = {"left": None, "right": None}
     return bridge
 
 
@@ -154,6 +155,28 @@ def test_await_future_times_out():
     start = time.monotonic()
     assert RosBridge._await_future(future, 0.05) is False
     assert time.monotonic() - start < 1.0
+
+
+def test_ingest_sync_progress_parses_and_stores():
+    import json
+
+    bridge = _bare_bridge()
+    payload = {
+        "side": "right",
+        "text": "[right] HOLD_SETTLING：6/8 轴当前达标\n[right] J1: |position error|=0.2 rad > 0.16 rad",
+        "outcome": "active",
+        "stamp_s": 42.0,
+    }
+    bridge._ingest_sync_progress(json.dumps(payload, ensure_ascii=False))
+    assert bridge._sync_progress["right"]["within"] == 6
+    assert bridge._sync_progress["right"]["side"] == "right"
+
+
+def test_clear_session_cache_drops_sync_progress():
+    bridge = _bare_bridge()
+    bridge._sync_progress = {"left": {"side": "left"}, "right": {"side": "right"}}
+    bridge.clear_session_cache()
+    assert bridge._sync_progress == {"left": None, "right": None}
 
 
 def test_clear_session_cache_resets_latched_state():

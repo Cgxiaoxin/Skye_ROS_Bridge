@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import threading
@@ -11,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from skye_operator_ui.commands import validate_op
 from skye_operator_ui.leader_arms import LeaderArmGate
+from skye_operator_ui.sync_progress_parse import parse_sync_progress_message
 from skye_operator_ui.session_state import UiMode
 
 if TYPE_CHECKING:
@@ -172,6 +174,7 @@ class RosBridge:
         self._right_gripper: float | None = None
         self._robot_state: list[int] | None = None
         self._recording_active = False
+        self._sync_progress: dict[str, Any] = {"left": None, "right": None}
 
         state_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -181,6 +184,12 @@ class RosBridge:
         teleop_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        progress_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
@@ -227,6 +236,14 @@ class RosBridge:
             teleop_qos,
             callback_group=self._cb_group,
         )
+        for side in ("left", "right"):
+            node.create_subscription(
+                String,
+                f"/leader_arm/{side}/sync_progress",
+                self._sync_progress_callback,
+                progress_qos,
+                callback_group=self._cb_group,
+            )
         if ControlMode is not None:
             node.create_subscription(
                 ControlMode,
@@ -257,6 +274,7 @@ class RosBridge:
         self._align_stamp = None
         self._control_mode_stamp = None
         self._recording_active = False
+        self._sync_progress = {"left": None, "right": None}
 
     def recording_active(self) -> bool:
         return self._recording_active
@@ -289,6 +307,8 @@ class RosBridge:
             "health": self._health_map(),
             "recording_active": self._recording_active,
             "leader_arms": self._leader_gate.snapshot(),
+            "sync_progress_left": self._sync_progress.get("left"),
+            "sync_progress_right": self._sync_progress.get("right"),
         }
 
     def health(self, key: str) -> bool:
@@ -417,6 +437,22 @@ class RosBridge:
     def _align_status_callback(self, msg: Any) -> None:
         self._align_status = msg.data
         self._align_stamp = time.monotonic()
+
+    def _sync_progress_callback(self, msg: Any) -> None:
+        self._ingest_sync_progress(msg.data)
+
+    def _ingest_sync_progress(self, data: str) -> None:
+        try:
+            payload = json.loads(data)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return
+        if not isinstance(payload, dict):
+            return
+        parsed = parse_sync_progress_message(payload)
+        side = parsed.get("side")
+        if side not in ("left", "right"):
+            return
+        self._sync_progress[side] = parsed
 
     def _control_mode_callback(self, msg: Any) -> None:
         self._control_mode_stamp = self._touch_stamp(msg)
