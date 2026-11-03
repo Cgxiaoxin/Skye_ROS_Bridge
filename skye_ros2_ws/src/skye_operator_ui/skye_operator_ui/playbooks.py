@@ -34,6 +34,8 @@ _CONTROLLER_IP = {
     "orin": "6.6.7.190",
 }
 
+_DOMAIN = {"thor": "20", "orin": "21"}
+
 
 def _step_timeout(cfg: dict[str, Any]) -> float:
     return float(cfg.get("step_timeout_s", 120.0))
@@ -44,12 +46,21 @@ def _base_env(profile: str, repo_root: str, cfg: dict[str, Any]) -> dict[str, st
     env = {
         "ROBOT_PROFILE": key,
         "ROBOT_IP": _CONTROLLER_IP.get(key, _CONTROLLER_IP["thor"]),
-        "ROS_DOMAIN_ID": str(cfg.get("ros_domain_id", 21)),
-        "RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
-        "FASTRTPS_DEFAULT_PROFILES_FILE": os.path.join(
-            repo_root, "marvin_ws", "fastrtps_no_shm.xml"
+        "ROS_DOMAIN_ID": str(
+            cfg.get("ros_domain_id", _DOMAIN.get(key, "21"))
         ),
+        "RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
     }
+    return env
+
+
+def _dagger_base_env(
+    profile: str, repo_root: str, cfg: dict[str, Any]
+) -> dict[str, str]:
+    env = _base_env(profile, repo_root, cfg)
+    env["FASTRTPS_DEFAULT_PROFILES_FILE"] = os.path.join(
+        repo_root, "marvin_ws", "fastrtps_no_shm.xml"
+    )
     launch_cmd = cfg.get("playbook", {}).get("marvin_launch_cmd")
     if launch_cmd:
         env["MARVIN_LAUNCH_CMD"] = str(launch_cmd)
@@ -102,30 +113,21 @@ def _teleop_playbook(
 ) -> list[dict[str, Any]]:
     timeout_s = _step_timeout(cfg)
     env = _base_env(profile, repo_root, cfg)
-    marvin_env = copy.copy(env)
-    marvin_env.setdefault("MARVIN_LAUNCH_CMD", _TELEOP_MARVIN_LAUNCH)
+    key = profile.strip().lower()
     return [
         _make_step(
-            "driver",
-            [os.path.join(repo_root, "scripts", "start_skye_for_factr.sh"), profile],
+            "teleop",
+            [
+                "bash",
+                os.path.join(repo_root, "scripts", "teleop.sh"),
+                "start",
+                "--robot",
+                key,
+                "--skip-precheck",
+            ],
             env,
-            "driver",
+            "teleop",
             timeout_s,
-        ),
-        _make_step(
-            "marvin",
-            _marvin_argv(repo_root, cfg, profile),
-            marvin_env,
-            "marvin",
-            timeout_s,
-        ),
-        _make_step(
-            "align",
-            [os.path.join(repo_root, "scripts", "start_follower_align.sh"), profile],
-            env,
-            "align",
-            timeout_s,
-            optional=True,
         ),
         _make_step(
             "recorder",
@@ -143,7 +145,7 @@ def _dagger_playbook(
     cfg: dict[str, Any],
 ) -> list[dict[str, Any]]:
     timeout_s = _step_timeout(cfg)
-    env = _base_env(profile, repo_root, cfg)
+    env = _dagger_base_env(profile, repo_root, cfg)
     marvin_env = copy.copy(env)
     marvin_env["MARVIN_LAUNCH_CMD"] = marvin_env.get(
         "MARVIN_LAUNCH_CMD", _HITL_MARVIN_LAUNCH

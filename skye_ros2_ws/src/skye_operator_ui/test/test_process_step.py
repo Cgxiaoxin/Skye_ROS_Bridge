@@ -61,21 +61,28 @@ def test_playbook_for_teleop_record():
     repo = "/data/repo"
     cfg = {"step_timeout_s": 90.0}
     steps = playbook_for(UiMode.teleop_record, repo, "thor", cfg)
-    assert steps[0]["id"] == "driver"
-    assert steps[0]["argv"] == [f"{repo}/scripts/start_skye_for_factr.sh", "thor"]
-    assert steps[0]["env"]["ROBOT_PROFILE"] == "thor"
-    assert steps[0]["env"]["ROBOT_IP"] == "6.6.7.191"
-    assert steps[0]["health_key"] == "driver"
-    assert steps[1]["id"] == "marvin"
-    assert steps[1]["argv"] == [
-        f"{repo}/scripts/run_marvin_m6_impedance.sh",
+    assert [s["id"] for s in steps] == ["teleop", "recorder"]
+    assert steps[0]["argv"] == [
+        "bash",
+        f"{repo}/scripts/teleop.sh",
+        "start",
+        "--robot",
         "thor",
+        "--skip-precheck",
     ]
-    assert steps[1]["env"]["ROBOT_PROFILE"] == "thor"
-    assert steps[1]["env"]["ROBOT_IP"] == "6.6.7.191"
-    optional = [s for s in steps if s.get("optional")]
-    align = next(s for s in optional if s["id"] == "align")
-    assert align["argv"] == [f"{repo}/scripts/start_follower_align.sh", "thor"]
+    assert steps[0]["health_key"] == "teleop"
+    assert steps[0]["env"]["ROBOT_PROFILE"] == "thor"
+    assert steps[0]["env"]["ROS_DOMAIN_ID"] == "20"
+    assert steps[0]["env"]["ROBOT_IP"] == "6.6.7.191"
+    assert "FASTRTPS_DEFAULT_PROFILES_FILE" not in steps[0]["env"]
+    assert steps[1]["id"] == "recorder"
+    assert steps[1]["health_key"] == "recorder"
+
+
+def test_playbook_teleop_record_orin_domain():
+    steps = playbook_for(UiMode.teleop_record, "/repo", "orin", {})
+    assert steps[0]["env"]["ROS_DOMAIN_ID"] == "21"
+    assert steps[0]["env"]["ROBOT_IP"] == "6.6.7.190"
 
 
 def test_playbook_for_dagger():
@@ -128,19 +135,6 @@ def test_process_step_terminate_killpg_permission_error():
     ):
         step.terminate(grace_s=0.1)
     mock_terminate.assert_called()
-
-
-def test_playbook_marvin_start_cmd_override():
-    repo = "/data/repo"
-    cfg = {
-        "step_timeout_s": 60.0,
-        "playbook": {
-            "marvin_start_cmd": ["/custom/marvin_wrapper.sh", "--non-interactive"],
-        },
-    }
-    steps = playbook_for(UiMode.teleop_record, repo, "thor", cfg)
-    marvin = next(s for s in steps if s["id"] == "marvin")
-    assert marvin["argv"] == ["/custom/marvin_wrapper.sh", "--non-interactive"]
 
 
 def test_playbook_override_takes_priority():
