@@ -80,6 +80,10 @@ def main(args=None) -> None:
             bridge.dispatch("switch_stop")
         except Exception:  # noqa: BLE001 - teardown continues
             node.get_logger().warning("switch_stop during teardown failed")
+        try:
+            bridge.dispatch("hold_current")
+        except Exception:  # noqa: BLE001 - teardown continues
+            node.get_logger().warning("hold_current during teardown failed")
         bridge.set_session_mode(None)
         leader_gate.reset()
 

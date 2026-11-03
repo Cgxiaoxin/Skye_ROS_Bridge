@@ -1,4 +1,4 @@
-"""Best-effort session teardown: remove Marvin Docker + disable leader DXL."""
+"""Best-effort session teardown: optional Marvin Docker rm + disable leader DXL."""
 
 from __future__ import annotations
 
@@ -22,9 +22,9 @@ def _teardown_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_safe_teardown(repo_root: str, cfg: dict[str, Any]) -> list[str]:
-    """Remove Marvin container then (optionally) disable leader Dynamixel.
+    """Optionally remove Marvin container then (optionally) disable leader Dynamixel.
 
-    Disable prefers a one-shot Docker run (host often lacks dynamixel_sdk).
+    Disable prefers host Python when ``disable_via_docker`` is false (default).
     Never raises. Returns human-readable notes for any failures.
     """
     tcfg = _teardown_cfg(cfg)
@@ -33,17 +33,19 @@ def run_safe_teardown(repo_root: str, cfg: dict[str, Any]) -> list[str]:
     docker_timeout = float(tcfg.get("docker_rm_timeout_s", 20.0))
     disable_timeout = float(tcfg.get("disable_timeout_s", 60.0))
     disable_leader = bool(tcfg.get("disable_leader", True))
+    docker_rm = bool(tcfg.get("docker_rm", False))
     image = str(
         tcfg.get("marvin_image")
         or os.environ.get("IMAGE")
         or DEFAULT_IMAGE
     )
-    # via_docker default True — host Python usually has no dynamixel_sdk.
-    via_docker = bool(tcfg.get("disable_via_docker", True))
+    # Host teleop era: prefer host disable script (dynamixel_sdk on host).
+    via_docker = bool(tcfg.get("disable_via_docker", False))
 
-    note = _docker_rm_f(name, timeout_s=docker_timeout)
-    if note:
-        notes.append(note)
+    if docker_rm:
+        note = _docker_rm_f(name, timeout_s=docker_timeout)
+        if note:
+            notes.append(note)
 
     if disable_leader:
         note = _disable_leader(

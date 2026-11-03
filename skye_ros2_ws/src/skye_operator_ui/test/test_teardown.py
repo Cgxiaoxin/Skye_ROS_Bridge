@@ -1,5 +1,6 @@
 """Tests for session safe teardown helpers."""
 
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -14,6 +15,7 @@ def test_safe_teardown_rms_container_then_disables(tmp_path):
             "marvin_container_name": "skye_marvin_m6",
             "disable_leader": True,
             "disable_via_docker": True,
+            "docker_rm": True,
             "marvin_image": "test-image:tag",
             "docker_rm_timeout_s": 5,
             "disable_timeout_s": 5,
@@ -44,6 +46,7 @@ def test_safe_teardown_falls_back_to_host_python(tmp_path):
             "marvin_container_name": "skye_marvin_m6",
             "disable_leader": True,
             "disable_via_docker": True,
+            "docker_rm": True,
             "marvin_image": "test-image:tag",
         }
     }
@@ -71,6 +74,7 @@ def test_safe_teardown_skips_disable_when_configured_off(tmp_path):
         "teardown": {
             "marvin_container_name": "skye_marvin_m6",
             "disable_leader": False,
+            "docker_rm": True,
         }
     }
     with patch("skye_operator_ui.teardown.subprocess.run") as run:
@@ -82,7 +86,13 @@ def test_safe_teardown_skips_disable_when_configured_off(tmp_path):
 
 
 def test_safe_teardown_continues_when_docker_rm_fails(tmp_path):
-    cfg = {"teardown": {"disable_leader": False, "marvin_container_name": "x"}}
+    cfg = {
+        "teardown": {
+            "disable_leader": False,
+            "marvin_container_name": "x",
+            "docker_rm": True,
+        }
+    }
     with patch("skye_operator_ui.teardown.subprocess.run") as run:
         run.side_effect = FileNotFoundError("docker missing")
         notes = run_safe_teardown(str(tmp_path), cfg)
@@ -112,6 +122,44 @@ def _mock_cfg():
             ]
         },
     }
+
+
+def test_teardown_skips_docker_rm_when_disabled(tmp_path, monkeypatch):
+    cfg = {"teardown": {"docker_rm": False, "disable_leader": False}}
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(
+        "skye_operator_ui.teardown.subprocess.run", fake_run
+    )
+    run_safe_teardown(str(tmp_path), cfg)
+    assert not any(cmd[:3] == ["docker", "rm", "-f"] for cmd in calls)
+
+
+def test_teardown_host_disable_default(tmp_path, monkeypatch):
+    disable_script = Path(tmp_path) / "scripts" / "disable_leader_dynamixel.py"
+    disable_script.parent.mkdir(parents=True)
+    disable_script.write_text("# stub\n")
+    (Path(tmp_path) / "marvin_ws").mkdir()
+
+    cfg = {"teardown": {"disable_leader": True, "docker_rm": False}}
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(
+        "skye_operator_ui.teardown.subprocess.run", fake_run
+    )
+    run_safe_teardown(str(tmp_path), cfg)
+
+    assert len(calls) == 1
+    assert str(disable_script) in calls[0]
+    assert not any(c[0:2] == ["docker", "run"] for c in calls)
 
 
 def test_supervisor_stop_invokes_safe_teardown(tmp_path, monkeypatch):
