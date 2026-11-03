@@ -8,7 +8,10 @@ from setuptools import find_packages, setup
 
 
 package_name = "skye_factr_teleop"
-config_files = glob(os.path.join("config", "**", "*.yaml"), recursive=True)
+config_files = (
+    glob(os.path.join("config", "**", "*.yaml"), recursive=True)
+    + glob(os.path.join("config", "*.xml"))
+)
 launch_files = glob(os.path.join("launch", "*.launch.py"))
 
 data_files = [
