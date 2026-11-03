@@ -88,12 +88,14 @@ def run_leader_arm_gate(
     container: str,
     timeout_s: float = LEADER_GATE_TIMEOUT_S,
     image: str | None = None,
+    robot_profile: str | None = None,
 ) -> tuple[bool, str]:
     script = Path(repo_root) / "scripts" / "leader_arm_gate.sh"
     env = os.environ.copy()
-    env["MARVIN_CONTAINER_NAME"] = container
-    if image:
-        env["MARVIN_IMAGE"] = image
+    if robot_profile:
+        env["ROBOT_PROFILE"] = robot_profile
+    elif "ROBOT_PROFILE" not in env:
+        env["ROBOT_PROFILE"] = "thor"
     try:
         result = subprocess.run(
             [str(script), side, action],
@@ -109,11 +111,6 @@ def run_leader_arm_gate(
         return False, f"找不到小臂开关脚本: {script}"
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "leader_arm_gate failed").strip()
-        if "No such container" in detail:
-            return (
-                False,
-                f"Marvin 容器 {container} 未运行，无法开关小臂。请确认会话已启动且 marvin 正常。",
-            )
         return False, detail
     return True, ""
 
@@ -147,6 +144,7 @@ class RosBridge:
 
         self._node = node
         self._ui_mode: UiMode | None = None
+        self._robot_profile: str | None = None
         self._cb_group = ReentrantCallbackGroup()
         self._repo_root = repo_root
         self._leader_gate = leader_gate or LeaderArmGate()
@@ -244,7 +242,11 @@ class RosBridge:
     def set_session_mode(self, mode: UiMode | None) -> None:
         self._ui_mode = mode
         if mode is None:
+            self._robot_profile = None
             self.clear_session_cache()
+
+    def set_session_profile(self, profile: str | None) -> None:
+        self._robot_profile = profile
 
     def clear_session_cache(self) -> None:
         """Drop latched session state so a stopped session shows no stale values."""
@@ -342,6 +344,7 @@ class RosBridge:
                     container=self._leader_gate_container,
                     timeout_s=self._leader_gate_timeout_s,
                     image=self._leader_gate_image,
+                    robot_profile=self._robot_profile,
                 )
                 if not ok:
                     return False, reason

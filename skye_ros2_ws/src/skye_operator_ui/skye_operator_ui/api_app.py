@@ -195,6 +195,7 @@ def create_app(
                 content={"ok": False, "reason": reason},
             )
 
+        bridge.set_session_profile(body.profile)
         bridge.set_session_mode(mode)
         return {"ok": True}
 

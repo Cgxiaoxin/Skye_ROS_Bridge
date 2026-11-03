@@ -17,6 +17,8 @@ import os
 import sys
 from pathlib import Path
 
+import yaml
+
 _SIDE_ENV_KEYS: dict[str, str] = {
     "left": "ROBOT_LEADER_DYNAMIXEL_PORT_LEFT",
     "right": "ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT",
@@ -55,6 +57,27 @@ def _load_binding_env(marvin_ws: Path) -> None:
         val = val.strip().strip("'").strip('"')
         if key and key not in os.environ:
             os.environ[key] = val
+
+
+def _ports_from_host_yaml(repo: Path, profile: str) -> dict[str, str]:
+    pkg = repo / "skye_ros2_ws/src/skye_factr_teleop/config"
+    base = pkg / "orin" if profile == "orin" else pkg
+    out: dict[str, str] = {}
+    for side in ("left", "right"):
+        doc = yaml.safe_load((base / f"grav_comp_m6_{side}.yaml").read_text(encoding="utf-8"))
+        out[side] = str(doc["dynamixel"]["dynamixel_port"])
+    return out
+
+
+def _fill_ports_from_profile_if_missing(repo: Path) -> None:
+    profile = os.environ.get("ROBOT_PROFILE", "").strip().lower()
+    if profile not in ("thor", "orin"):
+        return
+    ports = _ports_from_host_yaml(repo, profile)
+    for side, port in ports.items():
+        key = _SIDE_ENV_KEYS[side]
+        if not os.environ.get(key):
+            os.environ[key] = port
 
 
 def _port_path(name: str) -> str:
@@ -105,14 +128,15 @@ def main() -> int:
 
     marvin_ws = Path(os.environ.get("MARVIN_WS") or (_repo_root() / "marvin_ws"))
     _load_binding_env(marvin_ws)
+    _fill_ports_from_profile_if_missing(_repo_root())
 
     try:
         import dynamixel_sdk  # noqa: F401
     except ImportError:
         print(
             "ERROR: dynamixel_sdk not importable in this Python "
-            f"({sys.executable}). Prefer leader_arm_gate.sh / docker "
-            "(PYTHONPATH=/marvin_ws/install/local/lib/python3.10/dist-packages).",
+            f"({sys.executable}). Install dynamixel_sdk on the host or run via "
+            "leader_arm_gate.sh with MARVIN_WS PYTHONPATH configured.",
             file=sys.stderr,
         )
         return 2

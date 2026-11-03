@@ -1,27 +1,21 @@
-# Task 6 Report: Single-side `follower_align`
+# Task 6 Report: Host leader arm gate + YAML ports
 
 ## Status
-**Complete** — `/mode/align_follower` accepts `align_follower`, `align_follower_left`, and `align_follower_right`.
+**DONE**
 
 ## Changes
-- **`align_logic.py`**: Added `combine_active_phases()` (folds active session phases via existing `combine_phase` rules).
-- **`align_keys.py`**: Added `parse_align_sides()` (no ROS deps; unit-tested).
-- **`follower_align_node.py`**: Parses all three payloads; tracks `_align_active_left/right`; starts sessions, leader freshness, abs publish, `on_tick`, and phase combine only for active arms; per-side align motion rates on inactive arms stay at restore values.
-- **`test_align_logic.py`**: Tests for `combine_active_phases`, `parse_align_sides`, and empty-list idle.
+- `scripts/leader_arm_gate.sh`: host `pkill skye_factr_teleop_{side}` + disable script; `on` sources `skye_ros2_ws` + `setup_factr_teleop_env.sh`, launches `start_teleop_m6_{side}.launch.py`.
+- `scripts/disable_leader_dynamixel.py`: `_ports_from_host_yaml` / `_fill_ports_from_profile_if_missing` when `ROBOT_PROFILE` is thor|orin and env ports unset.
+- `ros_bridge.py`: `set_session_profile`, `run_leader_arm_gate` exports `ROBOT_PROFILE`; removed Marvin container error translation.
+- `api_app.py`: `set_session_profile(body.profile)` on session start.
 
 ## Tests
-```
-cd skye_ros2_ws && PYTHONPATH=src/skye_follower_align:src/skye_operator_ui PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-  python3 -m pytest src/skye_follower_align/test/ -v
-```
-**12 passed** (2026-10-03).
+- Added `test_ports_from_profile_yaml`, `test_run_leader_arm_gate_sets_robot_profile`, updated docker-centric ros_bridge tests.
+- `21 passed` in `test_disable_leader_side.py` + `test_ros_bridge.py`.
 
-## `/align/status`
-Unchanged string set: `IDLE`, `ALIGNING`, `ALIGNED`, `TIMEOUT_WARN`.
-
-## Notes
-- `parse_align_sides` lives in `align_keys.py` (not inlined in the node) so pytest runs without `rclpy`.
-- No ROS integration test for single-arm timer path in this task; manual verify on hardware recommended.
+## Concerns
+- Host `on` requires built `skye_ros2_ws/install` and `dynamixel_sdk` on host for `off`.
+- `run_leader_arm_gate` still accepts unused `container`/`image` kwargs for test injection compatibility.
 
 ## Commit
-`feat(align): support align_follower_left/right single-arm align`
+See git log for `feat(teleop): host leader arm gate without Marvin docker`.

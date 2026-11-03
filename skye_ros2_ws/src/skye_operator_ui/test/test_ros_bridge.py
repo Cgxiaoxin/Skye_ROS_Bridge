@@ -37,12 +37,13 @@ def _bare_bridge() -> RosBridge:
     bridge._leader_gate_container = "skye_marvin_m6"
     bridge._leader_gate_image = "marvin-m6-ros2:e5a9d8fd"
     bridge._leader_gate_timeout_s = 15.0
+    bridge._robot_profile = None
     bridge._script_runner = lambda *args, **kwargs: (True, "")
     bridge._dispatch_lock = threading.Lock()
     return bridge
 
 
-def test_run_leader_arm_gate_invokes_script_with_container_env(monkeypatch):
+def test_run_leader_arm_gate_invokes_script_with_robot_profile(monkeypatch):
     calls = []
 
     def fake_run(argv, **kwargs):
@@ -57,7 +58,7 @@ def test_run_leader_arm_gate_invokes_script_with_container_env(monkeypatch):
         "off",
         container="marvin",
         timeout_s=3.0,
-        image="marvin-m6-ros2:test",
+        robot_profile="orin",
     )
 
     assert ok is True
@@ -65,8 +66,27 @@ def test_run_leader_arm_gate_invokes_script_with_container_env(monkeypatch):
     argv, kwargs = calls[0]
     assert argv == ["/repo/scripts/leader_arm_gate.sh", "left", "off"]
     assert kwargs["timeout"] == 3.0
-    assert kwargs["env"]["MARVIN_CONTAINER_NAME"] == "marvin"
-    assert kwargs["env"]["MARVIN_IMAGE"] == "marvin-m6-ros2:test"
+    assert kwargs["env"]["ROBOT_PROFILE"] == "orin"
+
+
+def test_run_leader_arm_gate_sets_robot_profile(monkeypatch):
+    captured = []
+
+    def fake_run(argv, **kwargs):
+        captured.append(kwargs.get("env", {}))
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    run_leader_arm_gate(
+        "/repo",
+        "right",
+        "on",
+        container="unused",
+        robot_profile="thor",
+    )
+
+    assert captured[0]["ROBOT_PROFILE"] == "thor"
 
 
 def test_run_leader_arm_gate_returns_error_message(monkeypatch):
@@ -87,29 +107,6 @@ def test_run_leader_arm_gate_returns_error_message(monkeypatch):
 
     assert ok is False
     assert reason == "bad"
-
-
-def test_run_leader_arm_gate_translates_missing_container(monkeypatch):
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(
-            args[0],
-            1,
-            stdout="",
-            stderr="Error response from daemon: No such container: skye_marvin_m6",
-        ),
-    )
-
-    ok, reason = run_leader_arm_gate(
-        "/repo",
-        "left",
-        "off",
-        container="skye_marvin_m6",
-    )
-
-    assert ok is False
-    assert "未运行" in reason
 
 
 def test_run_leader_arm_gate_timeout_returns_false(monkeypatch):
@@ -174,9 +171,11 @@ def test_clear_session_cache_resets_latched_state():
 
 def test_set_session_mode_none_clears_cache():
     bridge = _bare_bridge()
+    bridge.set_session_profile("thor")
     bridge.set_session_mode(None)
     assert bridge._teleop_state is None
     assert bridge._recording_active is False
+    assert bridge._robot_profile is None
 
 
 def test_stop_recorder_if_active_noop_when_not_recording():
@@ -216,18 +215,38 @@ def test_dispatch_leader_script_flips_gate_only_on_success():
     bridge._ui_mode = UiMode.teleop_record
     calls = []
 
-    def runner(repo_root, side, action, *, container, timeout_s, image=None):
-        calls.append((repo_root, side, action, container, timeout_s, image))
+    def runner(
+        repo_root,
+        side,
+        action,
+        *,
+        container,
+        timeout_s,
+        image=None,
+        robot_profile=None,
+    ):
+        calls.append(
+            (repo_root, side, action, container, timeout_s, image, robot_profile)
+        )
         return True, ""
 
     bridge._script_runner = runner
+    bridge._robot_profile = "orin"
 
     ok, reason = bridge.dispatch("leader_left_off")
 
     assert ok is True
     assert reason == ""
     assert calls == [
-        ("/repo", "left", "off", "skye_marvin_m6", 15.0, "marvin-m6-ros2:e5a9d8fd")
+        (
+            "/repo",
+            "left",
+            "off",
+            "skye_marvin_m6",
+            15.0,
+            "marvin-m6-ros2:e5a9d8fd",
+            "orin",
+        )
     ]
     assert bridge._leader_gate.snapshot()["left_enabled"] is False
 
