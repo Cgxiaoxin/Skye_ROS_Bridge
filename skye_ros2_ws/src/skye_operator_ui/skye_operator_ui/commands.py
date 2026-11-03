@@ -60,8 +60,6 @@ _COMMON_OPS = frozenset(
     }
 )
 
-_ALIGN_DONE = frozenset({"ALIGNED", "TIMEOUT_WARN"})
-
 _OPERATIONAL_STATES = frozenset(
     {SessionState.READY, SessionState.RUNNING, SessionState.DEGRADED}
 )
@@ -139,10 +137,8 @@ def command_allowed(
         return True, ""
 
     if op == "switch_teleop":
-        synced = teleop_state == "SYNCED"
-        align_done = align_status in _ALIGN_DONE
-        if not synced and not align_done:
-            return False, "请先完成小臂同步或 follower 对齐"
+        if teleop_state != "SYNCED":
+            return False, "请先完成小臂同步（SYNCED）"
         return True, ""
 
     if op == "align_start":

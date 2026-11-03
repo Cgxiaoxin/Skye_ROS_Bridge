@@ -139,12 +139,12 @@ def test_emergency_stop_allowed_even_in_idle():
     assert reason == ""
 
 
-def test_switch_teleop_requires_synced_or_align_done():
+def test_switch_teleop_requires_synced_only():
     s = SessionLogic()
     s.begin_start("thor", UiMode.teleop_record)
     s.precheck_ok()
     s.mark_ready()
-    ok, _ = command_allowed(
+    ok, reason = command_allowed(
         op="switch_teleop",
         session=s,
         teleop_state="IDLE",
@@ -152,6 +152,7 @@ def test_switch_teleop_requires_synced_or_align_done():
         align_status="IDLE",
     )
     assert not ok
+    assert "SYNCED" in reason
     ok, _ = command_allowed(
         op="switch_teleop",
         session=s,
@@ -167,7 +168,7 @@ def test_switch_teleop_requires_synced_or_align_done():
         hitl_mode=None,
         align_status="ALIGNED",
     )
-    assert ok
+    assert not ok
 
 
 def test_teleop_ops_rejected_in_dagger_mode():

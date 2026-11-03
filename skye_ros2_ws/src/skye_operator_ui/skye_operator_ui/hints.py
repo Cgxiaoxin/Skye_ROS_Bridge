@@ -50,14 +50,7 @@ def next_hint(
         if teleop_state == "TELEOP_SYNCING":
             return "小臂同步中，请保持静止"
         if teleop_state == "SYNCED":
-            if align_status in (None, "IDLE"):
-                return "同步完成，可开始 follower 对齐"
-            if align_status == "ALIGNING":
-                return "follower 对齐中，请稍候"
-            if align_status == "TIMEOUT_WARN":
-                return "对齐超时警告，仍可尝试开启遥操"
-        if teleop_state == "SYNCED" and align_status in ("ALIGNED", "TIMEOUT_WARN"):
-            return "对齐完成，可开启遥操"
+            return "同步完成，可开启遥操"
         if teleop_state == "TELEOP":
             return "遥操已开启，可开始/停止数采录制"
         return "等待遥操状态更新"
