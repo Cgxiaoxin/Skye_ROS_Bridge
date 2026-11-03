@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { postCommand } from '../lib/api.js';
   import { commandAllowed } from '../lib/commands.js';
+  import SyncCoach from './SyncCoach.svelte';
 
   export let snapshot = null;
 
@@ -80,6 +81,7 @@
     交还
   </button>
 </div>
+<SyncCoach coach={snapshot?.sync_coach} enterLabel="进入遥操" />
 
 <h3 class="panel-subtitle">HITL 录制</h3>
 <p class="rec-status mono">{recording ? '录制进行中' : '未录制'}</p>

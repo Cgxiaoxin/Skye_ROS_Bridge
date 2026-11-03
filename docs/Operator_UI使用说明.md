@@ -23,9 +23,10 @@ Operator UI 是本机浏览器控制台，封装现有 `scripts/*.sh` 与会话�
 - **遥操数采**（`teleop_record`）：主机 `scripts/teleop.sh`（预检 + 启动大小臂 teleop）→ `skye_data_recorder`（可选：同步前关单侧小臂，见下节）
 - **HITL DAgger**（`dagger`）：driver → Docker HITL launch → `start_hitl_host.sh`（arbiter）。接管拆成「同步」→ 确认后「进入遥操」
 
-遥操数采**不再**依赖 Docker 小臂容器或 follower 对齐步骤；FTDI/串口绑定请在会话外运行 `scripts/bind_leader_arms.py`（或等价离线流程），无需每次会话重新构建前端。
+遥操数采**不再**依赖 Docker 小臂容器或 follower 对齐步骤；FTDI/串口绑定请在会话外运行 `scripts/bind_leader_arms.py`（或等价离线流程）。**不要**把 `teleop.sh build` 放进每次「开始会话」。
 
-设计细节见 `[docs/superpowers/specs/2026-09-15-skye-operator-ui-design.md](superpowers/specs/2026-09-15-skye-operator-ui-design.md)`。
+主机遥操集成设计：`[docs/superpowers/specs/2026-11-03-operator-ui-host-teleop-integration-design.md](superpowers/specs/2026-11-03-operator-ui-host-teleop-integration-design.md)`。  
+原控制台设计：`[docs/superpowers/specs/2026-09-15-skye-operator-ui-design.md](superpowers/specs/2026-09-15-skye-operator-ui-design.md)`。
 
 ## 启动
 
@@ -34,15 +35,16 @@ Operator UI 是本机浏览器控制台，封装现有 `scripts/*.sh` 与会话�
 ./scripts/start_operator_ui.sh
 ```
 
-脚本会加载 `scripts/lib/ros_domain_env.sh`（默认 `ROS_DOMAIN_ID=21`、FastDDS 无 SHM），并 `ros2 run skye_operator_ui operator_ui`，传入 `repo_root` 参数。
+脚本会加载 `scripts/lib/ros_domain_env.sh`，并 `ros2 run skye_operator_ui operator_ui`，传入 `repo_root`。浏览器打开后，在顶栏选 **THOR / ORIN** 与 **遥操数采**，再点「开始会话」（会话内按机台设 domain：thor=`20`、orin=`21`）。
 
-若 `skye_ros2_ws/install` 不存在，先构建：
+若 `skye_ros2_ws/install` 不存在或缺 teleop/driver 可执行文件，先在仓库根编译（**日常稳定后不必每次做**）：
 
 ```bash
-./skye_ros2_ws/scripts/build.sh
+bash scripts/teleop.sh build
+# 或：./skye_ros2_ws/scripts/build.sh
 ```
 
-前端静态资源需在 `web/dist` 构建后随包安装（`cd skye_ros2_ws/src/skye_operator_ui/web && npm ci && npm run build`，再 colcon build）。
+前端静态资源需在 `web/dist` 构建后随包安装（改 UI 源码后：`cd skye_ros2_ws/src/skye_operator_ui/web && npm ci && npm run build`，再 colcon build）。
 
 ## 浏览器访问
 
@@ -62,8 +64,8 @@ google-chrome --app=http://127.0.0.1:8765
 
 | 操作                        | 作用                                                                                                                   |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| **开始会话**                  | 预检（按机台 ping：Thor `6.6.7.191` / Orin `6.6.7.190`）→ 若发现残留 `skye_robot_driver`（且未开启复用）则自动清理并复检 → 按 playbook 逐步拉起子进程 |
-| **结束会话**                  | 有序停止子进程组，并默认跑主臂 Dynamixel 去使能；回到 IDLE。**结束前请托住小臂**（去使能后会下落）。改 profile 或模式前必须先结束 |
+| **开始会话**                  | **遥操数采**：清残留 → `teleop.sh check --robot <thor\|orin> --fix-latency`（含控制器 ping、串口/latency、install）→ `teleop.sh start --skip-precheck`（一体大小臂）→ 数采 recorder。**DAgger**：仍按旧 playbook（含 Docker 小臂）。 |
+| **结束会话**                  | 有序停止子进程组，并默认跑小臂 Dynamixel 去使能；回到 IDLE。**结束前请托住小臂**（去使能后会下落）。改 profile 或模式前必须先结束 |
 | **急停** (`emergency_stop`) | 调用 `/gento/emergency_stop`，**不结束会话**；会话仍在 READY/RUNNING，可继续操作或再点结束会话                                                 |
 
 
@@ -88,6 +90,12 @@ google-chrome --app=http://127.0.0.1:8765
 - **同步后锁定**：本会话已成功 **同步**，或遥操状态进入 `TELEOP_SYNCING` / `SYNCED` / `TELEOP` 后，关臂按钮灰掉不可再改；**结束会话** 后 `leader_arms` 恢复双开、未锁定。
 - 关/复能脚本失败时 API 报错，UI 不翻转「开/关」状态。
 - **开启遥操** 仅在小臂状态为 `SYNCED` 时可点（无 follower 对齐步骤）。
+
+## 同步校正面板
+
+点 **同步**（遥操数采）或 DAgger **同步** 进入小臂同步相位时，主栏同步控件下方会显示 **同步校正**：左右分栏列出当前超阈值关节（位置/速度）与 settling 进度，便于手动微调。两侧进入 `SYNCED`（或离开 DAgger `HANDOVER_SYNC`）后面板自动隐藏。
+
+数据来自 teleop 驱动话题 `/leader_arm/{left,right}/sync_progress`，**不**再需要为盯误差单独开 `skye_factr_dual_trial`（该命令仍可用于离线验收录制）。
 
 关闭功能（隐藏按钮并拒绝 `leader_*_off/on`）可在 `skye_operator_ui/config/default.yaml` 设：
 
@@ -146,9 +154,11 @@ cd skye_ros2_ws && colcon test --packages-select skye_operator_ui && colcon test
 
 ## 相关文档
 
-- 设计 spec：`[docs/superpowers/specs/2026-09-15-skye-operator-ui-design.md](superpowers/specs/2026-09-15-skye-operator-ui-design.md)`
+- 主机遥操 UI 集成：`[docs/superpowers/specs/2026-11-03-operator-ui-host-teleop-integration-design.md](superpowers/specs/2026-11-03-operator-ui-host-teleop-integration-design.md)`
+- 控制台原设计：`[docs/superpowers/specs/2026-09-15-skye-operator-ui-design.md](superpowers/specs/2026-09-15-skye-operator-ui-design.md)`
+- 命令行大小臂启动：`[skye_ros2_ws/src/skye_factr_teleop/大小臂通用启动指南.md](../skye_ros2_ws/src/skye_factr_teleop/大小臂通用启动指南.md)`
 - ROS 接口索引：`[docs/ros_interfaces.md](ros_interfaces.md)`（文末 Operator UI 小节）
-- Thor/Orin 遥操：`[docs/Thor_Orin_遥操启动.md](Thor_Orin_遥操启动.md)`
 - Leader arm gate：`[docs/superpowers/specs/2026-10-03-leader-arm-gate-ui-design.md](superpowers/specs/2026-10-03-leader-arm-gate-ui-design.md)`
 - HITL DAgger：`[docs/Hint_Dagger启动使用说明.md](Hint_Dagger启动使用说明.md)`
+- 旧 Docker 遥操（遗留）：`[docs/Thor_Orin_遥操启动.md](Thor_Orin_遥操启动.md)`
 

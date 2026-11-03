@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { postCommand } from '../lib/api.js';
   import { commandAllowed } from '../lib/commands.js';
+  import SyncCoach from './SyncCoach.svelte';
 
   export let snapshot = null;
 
@@ -129,6 +130,7 @@
     {/if}
   {/each}
 </div>
+<SyncCoach coach={snapshot?.sync_coach} enterLabel="开遥操" />
 
 <style>
   .leader-gate-block {
