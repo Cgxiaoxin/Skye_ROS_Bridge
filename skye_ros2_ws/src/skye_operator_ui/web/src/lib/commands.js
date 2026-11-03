@@ -1,13 +1,10 @@
 /** Mirror backend command_allowed for UI button disable states. */
 
 const OPERATIONAL_STATES = ['READY', 'RUNNING', 'DEGRADED'];
-const ALIGN_DONE = ['ALIGNED', 'TIMEOUT_WARN'];
 const TELEOP_OPS = [
   'switch_sync',
   'switch_teleop',
   'switch_stop',
-  'align_start',
-  'align_cancel',
 ];
 const DAGGER_OPS = ['takeover', 'enter_teleop', 'return'];
 
@@ -21,8 +18,6 @@ export function commandAllowed(op, snapshot) {
   const mode = session.mode;
   const teleopState = snapshot.teleop?.state;
   const hitlMode = snapshot.hitl?.mode;
-  const alignStatus = snapshot.align?.status;
-
   if (op === 'emergency_stop') {
     return { allowed: true, reason: '' };
   }
@@ -90,35 +85,8 @@ export function commandAllowed(op, snapshot) {
   }
 
   if (op === 'switch_teleop') {
-    const synced = teleopState === 'SYNCED';
-    const alignDone = ALIGN_DONE.includes(alignStatus);
-    if (!synced && !alignDone) {
-      return { allowed: false, reason: '请先完成小臂同步或 follower 对齐' };
-    }
-    return { allowed: true, reason: '' };
-  }
-
-  if (op === 'align_start') {
-    if (snapshot.features?.leader_arm_gate !== false) {
-      const arms = snapshot.leader_arms;
-      const anyEnabled =
-        arms?.left_enabled !== false || arms?.right_enabled !== false;
-      if (arms && !anyEnabled) {
-        return { allowed: false, reason: '两侧小臂已关闭，无法对齐' };
-      }
-    }
-    if (alignStatus === 'ALIGNING') {
-      return { allowed: false, reason: '对齐正在进行中' };
-    }
     if (teleopState !== 'SYNCED') {
       return { allowed: false, reason: '请先完成小臂同步（SYNCED）' };
-    }
-    return { allowed: true, reason: '' };
-  }
-
-  if (op === 'align_cancel') {
-    if (alignStatus !== 'ALIGNING') {
-      return { allowed: false, reason: '当前未在对齐中' };
     }
     return { allowed: true, reason: '' };
   }

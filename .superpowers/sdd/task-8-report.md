@@ -1,21 +1,28 @@
-# Task 8 Report: Docs (leader arm gate UI)
+# Task 8 Report: Frontend steps/panel + Operator UI docs
 
-**Status:** Complete  
-**Branch:** `feat/leader-arm-gate-ui`
+## Status
+**Complete**
 
 ## Changes
+- `web/src/lib/steps.js`: `TELEOP_STEPS` uses playbook step `teleop` + runtime `teleop_run`; `PLAYBOOK_IDS.teleop_record` → `['teleop','recorder']`; removed marvin/align steps and align status logic.
+- `web/src/lib/commands.js`: `switch_teleop` gated on `SYNCED` only; removed align ops/handlers from teleop mirror.
+- `web/src/components/TeleopPanel.svelte`: removed align buttons and align status row.
+- `docs/Operator_UI使用说明.md`: host `teleop.sh` path, flow without align, FTDI offline note, DAgger vs teleop teardown/docker notes.
+- `api_app.py`: **no change** — `switch_teleop` pending confirmer already requires `teleop_state == TELEOP` (not ALIGNED).
 
-- **`docs/Operator_UI使用说明.md`**: New section「同步前关单侧小臂」— 关左/关右按钮位置、托住小臂确认、同步后锁定、双关禁 sync、对齐侧选择、`features.leader_arm_gate`；真机冒烟清单增加 Thor/Orin 单臂路径项；相关文档链接。
-- **`docs/Thor_Orin_遥操启动.md`**: 开篇一句指向 Operator UI 同步前关单侧小臂（键盘流程不变）。
+## Build
+```bash
+cd skye_ros2_ws/src/skye_operator_ui/web && npm ci && npm run build
+```
+(dist updated if build succeeded)
 
-## Verification
+## Tests
+- Backend `test_commands.py` already covers SYNCED-only `switch_teleop` (Task 7).
+- No dedicated frontend unit tests for steps/commands in repo.
 
-- Manual review against `docs/superpowers/specs/2026-10-03-leader-arm-gate-ui-design.md` §2、§4、§5、§11.
+## Concerns
+- Snapshot may still expose `align` fields; UI simply ignores them in teleop mode.
+- DAgger playbook/docs still reference Docker marvin; teleop_record path is host-only.
 
 ## Commit
-
-`docs: document leader arm gate UI for Thor/Orin`
-
-## Notes
-
-- Spec §11 checklist satisfied; optional 真机单臂 checklist folded into existing「真机状态」节。
+See git log for Task 8 commit message per brief.

@@ -10,7 +10,6 @@
   let busyOp = '';
 
   $: teleopState = snapshot?.teleop?.state;
-  $: alignStatus = snapshot?.align?.status;
   $: recording = snapshot?.recording?.active;
   $: leftEnabled = snapshot?.leader_arms?.left_enabled !== false;
   $: rightEnabled = snapshot?.leader_arms?.right_enabled !== false;
@@ -30,8 +29,6 @@
 
   const BUTTONS = [
     { op: 'switch_sync', label: '同步', class: 'btn-primary' },
-    { op: 'align_start', label: '开始对齐', class: 'btn-neutral' },
-    { op: 'align_cancel', label: '取消对齐', class: 'btn-neutral' },
     { op: 'switch_teleop', label: '开启遥操', class: 'btn-primary' },
     { op: 'switch_stop', label: '停止遥操', class: 'btn-neutral' },
     { op: 'recorder_start', label: '开始录制', class: 'btn-primary' },
@@ -87,7 +84,6 @@
 
 <dl class="status-grid">
   <div><dt>遥操状态</dt><dd class="mono">{teleopState ?? '—'}</dd></div>
-  <div><dt>对齐状态</dt><dd class="mono">{alignStatus ?? '—'}</dd></div>
   <div><dt>录制</dt><dd class="mono">{recording ? '进行中' : '未录制'}</dd></div>
 </dl>
 
