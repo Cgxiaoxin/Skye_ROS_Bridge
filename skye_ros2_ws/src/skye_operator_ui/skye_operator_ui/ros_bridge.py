@@ -298,8 +298,11 @@ class RosBridge:
             )
         if key == "arbiter":
             return self._is_fresh(self._control_mode_stamp, FRESHNESS_S)
-        if key == "marvin":
-            return self._teleop_state is not None
+        if key in ("teleop", "marvin"):
+            return (
+                self._teleop_state is not None
+                and self._is_fresh(self._joint_states_stamp, FRESHNESS_S)
+            )
         if key == "recorder":
             return self._service_ready(self._recorder_service_name())
         if key == "policy":
@@ -354,6 +357,7 @@ class RosBridge:
             "driver": self.health("driver"),
             "align": self.health("align"),
             "arbiter": self.health("arbiter"),
+            "teleop": self.health("teleop"),
             "marvin": self.health("marvin"),
             "recorder": self.health("recorder"),
             "policy": self.health("policy"),

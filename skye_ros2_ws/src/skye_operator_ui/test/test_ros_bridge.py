@@ -292,3 +292,24 @@ def test_dispatch_switch_sync_and_teleop_callback_lock_gate():
     bridge._leader_gate.reset()
     bridge._teleop_state_callback(SimpleNamespace(data="SYNCED"))
     assert bridge._leader_gate.snapshot()["locked"] is True
+
+
+def test_health_teleop_requires_joints_and_state():
+    bridge = object.__new__(RosBridge)
+    bridge._joint_states_stamp = None
+    bridge._teleop_state = None
+    assert bridge.health("teleop") is False
+    bridge._teleop_state = "IDLE"
+    assert bridge.health("teleop") is False
+    bridge._joint_states_stamp = time.monotonic()
+    assert bridge.health("teleop") is True
+    assert bridge.health("marvin") is True
+
+
+def test_health_map_exposes_teleop_and_marvin_alias():
+    bridge = _bare_bridge()
+    bridge._joint_states_stamp = time.monotonic()
+    health = bridge._health_map()
+    assert "teleop" in health
+    assert health["teleop"] is True
+    assert health["marvin"] == health["teleop"]
