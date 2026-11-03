@@ -58,6 +58,8 @@ def _launch_setup(context, *, sides):
                 "config_path": config,
                 "sync_diagnostics": ParameterValue(
                     LaunchConfiguration("sync_diagnostics"), value_type=bool),
+                "temperature_publish_rate_hz": ParameterValue(
+                    LaunchConfiguration("temperature_publish_rate_hz"), value_type=float),
             }],
             remappings=[
                 ("/joint_state", f"/gento/{side}_joint_states"),
@@ -93,6 +95,10 @@ def leader_launch_description(sides):
     actions.append(DeclareLaunchArgument(
         "sync_diagnostics", default_value="false", choices=["true", "false"],
         description="Publish eight-axis cycle diagnostics and read present current",
+    ))
+    actions.append(DeclareLaunchArgument(
+        "temperature_publish_rate_hz", default_value="1.0",
+        description="Temperature publish rate in Hz; 0 disables reading and publishing",
     ))
     for side in sides:
         actions.append(DeclareLaunchArgument(

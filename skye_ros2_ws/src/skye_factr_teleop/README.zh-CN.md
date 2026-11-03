@@ -39,6 +39,7 @@ ros2 run skye_factr_teleop skye_factr_teleop_driver --help
 |---|---|
 | `config_path` | YAML 绝对路径或相对于包 share 目录的路径；留空时使用 `config/grav_comp_m6_<side>.yaml` |
 | `sync_diagnostics` | 只读 ROS bool，默认 false；开启逐周期诊断和实际电流读取 |
+| `temperature_publish_rate_hz` | 只读 ROS 数值，默认 `1.0` Hz；设为 `0` 关闭温度读取和发布 |
 | `dynamixel.joint_offsets` | 必填：8 个物理舵机的标定偏移，单位 rad，包含夹爪 |
 | `dynamixel.current_limit_ma` | 必填：按物理舵机 ID 1..8 排列的 8 个正数电流上限，单位 mA，逐项不得超过对应型号上限 |
 | `controller.sync_hold_control.ruckig.max_velocity`、`max_acceleration`、`max_jerk` | 遥操必填：按主臂逻辑关节顺序排列的 8 个正数上限，单位分别为 rad/s、rad/s²、rad/s³ |
@@ -114,6 +115,7 @@ python3 -m pytest -q test/test_ros_driver.py test/test_dynamics.py test/test_dyn
 | `robot_profile` | `thor`：`config/grav_comp_m6_<side>.yaml`；`orin`：`config/orin/grav_comp_m6_<side>.yaml` |
 | `left_config`、`right_config` | 每侧合并后 YAML 的路径；留空时使用 profile 配置（Thor 为设备 A 试验初值，Orin 仍需填写轨迹上限） |
 | `sync_diagnostics` | 默认 false；试验时开启八轴逐周期诊断及实际电流读取 |
+| `temperature_publish_rate_hz` | 默认 `1.0` Hz；设为 `0` 关闭温度读取和发布；单臂和双臂 launch 均支持 |
 
 每侧配置路径支持绝对路径或相对于包 share 目录的路径。单臂 launch 只声明该侧配置；双臂 launch 在启动任一节点前检查两侧文件及必填运行值。launch 不会代填未经标定的偏移、电流或运动上限。
 
@@ -131,6 +133,28 @@ ros2 launch skye_factr_teleop start_teleop_m6_dual.launch.py \
   left_config:=/path/to/left_calibrated.yaml \
   right_config:=/path/to/right_calibrated.yaml
 ```
+
+温度随控制循环通过同一个 `GroupSyncRead` 采样，按设定频率发布到
+`/leader_arm/left/temperature_c` 和 `/leader_arm/right/temperature_c`。
+消息类型为 `std_msgs/msg/Float64MultiArray`，8 个数依次对应物理舵机 ID 1～8
+（ID 8 为夹爪），单位 °C，表示内部温度，分辨率 1°C。
+话题使用 RELIABLE/VOLATILE/KEEP_LAST(1)，仅在成功采样后发布；
+通信故障沿用现有停止流程，不再发布缓存温度。节点处于 IDLE 时仍会采样。
+数组不含时间戳；发布频率最多等于控制循环频率。
+
+```bash
+ros2 topic echo /leader_arm/left/temperature_c
+ros2 topic echo /leader_arm/right/temperature_c
+ros2 topic hz /leader_arm/left/temperature_c
+
+# 调整发布频率；替换为 0.0 可关闭温度读取和发布
+ros2 launch skye_factr_teleop start_teleop_m6_dual.launch.py \
+  temperature_publish_rate_hz:=2.0
+```
+
+温度读取将原有同步读取范围扩展到地址 146，每个舵机增加 11 字节。
+8 个舵机、4 Mbps 下每周期理论增加约 0.22 ms 的线缆传输时间，
+实际控制周期影响需实机测量。
 
 每侧话题独立重映射：
 

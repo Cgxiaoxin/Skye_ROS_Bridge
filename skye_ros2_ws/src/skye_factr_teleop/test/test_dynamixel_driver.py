@@ -305,13 +305,14 @@ def driver_factory(fake_sdk, tmp_path):
     port = tmp_path / "ttyUSB-test"
     port.touch()
 
-    def make_driver(*, read_present_current=False):
+    def make_driver(*, read_present_current=False, read_present_temperature=False):
         return driver_module.DynamixelDriver(
             ids=IDS,
             servo_types=SERVO_TYPES,
             port=str(port),
             baudrate=4_000_000,
             read_present_current=read_present_current,
+            read_present_temperature=read_present_temperature,
         )
 
     return make_driver
@@ -628,6 +629,69 @@ def test_read_state_can_capture_signed_present_current_in_same_transaction(
     assert fake_sdk.events.count(("read.txRxPacket",)) == 1
     assert ("read.getData", 1, 126, 2) in fake_sdk.events
     assert ("read.getData", 2, 126, 2) in fake_sdk.events
+
+
+@pytest.mark.parametrize("with_current,start,length", [(False, 128, 19), (True, 126, 21)])
+def test_temperature_is_captured_in_the_state_transaction(
+    driver_factory, fake_sdk, with_current, start, length,
+):
+    driver = driver_factory(
+        read_present_current=with_current, read_present_temperature=True,
+    )
+    assert ("GroupSyncRead", start, length) in fake_sdk.events
+    assert driver.present_temperatures_c is None
+    driver.open()
+    fake_sdk.read_data.update({
+        (1, 146, 1): 32, (2, 146, 1): 45,
+        (1, 132, 4): 2048, (2, 128, 4): 10,
+        (1, 126, 2): 0xFFFD, (2, 126, 2): 6,
+    })
+    fake_sdk.events.clear()
+
+    positions, velocities = driver.read_state()
+
+    assert driver.present_temperatures_c.tolist() == [32.0, 45.0]
+    assert positions[0] == pytest.approx(math.pi)
+    assert velocities[1] == pytest.approx(10 * 0.229 * 2 * math.pi / 60)
+    if with_current:
+        assert driver.present_currents_ma.tolist() == pytest.approx([-8.07, 6.0])
+    sample = driver.present_temperatures_c
+    sample[0] = 99
+    assert driver.present_temperatures_c[0] == 32
+    assert fake_sdk.events.count(("read.txRxPacket",)) == 1
+    assert ("read.getData", 1, 146, 1) in fake_sdk.events
+    assert ("read.getData", 2, 146, 1) in fake_sdk.events
+    driver.close()
+    assert driver.present_temperatures_c is None
+
+
+def test_disabled_temperature_keeps_original_state_read(driver_factory, fake_sdk):
+    driver = driver_factory()
+    driver.open()
+    fake_sdk.events.clear()
+    driver.read_state()
+    assert driver.present_temperatures_c is None
+    assert not any(event[0] == "read.getData" and event[2] == 146
+                   for event in fake_sdk.events)
+
+
+@pytest.mark.parametrize("failure", ["timeout", "missing_temperature", "missing_position", "alert"])
+def test_failed_state_read_invalidates_temperature_sample(driver_factory, fake_sdk, failure):
+    driver = driver_factory(read_present_temperature=True)
+    driver.open()
+    fake_sdk.read_data.update({(1, 146, 1): 32, (2, 146, 1): 45})
+    driver.read_state()
+    if failure == "timeout":
+        fake_sdk.read_tx_results.extend([-3001] * 3)
+    elif failure == "missing_temperature":
+        fake_sdk.available_results[(2, 146, 1)] = False
+    elif failure == "missing_position":
+        fake_sdk.available_results[(2, 132, 4)] = False
+    else:
+        fake_sdk.device_errors[2] = 0x80
+    with pytest.raises(driver_module.DynamixelSdkError):
+        driver.read_state()
+    assert driver.present_temperatures_c is None
 
 
 def test_write_currents_sync_writes_every_id_and_always_clears_params(

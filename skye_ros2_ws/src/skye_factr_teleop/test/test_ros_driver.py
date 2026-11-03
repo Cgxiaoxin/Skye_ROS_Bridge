@@ -47,6 +47,7 @@ class Hardware(FakeDynamixelIO):
         self.open_calls = []
         self.close_calls = 0
         self.present_currents_ma = np.zeros(8)
+        self.present_temperatures_c = np.arange(30.0, 38.0)
 
     def open(self, *, enable_torque=True):
         self.open_calls.append(enable_torque)
@@ -103,7 +104,8 @@ def make_node(context, monkeypatch, tmp_path):
 
     def make(side="left", *, parameters=None, config_path_override=None,
              hardware=None, record_publishers=True, gravity_test=None, limit_test=None,
-             friction_test=None, diagnostics=False, use_default_factory=False, **kwargs):
+             friction_test=None, diagnostics=False, use_default_factory=False,
+             temperature_rate=None, **kwargs):
         source = Path(__file__).parents[1] / "config" / f"grav_comp_m6_{side}.yaml"
         document = yaml.safe_load(source.read_text(encoding="utf-8"))
         document["dynamixel"].update({
@@ -130,6 +132,8 @@ def make_node(context, monkeypatch, tmp_path):
 
         overrides = [Parameter("config_path", value=str(config_path_override or config_path))]
         overrides.append(Parameter("sync_diagnostics", value=diagnostics))
+        if temperature_rate is not None:
+            overrides.append(Parameter("temperature_publish_rate_hz", value=temperature_rate))
         if gravity_test is not None:
             overrides.append(Parameter("gravity_test_only", value=True))
             overrides.extend(Parameter(f"gravity_test_{key}", value=value)
@@ -154,7 +158,7 @@ def make_node(context, monkeypatch, tmp_path):
         pubs = list(node.publishers)
         if record_publishers:
             for name in ("_state_pub", "_current_pub", "_target_pub", "_command_pub", "_gripper_pub",
-                         "_sync_progress_pub"):
+                         "_sync_progress_pub", "_temperature_pub"):
                 if getattr(node, name, None) is not None:
                     setattr(node, name, Recorder())
             if diagnostics:
@@ -968,6 +972,7 @@ def test_dual_ros_graph_types_remaps_and_isolation(make_node, context):
             node = rig.node
             expected_pubs = {
                 "/teleop/state": "std_msgs/msg/String",
+                f"/leader_arm/{side}/temperature_c": "std_msgs/msg/Float64MultiArray",
                 f"/leader_arm/{side}/sync_progress": "std_msgs/msg/String",
                 "/gripper/ctrl": "sensor_msgs/msg/JointState",
                 f"/{side}_leader_arm/current_state": "sensor_msgs/msg/JointState",
@@ -1161,7 +1166,101 @@ def test_diagnostics_are_optional_and_enable_present_current_reads(make_node, mo
     hardware = Hardware()
     monkeypatch.setattr(module, "_hardware_factory", lambda config, **kw: calls.append(kw) or hardware)
     make_node(diagnostics=True, use_default_factory=True, hardware=hardware)
-    assert calls == [{"read_present_current": True}]
+    assert calls == [{"read_present_current": True, "read_present_temperature": True}]
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+@pytest.mark.parametrize("rate,interval", [(None, 1.0), (2.0, 0.5)])
+def test_temperature_topic_preserves_servo_order_and_limits_publish_rate(make_node, side, rate, interval):
+    rig = make_node(side, temperature_rate=rate)
+    node = rig.node
+    assert f"/leader_arm/{side}/temperature_c" in {pub.topic_name for pub in rig.publishers}
+    node._tick()
+    assert list(node._temperature_pub.messages[-1].data) == list(range(30, 38))
+    rig.hardware.present_temperatures_c = np.arange(40.0, 48.0)
+    rig.clock.now += interval / 2
+    node._tick()
+    assert len(node._temperature_pub.messages) == 1
+    rig.clock.now += interval / 2
+    node._tick()
+    assert [list(msg.data) for msg in node._temperature_pub.messages] == [list(range(30, 38)), list(range(40, 48))]
+    node.shutdown_control()
+    rig.clock.now += interval
+    node._tick()
+    assert len(node._temperature_pub.messages) == 2
+
+
+@pytest.mark.parametrize("rate,enabled", [(None, True), (0.0, False)])
+def test_temperature_rate_controls_hardware_reads_and_publisher(make_node, monkeypatch, rate, enabled):
+    hardware = Hardware()
+    calls = []
+    monkeypatch.setattr(module, "_hardware_factory", lambda config, **kw: calls.append(kw) or hardware)
+    rig = make_node(use_default_factory=True, temperature_rate=rate)
+    assert calls == [{"read_present_current": False, "read_present_temperature": enabled}]
+    assert (rig.node._temperature_pub is not None) == enabled
+    if not enabled:
+        assert not any(pub.topic_name.endswith("/temperature_c") for pub in rig.publishers)
+        rig.node._tick()
+        assert not rig.node._closed
+
+
+@pytest.mark.parametrize("rate", [-1.0, float("nan"), float("inf"), True, "1.0"])
+def test_invalid_temperature_rate_is_rejected_before_opening_hardware(make_node, rate):
+    hardware = Hardware()
+    with pytest.raises(ValueError, match="temperature_publish_rate_hz"):
+        make_node(temperature_rate=rate, hardware=hardware)
+    assert hardware.open_calls == []
+
+
+def test_failed_read_does_not_republish_cached_temperature(make_node):
+    rig = make_node()
+    rig.node._tick()
+    rig.clock.now += 1.0
+    rig.hardware.fail_next_read(TimeoutError("temperature sample failed"))
+    rig.node._tick()
+    assert len(rig.node._temperature_pub.messages) == 1
+    assert rig.node._closed
+
+
+def test_temperature_waits_for_a_sample_and_parameter_is_read_only(make_node):
+    rig = make_node()
+    rig.hardware.present_temperatures_c = None
+    rig.node._tick()
+    assert rig.node._temperature_pub.messages == []
+    rig.hardware.present_temperatures_c = np.arange(30.0, 38.0)
+    rig.node._tick()
+    assert list(rig.node._temperature_pub.messages[-1].data) == list(range(30, 38))
+    result = rig.node.set_parameters([Parameter("temperature_publish_rate_hz", value=0.0)])
+    assert not result[0].successful
+
+
+def test_temperature_topics_deliver_distinct_left_and_right_samples_over_ros(make_node, context):
+    from rclpy.executors import SingleThreadedExecutor
+
+    rigs = {side: make_node(side, record_publishers=False) for side in ("left", "right")}
+    rigs["right"].hardware.present_temperatures_c = np.arange(40.0, 48.0)
+    received = {side: [] for side in rigs}
+    executor = SingleThreadedExecutor(context=context)
+    try:
+        for side, rig in rigs.items():
+            rig.node._timer.cancel()
+            executor.add_node(rig.node)
+            rigs["left"].node.create_subscription(
+                module.Float64MultiArray, f"/leader_arm/{side}/temperature_c",
+                lambda message, side=side: received[side].append(list(message.data)),
+                module.state_qos(),
+            )
+        deadline = time.monotonic() + 5.0
+        while not all(received.values()) and time.monotonic() < deadline:
+            for rig in rigs.values():
+                if rig.node._temperature_pub.get_subscription_count() > 0:
+                    rig.node._tick()
+            executor.spin_once(timeout_sec=0.01)
+        assert received == {"left": [list(range(30, 38))], "right": [list(range(40, 48))]}
+    finally:
+        for rig in rigs.values():
+            executor.remove_node(rig.node)
+        executor.shutdown()
 
 
 def test_teleop_recorder_over_ros_keeps_command_applied_feedback_and_stop_tail(make_node, tmp_path, monkeypatch):
