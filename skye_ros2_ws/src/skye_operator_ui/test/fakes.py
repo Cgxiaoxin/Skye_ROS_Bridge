@@ -54,6 +54,7 @@ class FakeSupervisor:
 class FakeBridge:
     def __init__(self) -> None:
         self._mode = None
+        self._robot_profile: str | None = None
         self.dispatched: list[str] = []
         self.dispatch_result: tuple[bool, str] = (True, "")
         self.state = {
@@ -74,6 +75,11 @@ class FakeBridge:
 
     def set_session_mode(self, mode) -> None:
         self._mode = mode
+        if mode is None:
+            self._robot_profile = None
+
+    def set_session_profile(self, profile: str | None) -> None:
+        self._robot_profile = profile
 
     def mailbox(self):
         return dict(self.state)
