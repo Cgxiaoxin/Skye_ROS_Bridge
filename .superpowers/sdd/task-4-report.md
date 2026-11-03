@@ -1,23 +1,23 @@
-# Task 4 Report: Supervisor precheck for teleop_record
+# Task 4 Report: Snapshot exposes sync_coach
 
 ## Status
 Complete.
 
 ## Changes
-- `supervisor.py`: Split precheck into `_teleop_record_precheck` (filtered cleanup, no ping/xml/pgrep guard; `teleop.sh check --fix-latency`) and `_dagger_precheck` (unchanged ping + FastDDS xml + driver residual logic). Shared cleanup helpers; docker rm filtered for teleop_record; reuse skip tokens include `teleop.sh` / `skye_factr_teleop`; first reusable step id includes `teleop`.
-- `test_supervisor.py`: Dagger-targeted residual-driver tests; three teleop_record precheck tests.
-- `config/default.yaml`: Comment that teleop_record skips docker rm on cleanup.
+- `snapshot.py`: `SnapshotBuilder.build` calls `build_sync_coach` with mailbox `sync_progress_left/right`, `teleop_state`, `hitl_mode`, `leader_arms`, and `now_s=time.time()`; adds top-level `sync_coach` to the snapshot dict.
+- `test_snapshot.py`: `test_snapshot_includes_sync_coach_when_syncing`; SYNCED default path asserts `sync_coach.visible is False`; partial `RosBridge` mock sets `_sync_progress` for mailbox test compatibility with Task 3 bridge fields.
 
 ## Tests
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=skye_ros2_ws/src/skye_operator_ui:$PYTHONPATH \
+  python -m pytest skye_ros2_ws/src/skye_operator_ui/test/test_snapshot.py \
+  skye_ros2_ws/src/skye_operator_ui/test/test_api_app.py -v
 ```
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=skye_ros2_ws/src/skye_operator_ui \
-  python -m pytest skye_ros2_ws/src/skye_operator_ui/test/test_supervisor.py -v
-```
-14 passed.
-
-## Concerns
-- teleop_record precheck no longer enforces post-cleanup `skye_robot_driver` pgrep (relies on `teleop.sh check`).
-- `_run_precheck_cleanup` always logs info when cleanup runs (slightly noisier than dagger-only path before).
+Result: **29 passed**.
 
 ## Commit
-See git log for `feat(operator-ui): precheck teleop_record via teleop.sh check`.
+`feat(operator_ui): expose sync_coach on WS snapshot`
+
+## Notes
+- `fakes.py` unchanged: missing sync progress keys are handled via `mailbox.get` and default leader arms in snapshot output.
+- `sync_coach.visible` follows phase gate in `build_sync_coach` (e.g. hidden when `teleop_state` is `SYNCED`).
