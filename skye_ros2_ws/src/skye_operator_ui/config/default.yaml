@@ -17,8 +17,8 @@ controller_ips:
 
 # Whitelist argv for residual cleanup (manual API + auto on session start).
 # Session start always runs these (DDS quiet + no duplicate launch nodes), except
-# when allow_existing_driver keeps driver/marvin/factr. Empty falls back to
-# pkill -f skye_robot_driver only.
+# when allow_existing_driver keeps driver/marvin/factr. teleop_record skips
+# docker rm (host teleop path). Empty falls back to pkill -f skye_robot_driver only.
 cleanup_stale_commands:
   - ["pkill", "-f", "skye_robot_driver"]
   - ["pkill", "-f", "factr_teleop"]

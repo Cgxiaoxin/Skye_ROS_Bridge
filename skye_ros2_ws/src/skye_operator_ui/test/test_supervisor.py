@@ -1,3 +1,5 @@
+import subprocess
+
 from skye_operator_ui.session_state import SessionState, UiMode
 from skye_operator_ui.supervisor import SessionSupervisor
 
@@ -171,7 +173,7 @@ def test_cleanup_stale_pkill_exit_1_is_ok(tmp_path, monkeypatch):
     assert ok, reason
 
 
-def _precheck_cfg(tmp_path):
+def _precheck_cfg(tmp_path, *, mode_key: str = "dagger"):
     xml = tmp_path / "marvin_ws" / "fastrtps_no_shm.xml"
     xml.parent.mkdir(parents=True)
     xml.write_text("<xml/>")
@@ -181,7 +183,7 @@ def _precheck_cfg(tmp_path):
         "cleanup_stale_commands": [["pkill", "-f", "skye_robot_driver"]],
         "precheck": {"skip_ping": True},
         "playbook_override": {
-            "teleop_record": [
+            mode_key: [
                 {
                     "id": "driver",
                     "argv": ["/bin/true"],
@@ -191,6 +193,15 @@ def _precheck_cfg(tmp_path):
                 }
             ]
         },
+    }
+
+
+def _teleop_record_precheck_cfg(tmp_path, cleanup_commands):
+    return {
+        "step_timeout_s": 5.0,
+        "log_ring_size": 100,
+        "cleanup_stale_commands": cleanup_commands,
+        "precheck": {"skip_ping": True},
     }
 
 
@@ -224,7 +235,7 @@ def test_precheck_auto_cleans_residual_driver(tmp_path, monkeypatch):
         cfg=cfg,
         health_fn=lambda _k: False,
     )
-    ok, reason = sup.start("thor", UiMode.teleop_record)
+    ok, reason = sup.start("thor", UiMode.dagger)
     assert ok, reason
     assert calls["cleanup"] == 1
     assert calls["pgrep"] >= 2
@@ -252,9 +263,100 @@ def test_precheck_fails_if_residual_remains_after_cleanup(tmp_path, monkeypatch)
         cfg=cfg,
         health_fn=lambda _k: False,
     )
-    ok, reason = sup.start("thor", UiMode.teleop_record)
+    ok, reason = sup.start("thor", UiMode.dagger)
     assert not ok
     assert "残留" in reason
+
+
+def test_teleop_record_precheck_runs_teleop_check(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(list(argv))
+        if len(argv) >= 2 and argv[0] == "bash" and "teleop.sh" in str(argv[1]):
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        if argv[:2] == ["pkill", "-f"]:
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        raise AssertionError(f"unexpected argv: {argv}")
+
+    monkeypatch.setattr("skye_operator_ui.supervisor.subprocess.run", fake_run)
+    monkeypatch.setattr("skye_operator_ui.supervisor.time.sleep", lambda _s: None)
+
+    cfg = _teleop_record_precheck_cfg(
+        tmp_path,
+        [["pkill", "-f", "skye_robot_driver"]],
+    )
+    sup = SessionSupervisor(
+        repo_root=str(tmp_path),
+        cfg=cfg,
+        health_fn=lambda _k: False,
+    )
+    ok, reason = sup.start("orin", UiMode.teleop_record)
+    assert ok, reason
+    teleop_checks = [
+        c
+        for c in calls
+        if len(c) >= 6
+        and c[0] == "bash"
+        and "teleop.sh" in c[1]
+        and c[2:] == ["check", "--robot", "orin", "--fix-latency"]
+    ]
+    assert teleop_checks, calls
+    assert not any("ping" == c[0] for c in calls)
+
+
+def test_teleop_record_precheck_skips_docker_rm(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(list(argv))
+        if len(argv) >= 3 and argv[0] == "bash" and "teleop.sh" in argv[1]:
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        if argv[:2] == ["pkill", "-f"]:
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        raise AssertionError(f"unexpected argv: {argv}")
+
+    monkeypatch.setattr("skye_operator_ui.supervisor.subprocess.run", fake_run)
+    monkeypatch.setattr("skye_operator_ui.supervisor.time.sleep", lambda _s: None)
+
+    cfg = _teleop_record_precheck_cfg(
+        tmp_path,
+        [
+            ["pkill", "-f", "skye_robot_driver"],
+            ["docker", "rm", "-f", "skye_marvin_m6"],
+        ],
+    )
+    sup = SessionSupervisor(
+        repo_root=str(tmp_path),
+        cfg=cfg,
+        health_fn=lambda _k: False,
+    )
+    ok, reason = sup.start("thor", UiMode.teleop_record)
+    assert ok, reason
+    assert not any(
+        c[:3] == ["docker", "rm", "-f"] for c in calls if isinstance(c, list)
+    )
+
+
+def test_teleop_record_precheck_no_fastrtps_xml_required(tmp_path, monkeypatch):
+    def fake_run(argv, **kwargs):
+        if len(argv) >= 3 and argv[0] == "bash" and "teleop.sh" in argv[1]:
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        if argv[:2] == ["pkill", "-f"]:
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        raise AssertionError(f"unexpected argv: {argv}")
+
+    monkeypatch.setattr("skye_operator_ui.supervisor.subprocess.run", fake_run)
+    monkeypatch.setattr("skye_operator_ui.supervisor.time.sleep", lambda _s: None)
+
+    cfg = _teleop_record_precheck_cfg(tmp_path, [])
+    sup = SessionSupervisor(
+        repo_root=str(tmp_path),
+        cfg=cfg,
+        health_fn=lambda _k: False,
+    )
+    ok, reason = sup.start("thor", UiMode.teleop_record)
+    assert ok, reason
 
 
 def test_controller_ip_by_profile():
