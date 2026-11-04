@@ -17,18 +17,20 @@ export ROS_DOMAIN_ID
 unset ROS_LOCALHOST_ONLY || true
 export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
 
-FASTRTPS_XML="${REPO_ROOT}/marvin_ws/fastrtps_no_shm.xml"
-if [[ ! -f "${FASTRTPS_XML}" && -f "${REPO_ROOT}/marvin_ws1/fastrtps_no_shm.xml" ]]; then
-  FASTRTPS_XML="${REPO_ROOT}/marvin_ws1/fastrtps_no_shm.xml"
+# Profile is packaged with the driver; marvin_ws/fastrtps_no_shm.xml was removed in cb0f3e7.
+FASTRTPS_XML="${REPO_ROOT}/skye_ros2_ws/src/skye_robot_driver/config/fastrtps_teleop.xml"
+if [[ ! -f "${FASTRTPS_XML}" ]]; then
+  FASTRTPS_XML="${REPO_ROOT}/skye_ros2_ws/src/skye_factr_teleop/config/fastrtps_teleop.xml"
 fi
 if [[ -n "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" && -f "${FASTRTPS_DEFAULT_PROFILES_FILE}" ]]; then
   FASTRTPS_XML="${FASTRTPS_DEFAULT_PROFILES_FILE}"
 fi
-if [[ ! -f "${FASTRTPS_XML}" ]]; then
-  echo "ERROR: FastDDS xml missing: ${FASTRTPS_XML}" >&2
-  return 1 2>/dev/null || exit 1
+if [[ -f "${FASTRTPS_XML}" ]]; then
+  export FASTRTPS_DEFAULT_PROFILES_FILE="${FASTRTPS_XML}"
+else
+  echo "WARN: FastDDS profile not found; falling back to Fast DDS defaults" >&2
+  unset FASTRTPS_DEFAULT_PROFILES_FILE || true
 fi
-export FASTRTPS_DEFAULT_PROFILES_FILE="${FASTRTPS_XML}"
 
 skye_source_ros() {
   local ws="${REPO_ROOT}/skye_ros2_ws"
