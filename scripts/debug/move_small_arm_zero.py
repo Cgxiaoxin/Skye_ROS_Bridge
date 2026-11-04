@@ -3,7 +3,7 @@
 
 用法（托住小臂，确保前方无障碍）:
   export ROS_DOMAIN_ID=21
-  export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/marvin_ws/fastrtps_no_shm.xml"
+  export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/skye_ros2_ws/src/skye_robot_driver/config/fastrtps_teleop.xml"
   /usr/bin/python3 scripts/debug/move_small_arm_zero.py --side right
   /usr/bin/python3 scripts/debug/move_small_arm_zero.py --side right --mode telepose
   /usr/bin/python3 scripts/debug/move_small_arm_zero.py --side right --mode sync

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Host UDP socket tuning for ROS 2 Fast-DDS when SHM is disabled
-# (marvin_ws/fastrtps_no_shm.xml → all DDS over UDP).
+# Host UDP socket tuning for ROS 2 Fast-DDS under teleop load
+# (profile: skye_robot_driver/config/fastrtps_teleop.xml).
 #
 # Without this, Linux defaults (~208 KB) overflow under teleop load /
 # participant churn → UdpRcvbufErrors + "sequence size exceeds remaining buffer".

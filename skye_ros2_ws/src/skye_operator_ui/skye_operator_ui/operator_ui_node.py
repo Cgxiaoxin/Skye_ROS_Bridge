@@ -21,8 +21,8 @@ from skye_operator_ui.supervisor import SessionSupervisor
 
 def _detect_repo_root(start: Path | None = None) -> str:
     markers = (
-        "marvin_ws/fastrtps_no_shm.xml",
-        "scripts/build.sh",
+        "skye_ros2_ws/src/skye_robot_driver/package.xml",
+        "skye_ros2_ws/scripts/build.sh",
     )
     for base in (start or Path.cwd(), Path(__file__).resolve().parents[4]):
         current = base.resolve()

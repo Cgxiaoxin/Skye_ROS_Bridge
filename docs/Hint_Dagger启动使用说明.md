@@ -59,7 +59,7 @@ ROBOT_PROFILE=orin ./scripts/start_skye_for_factr.sh
 source /marvin_ws/install/setup.bash
 export ROS_DOMAIN_ID=21 ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-export FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml
+# FastDDS profile 用镜像内自带（launch 自动加载）；主机不再下发 marvin_ws xml
 
 ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento_hitl.launch.py use_keyboard:=false
 ```

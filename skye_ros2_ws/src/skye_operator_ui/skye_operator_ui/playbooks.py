@@ -31,6 +31,15 @@ _CONTROLLER_IP = {
 
 _DOMAIN = {"thor": "20", "orin": "21"}
 
+# marvin_ws/fastrtps_no_shm.xml was removed in cb0f3e7; the profile now ships
+# with the driver package (4 MB UDP + SHM).
+_FASTDDS_PROFILE = ("skye_ros2_ws", "src", "skye_robot_driver", "config",
+                    "fastrtps_teleop.xml")
+
+
+def fastdds_profile_path(repo_root: str) -> str:
+    return os.path.join(repo_root, *_FASTDDS_PROFILE)
+
 
 def _step_timeout(cfg: dict[str, Any]) -> float:
     return float(cfg.get("step_timeout_s", 120.0))
@@ -53,9 +62,7 @@ def _dagger_base_env(
     profile: str, repo_root: str, cfg: dict[str, Any]
 ) -> dict[str, str]:
     env = _base_env(profile, repo_root, cfg)
-    env["FASTRTPS_DEFAULT_PROFILES_FILE"] = os.path.join(
-        repo_root, "marvin_ws", "fastrtps_no_shm.xml"
-    )
+    env["FASTRTPS_DEFAULT_PROFILES_FILE"] = fastdds_profile_path(repo_root)
     launch_cmd = cfg.get("playbook", {}).get("marvin_launch_cmd")
     if launch_cmd:
         env["MARVIN_LAUNCH_CMD"] = str(launch_cmd)

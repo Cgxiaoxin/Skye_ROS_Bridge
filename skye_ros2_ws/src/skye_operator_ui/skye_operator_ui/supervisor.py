@@ -8,7 +8,7 @@ import subprocess
 import time
 from collections.abc import Callable
 
-from skye_operator_ui.playbooks import playbook_for
+from skye_operator_ui.playbooks import fastdds_profile_path, playbook_for
 from skye_operator_ui.process_step import ProcessStep
 from skye_operator_ui.session_state import SessionLogic, SessionState, UiMode
 from skye_operator_ui.teardown import (
@@ -355,9 +355,7 @@ class SessionSupervisor:
                 label = (profile or "thor").upper()
                 return False, f"无法 ping 通 {label} ({controller_ip})"
 
-        xml_path = os.path.join(
-            self.repo_root, "marvin_ws", "fastrtps_no_shm.xml"
-        )
+        xml_path = fastdds_profile_path(self.repo_root)
         if not os.path.isfile(xml_path):
             return False, f"缺少 FastDDS 配置: {xml_path}"
 

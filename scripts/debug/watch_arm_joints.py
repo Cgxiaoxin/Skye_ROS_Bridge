@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """1 Hz 对照小臂 / 大臂关节角（内部仍订 250 Hz 最新帧）。
 
-主机与 FACTR 同 ROS_DOMAIN_ID（默认 21），FastDDS 关 SHM。
+主机与 FACTR 同 ROS_DOMAIN_ID（默认 21），FastDDS 用驱动包内 profile。
 
 用法:
   export ROS_DOMAIN_ID=21
   unset ROS_LOCALHOST_ONLY
   export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-  export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/marvin_ws/fastrtps_no_shm.xml"
+  export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/skye_ros2_ws/src/skye_robot_driver/config/fastrtps_teleop.xml"
   /usr/bin/python3 scripts/debug/watch_arm_joints.py
   /usr/bin/python3 scripts/debug/watch_arm_joints.py --hz 1
   # 默认写 scripts/debug/logs/watch_arm_joints_YYYYmmdd_HHMMSS.log（1 Hz）

@@ -86,7 +86,7 @@ IDLE
 
 1. 按 whitelist 清残留：`skye_robot_driver`、`skye_factr_teleop`（及旧 align/recorder 模式如仍配置）。`cleanup_stale_commands` 对 **teleop_record** 不含 `docker rm`；若全局 yaml 仍保留 docker 清理项，仅在 `mode == dagger` 时执行，避免误伤本模式同时不破坏 DAgger。
 2. 执行 `teleop.sh check --robot <profile> --fix-latency`；非 0 则预检失败，向用户展示 stderr。
-3. **不再**要求 `marvin_ws/fastrtps_no_shm.xml` 存在（teleop_record）。DAgger 预检若仍依赖该文件，留在 dagger 分支。
+3. **不再**要求 `marvin_ws/fastrtps_no_shm.xml` 存在（teleop_record）。DAgger 预检同样改为检查驱动包内 `skye_robot_driver/config/fastrtps_teleop.xml`。
 4. 避免与 check 重复的二次 ping；teleop_record 以 `teleop.sh check` 为单一预检真相。
 
 ### 4.3 `teleop.py` 配套

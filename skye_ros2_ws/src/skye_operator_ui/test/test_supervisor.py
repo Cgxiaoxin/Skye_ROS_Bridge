@@ -174,7 +174,8 @@ def test_cleanup_stale_pkill_exit_1_is_ok(tmp_path, monkeypatch):
 
 
 def _precheck_cfg(tmp_path, *, mode_key: str = "dagger"):
-    xml = tmp_path / "marvin_ws" / "fastrtps_no_shm.xml"
+    xml = (tmp_path / "skye_ros2_ws" / "src" / "skye_robot_driver"
+           / "config" / "fastrtps_teleop.xml")
     xml.parent.mkdir(parents=True)
     xml.write_text("<xml/>")
     return {

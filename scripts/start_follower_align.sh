@@ -19,16 +19,10 @@ export ROS_DOMAIN_ID
 unset ROS_LOCALHOST_ONLY || true
 export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
 
-FASTRTPS_XML="${REPO_ROOT}/marvin_ws/fastrtps_no_shm.xml"
-if [[ ! -f "${FASTRTPS_XML}" && -f "${REPO_ROOT}/marvin_ws1/fastrtps_no_shm.xml" ]]; then
-  FASTRTPS_XML="${REPO_ROOT}/marvin_ws1/fastrtps_no_shm.xml"
-fi
-if [[ -n "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" && -f "${FASTRTPS_DEFAULT_PROFILES_FILE}" ]]; then
-  FASTRTPS_XML="${FASTRTPS_DEFAULT_PROFILES_FILE}"
-fi
-[[ -f "${FASTRTPS_XML}" ]] \
-  || { echo "ERROR: FastDDS xml missing: ${FASTRTPS_XML}" >&2; exit 1; }
-export FASTRTPS_DEFAULT_PROFILES_FILE="${FASTRTPS_XML}"
+# FastDDS profile ships with the driver package (marvin_ws/fastrtps_no_shm.xml
+# was removed in cb0f3e7); the helper also tolerates an invalid inherited path.
+# shellcheck source=lib/ros_domain_env.sh
+source "${SCRIPT_DIR}/lib/ros_domain_env.sh"
 
 cd "${WS}"
 if [[ ! -f install/setup.bash ]]; then
