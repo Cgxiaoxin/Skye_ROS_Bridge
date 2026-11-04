@@ -50,7 +50,7 @@ unset FASTRTPS_DEFAULT_PROFILES_FILE   # 避免指向已删除的 marvin_ws/fast
 echo "DOMAIN=$ROS_DOMAIN_ID PROFILE=$ROBOT_PROFILE"   # 期望 21 / orin
 ```
 
-> `source` 之后 shell 会自动 **cd 到 `skye_ros2_ws`**，并导出 `DRIVER_CONFIG` /
+> `source` 之后 shell 会自动 **cd 到** `skye_ros2_ws`，并导出 `DRIVER_CONFIG` /
 > `LEFT_CONFIG` / `RIGHT_CONFIG`。后面要跑仓库根目录的脚本时，先 `cd "$(git rev-parse --show-toplevel)"` 回去。
 
 | 终端 | 做什么 |
@@ -94,7 +94,7 @@ ros2 launch skye_factr_teleop start_teleop_m6_dual.launch.py \
   robot_profile:=orin sync_diagnostics:=true
 ```
 
-**必须**写 `robot_profile:=orin`：这个 launch 的默认值**硬编码为 `thor`**，并且**不读环境变量**，
+**必须**写 `robot_profile:=orin`：这个 launch 的默认值**硬编码为** `thor`，并且**不读环境变量**，
 `export ROBOT_PROFILE=orin` 对它无效（只有大臂 launch 有 env 回退）。漏写就按 Thor 配置跑（`joint_signs` 等全是 Thor 的）。
 
 启动后是 **IDLE、力矩关**，小臂不会自己动。
@@ -137,6 +137,10 @@ TELEOP 后扳机 J8 → 大臂夹爪：`/left|right_teleop_gripper/ctrl`。
 ```bash
 ros2 topic pub --once /mode/switch_stop std_msgs/msg/String '{data: switch_stop}'
 ros2 service call /gento/hold_current std_srvs/srv/Trigger '{}'
+
+# 查看小臂温度
+ros2 topic echo /leader_arm/left/temperature_c
+ros2 topic echo /leader_arm/right/temperature_c
 ```
 
 ---
