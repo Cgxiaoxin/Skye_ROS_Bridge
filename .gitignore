@@ -28,6 +28,9 @@ skye_ros2_ws/log/
 # CodeGraph index (local, per-machine)
 .codegraph/
 
+# Superpowers local brainstorm / SDD scratch
+.superpowers/
+
 # Editor / OS
 .vscode/
 .idea/
