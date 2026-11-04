@@ -62,6 +62,7 @@ cycle telemetry:
 |---|---|
 | `config_path` | Absolute YAML path, or path relative to the package share; empty selects `config/grav_comp_m6_<side>.yaml` |
 | `sync_diagnostics` | Read-only ROS bool, default false; publish cycle diagnostics and read present current |
+| `temperature_publish_rate_hz` | Read-only ROS number, default `1.0` Hz; `0` disables temperature reads and publication |
 | `dynamixel.joint_offsets` | Required: eight calibrated physical-servo offsets in rad, including gripper |
 | `dynamixel.current_limit_ma` | Required: eight positive current ceilings in physical servo ID 1..8 order, in mA; each must stay within its model limit |
 | `controller.sync_hold_control.ruckig.max_velocity`, `max_acceleration`, `max_jerk` | Required for teleop: eight positive limits each, in logical leader order, rad/s, rad/s², rad/s³ |
@@ -117,10 +118,33 @@ interfaces, with the QoS frozen in the phase-0 contract:
 | Publish | `/leader_arm/current_state`, `/leader_arm/target_joint_state` | `sensor_msgs/msg/JointState` |
 | Publish | `/joint_control` | `sensor_msgs/msg/JointState` |
 | Publish | `/teleop/state` | `std_msgs/msg/String` |
+| Publish | `/leader_arm/{side}/temperature_c` | `std_msgs/msg/Float64MultiArray` |
 
 State data uses RELIABLE/VOLATILE/KEEP_LAST(1); joint commands use
 BEST_EFFORT/VOLATILE/KEEP_LAST(1). Mode requests use RELIABLE/VOLATILE/depth 10;
 state text uses RELIABLE/TRANSIENT_LOCAL/depth 1.
+
+Temperature is sampled in the existing state `GroupSyncRead` transaction and
+published at `temperature_publish_rate_hz` (default 1 Hz), including in IDLE.
+Each array contains eight internal temperatures in °C, in physical servo ID
+1–8 order (ID 8 is the gripper), with 1°C resolution. Temperature uses
+RELIABLE/VOLATILE/KEEP_LAST(1); failed state reads follow the existing stop path
+without publishing cached temperatures. Arrays have no timestamp. Publication
+cannot exceed the control-loop frequency.
+
+```bash
+ros2 topic echo /leader_arm/left/temperature_c
+ros2 topic echo /leader_arm/right/temperature_c
+ros2 topic hz /leader_arm/left/temperature_c
+
+# All single/dual teleop launches accept this argument; use 0.0 to disable.
+ros2 launch skye_factr_teleop start_teleop_m6_dual.launch.py \
+  temperature_publish_rate_hz:=2.0
+```
+
+Enabling temperature extends the read window through address 146, adding 11
+bytes per servo. For eight servos at 4 Mbps, the theoretical additional wire
+time is 0.22 ms per cycle; actual timing needs hardware validation.
 
 Stage 7.2 uses the separate `gravity_test_m6_left.launch.py` or
 `gravity_test_m6_right.launch.py` entry. The side-specific
@@ -477,7 +501,10 @@ cycle = core.step(now=tick_time)  # Once per caller's control cycle.
 Accepted sync captures the measured eight-axis logical leader position and
 velocity and copies the seven follower positions plus gripper setpoint.
 Coordinates must already be mapped to the logical leader frame. If omitted,
-the gripper target is `controller.sync_hold_control.gripper_setpoint`. Starting acceleration
+the gripper target is `controller.limit_barrier_control.gripper.gripper_setpoint`. This field
+also sets the TELEOP spring rest pose and is required between `limit_min` and `kp`
+in the packaged YAML. Remove it from `sync_hold_control` when migrating an older
+configuration; that block now contains only `ruckig` and `hold`. Starting acceleration
 is zero because no acceleration measurement is available; target velocity and
 acceleration are zero. A fresh trajectory is created per sync. Repeated sync
 requests do not replace the target or restart the timeout.

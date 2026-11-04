@@ -38,6 +38,8 @@ ADDR_PRESENT_VELOCITY = 128
 LEN_PRESENT_VELOCITY = 4
 ADDR_PRESENT_POSITION = 132
 LEN_PRESENT_POSITION = 4
+ADDR_PRESENT_TEMPERATURE = 146
+LEN_PRESENT_TEMPERATURE = 1
 LEN_SYNC_STATE = LEN_PRESENT_VELOCITY + LEN_PRESENT_POSITION
 LEN_SYNC_STATE_WITH_CURRENT = LEN_PRESENT_CURRENT + LEN_SYNC_STATE
 
@@ -254,8 +256,8 @@ class DynamixelSdkError(DynamixelError):
 class GroupSyncRead(SdkGroupSyncRead):
     """Preserve status-packet errors discarded by the Python SDK's rxPacket.
 
-    The normal state transaction and payload size are unchanged. A hardware
-    alert therefore becomes visible every cycle without extra bus polling.
+    A hardware alert becomes visible in the state transaction every cycle
+    without extra bus polling.
     """
 
     def __init__(self, *args):
@@ -370,6 +372,7 @@ class DynamixelDriver(DynamixelIO):
         baudrate: int = DEFAULT_BAUDRATE,
         sync_read_attempts: int = DEFAULT_SYNC_READ_ATTEMPTS,
         *, read_present_current: bool = False,
+        read_present_temperature: bool = False,
     ) -> None:
         self._ids = _validate_ids(ids)
         if len(servo_types) != len(self._ids):
@@ -390,6 +393,8 @@ class DynamixelDriver(DynamixelIO):
             raise ValueError("sync_read_attempts must be positive")
         if type(read_present_current) is not bool:
             raise TypeError("read_present_current must be a bool")
+        if type(read_present_temperature) is not bool:
+            raise TypeError("read_present_temperature must be a bool")
 
         self._configured_port = port
         self._port = _serial_port_candidate(port)
@@ -397,6 +402,8 @@ class DynamixelDriver(DynamixelIO):
         self._sync_read_attempts = int(sync_read_attempts)
         self._read_present_current = read_present_current
         self._present_currents_ma: np.ndarray | None = None
+        self._read_present_temperature = read_present_temperature
+        self._present_temperatures_c: np.ndarray | None = None
         self._lock = RLock()
         self._port_open = False
         self._is_open = False
@@ -407,11 +414,15 @@ class DynamixelDriver(DynamixelIO):
 
         self._port_handler = PortHandler(str(self._port))
         self._packet_handler = PacketHandler(PROTOCOL_VERSION)
+        state_address = ADDR_PRESENT_CURRENT if read_present_current else ADDR_PRESENT_VELOCITY
+        state_length = LEN_SYNC_STATE_WITH_CURRENT if read_present_current else LEN_SYNC_STATE
+        if read_present_temperature:
+            state_length = ADDR_PRESENT_TEMPERATURE + LEN_PRESENT_TEMPERATURE - state_address
         self._sync_read = GroupSyncRead(
             self._port_handler,
             self._packet_handler,
-            ADDR_PRESENT_CURRENT if read_present_current else ADDR_PRESENT_VELOCITY,
-            LEN_SYNC_STATE_WITH_CURRENT if read_present_current else LEN_SYNC_STATE,
+            state_address,
+            state_length,
         )
         self._sync_write_current = GroupSyncWrite(
             self._port_handler,
@@ -431,6 +442,13 @@ class DynamixelDriver(DynamixelIO):
         with self._lock:
             return (None if self._present_currents_ma is None
                     else self._present_currents_ma.copy())
+
+    @property
+    def present_temperatures_c(self) -> np.ndarray | None:
+        """Latest successful state temperatures in ID order, or None if unavailable."""
+        with self._lock:
+            return (None if self._present_temperatures_c is None
+                    else self._present_temperatures_c.copy())
 
     @property
     def is_open(self) -> bool:
@@ -573,6 +591,7 @@ class DynamixelDriver(DynamixelIO):
     def read_state(self) -> tuple[np.ndarray, np.ndarray]:
         """Synchronously read positions in rad and velocities in rad/s."""
         with self._lock:
+            self._present_temperatures_c = None
             self._require_open()
             last_result = COMM_SUCCESS
             for _ in range(self._sync_read_attempts):
@@ -592,6 +611,7 @@ class DynamixelDriver(DynamixelIO):
             positions = np.empty(len(self._ids), dtype=float)
             velocities = np.empty(len(self._ids), dtype=float)
             currents = np.empty(len(self._ids), dtype=float) if self._read_present_current else None
+            temperatures = np.empty(len(self._ids), dtype=float) if self._read_present_temperature else None
             for index, dxl_id in enumerate(self._ids):
                 if currents is not None:
                     current_raw = self._read_sync_value_locked(
@@ -622,7 +642,15 @@ class DynamixelDriver(DynamixelIO):
                 positions[index] = position_ticks_to_radians(
                     uint32_to_int32(position_raw)
                 )
+                if temperatures is not None:
+                    temperatures[index] = self._read_sync_value_locked(
+                        dxl_id,
+                        ADDR_PRESENT_TEMPERATURE,
+                        LEN_PRESENT_TEMPERATURE,
+                        "read present temperature",
+                    )
             self._present_currents_ma = currents
+            self._present_temperatures_c = temperatures
             return positions, velocities
 
     def write_currents(self, currents_ma: Sequence[float]) -> None:
@@ -638,6 +666,7 @@ class DynamixelDriver(DynamixelIO):
     def close(self) -> None:
         """Best-effort zero current and torque disable before closing the port."""
         with self._lock:
+            self._present_temperatures_c = None
             if not self._port_open:
                 self._is_open = False
                 self._read_only = False

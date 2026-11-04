@@ -1,5 +1,9 @@
 # 阶段 7.3：连接大臂后的单臂同步
 
+配置迁移说明（2026-10-29）：下文历史快照保留当时的 `sync_hold_control.gripper_setpoint`。
+用于当前程序前，应将其移到 `controller.limit_barrier_control.gripper.gripper_setpoint`，
+放在 `limit_min` 与 `kp` 之间；历史 JSON 记录保持原样。
+
 设备 A / Thor，先左后右。无大臂同步按操作者结论已完成；本清单验证真实大臂反馈驱动小臂同步。
 沿用当前左右 YAML：轨迹上限 `0.8 rad/s、1.0 rad/s²、5.0 rad/s³`，夹爪目标 `0.4 rad`，
 保留已调通的轨迹上限。左侧最终参数、正常同步结果和剩余项目见第 16 节；第 6～15 节保留各阶段的历史记录，
@@ -32,7 +36,7 @@
 **编译并加载工作区**（首次使用或源码、launch、安装配置变更后执行）：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-up-to skye_factr_teleop --symlink-install
 ```
@@ -109,7 +113,7 @@ rg -n 'dynamixel_port:' "$CONFIG"
 以下为连接真机后的操作命令。所有终端使用同一主机工作区和 ROS 环境，各执行：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=73

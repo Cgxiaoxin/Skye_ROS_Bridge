@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { postCommand } from '../lib/api.js';
   import { commandAllowed } from '../lib/commands.js';
+  import SyncCoach from './SyncCoach.svelte';
 
   export let snapshot = null;
 
@@ -10,7 +11,6 @@
   let busyOp = '';
 
   $: teleopState = snapshot?.teleop?.state;
-  $: alignStatus = snapshot?.align?.status;
   $: recording = snapshot?.recording?.active;
   $: leftEnabled = snapshot?.leader_arms?.left_enabled !== false;
   $: rightEnabled = snapshot?.leader_arms?.right_enabled !== false;
@@ -28,15 +28,14 @@
   $: pendingOp = snapshot?.pending_op;
   $: commandBusy = !!busyOp || !!pendingOp;
 
-  const BUTTONS = [
-    { op: 'switch_sync', label: '同步', class: 'btn-primary' },
-    { op: 'align_start', label: '开始对齐', class: 'btn-neutral' },
-    { op: 'align_cancel', label: '取消对齐', class: 'btn-neutral' },
+  const SYNC_BUTTON = { op: 'switch_sync', label: '同步', class: 'btn-primary' };
+  const OTHER_BUTTONS = [
     { op: 'switch_teleop', label: '开启遥操', class: 'btn-primary' },
     { op: 'switch_stop', label: '停止遥操', class: 'btn-neutral' },
     { op: 'recorder_start', label: '开始录制', class: 'btn-primary' },
     { op: 'recorder_stop', label: '停止录制', class: 'btn-amber' },
   ];
+  const BUTTONS = [SYNC_BUTTON, ...OTHER_BUTTONS];
 
   // IMPORTANT: read buttonGates[*] directly in the template (not via a helper).
   // Svelte only invalidates `disabled` for dirty deps it sees in the markup;
@@ -87,12 +86,52 @@
 
 <dl class="status-grid">
   <div><dt>遥操状态</dt><dd class="mono">{teleopState ?? '—'}</dd></div>
-  <div><dt>对齐状态</dt><dd class="mono">{alignStatus ?? '—'}</dd></div>
   <div><dt>录制</dt><dd class="mono">{recording ? '进行中' : '未录制'}</dd></div>
 </dl>
 
 <div class="action-grid">
-  {#each BUTTONS as btn (btn.op)}
+  <button
+    type="button"
+    class="btn {SYNC_BUTTON.class} action-btn"
+    disabled={!buttonGates[SYNC_BUTTON.op]?.allowed || commandBusy}
+    title={buttonGates[SYNC_BUTTON.op]?.reason || SYNC_BUTTON.label}
+    on:click={() => run(SYNC_BUTTON.op)}
+  >
+    {SYNC_BUTTON.label}
+  </button>
+  {#if leaderGateUi}
+    <div class="leader-gate-block">
+      <div class="leader-gate-row">
+        <button
+          type="button"
+          class="btn btn-neutral action-btn"
+          class:btn-amber={!leftEnabled}
+          disabled={!gateLeft.allowed || !!snapshot?.leader_arms?.locked || commandBusy}
+          title={gateLeft.reason || (leftEnabled ? '关左臂' : '开左臂')}
+          on:click={() => toggleSide('left')}
+        >
+          {leftEnabled ? '关左臂' : '开左臂'}
+        </button>
+        <button
+          type="button"
+          class="btn btn-neutral action-btn"
+          class:btn-amber={!rightEnabled}
+          disabled={!gateRight.allowed || !!snapshot?.leader_arms?.locked || commandBusy}
+          title={gateRight.reason || (rightEnabled ? '关右臂' : '开右臂')}
+          on:click={() => toggleSide('right')}
+        >
+          {rightEnabled ? '关右臂' : '开右臂'}
+        </button>
+      </div>
+      <p class="mono leader-gate-status">
+        小臂：左{leftEnabled ? '开' : '关'} · 右{rightEnabled ? '开' : '关'}
+      </p>
+    </div>
+  {/if}
+  <div class="sync-coach-slot">
+    <SyncCoach coach={snapshot?.sync_coach} enterLabel="开遥操" />
+  </div>
+  {#each OTHER_BUTTONS as btn (btn.op)}
     <button
       type="button"
       class="btn {btn.class} action-btn"
@@ -102,41 +141,17 @@
     >
       {btn.label}
     </button>
-    {#if btn.op === 'switch_sync' && leaderGateUi}
-      <div class="leader-gate-block">
-        <div class="leader-gate-row">
-          <button
-            type="button"
-            class="btn btn-neutral action-btn"
-            class:btn-amber={!leftEnabled}
-            disabled={!gateLeft.allowed || !!snapshot?.leader_arms?.locked || commandBusy}
-            title={gateLeft.reason || (leftEnabled ? '关左臂' : '开左臂')}
-            on:click={() => toggleSide('left')}
-          >
-            {leftEnabled ? '关左臂' : '开左臂'}
-          </button>
-          <button
-            type="button"
-            class="btn btn-neutral action-btn"
-            class:btn-amber={!rightEnabled}
-            disabled={!gateRight.allowed || !!snapshot?.leader_arms?.locked || commandBusy}
-            title={gateRight.reason || (rightEnabled ? '关右臂' : '开右臂')}
-            on:click={() => toggleSide('right')}
-          >
-            {rightEnabled ? '关右臂' : '开右臂'}
-          </button>
-        </div>
-        <p class="mono leader-gate-status">
-          小臂：左{leftEnabled ? '开' : '关'} · 右{rightEnabled ? '开' : '关'}
-        </p>
-      </div>
-    {/if}
   {/each}
 </div>
 
 <style>
-  .leader-gate-block {
+  .leader-gate-block,
+  .sync-coach-slot {
     grid-column: 1 / -1;
+  }
+
+  .sync-coach-slot :global(.sync-coach) {
+    margin-bottom: 0;
   }
 
   .leader-gate-row {

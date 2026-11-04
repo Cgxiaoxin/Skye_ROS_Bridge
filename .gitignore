@@ -28,6 +28,9 @@ skye_ros2_ws/log/
 # CodeGraph index (local, per-machine)
 .codegraph/
 
+# Superpowers local brainstorm / SDD scratch
+.superpowers/
+
 # Editor / OS
 .vscode/
 .idea/
@@ -52,14 +55,19 @@ marvin_ws/.skye/
 # 本机 robot profile（set_robot_profile.sh；.skye 不可写时的回退）
 marvin_ws/robot_profile
 
-# 关节对照 debug log
+# 调试运行输出（scripts/debug/logs/.gitignore 已忽略内容）
 scripts/debug/*.log
+scripts/debug/logs/*
+!scripts/debug/logs/.gitignore
 
 # Hydra / 运行日志（勿提交）
 marvin_ws/outputs/
 marvin_ws/tele_operation/outputs/
 marvin_ws/.runtime/
 marvin_ws/tele_operation/.idea/
+
+# 本地临时 ROS 日志目录（调试用，勿提交）
+.ros_log_tmp/
 
 # 安装包（走 GitLab Package Registry）
 *.tgz

@@ -28,6 +28,20 @@ robot_controller_ip() {
   esac
 }
 
+# ROS_DOMAIN_ID per machine so Thor / Orin do not cross-talk on the LAN.
+#   thor → 20
+#   orin → 21
+robot_ros_domain_id() {
+  case "${1,,}" in
+    thor) echo "20" ;;
+    orin) echo "21" ;;
+    *)
+      echo "ERROR: unknown profile for ROS_DOMAIN_ID: ${1}" >&2
+      return 1
+      ;;
+  esac
+}
+
 _robot_profile_read_file() {
   local path="${1:?}"
   [[ -f "${path}" ]] || return 1

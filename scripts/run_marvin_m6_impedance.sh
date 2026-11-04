@@ -11,7 +11,7 @@
 # Default (MARVIN_LAUNCH_CMD unset): opens an interactive shell in the container.
 # Inside container (P4 / Skye bridge-less):
 #   source /marvin_ws/install/setup.bash
-#   export ROS_DOMAIN_ID=21 ROS_LOCALHOST_ONLY=0 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+#   export ROS_DOMAIN_ID=<thor:20 orin:21> ROS_LOCALHOST_ONLY=0 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 #   ros2 launch factr_teleop start_teleop_m6_dual_gento.launch.py use_keyboard:=true
 #
 # Non-interactive (operator UI / automation): set MARVIN_LAUNCH_CMD and the
@@ -47,6 +47,10 @@ if [[ -n "${1:-}" && "${1}" != -* ]]; then
 fi
 
 ROBOT_IP="${ROBOT_IP:-$(robot_controller_ip "${ROBOT_PROFILE}")}"
+if [[ -z "${ROS_DOMAIN_ID:-}" ]]; then
+  ROS_DOMAIN_ID="$(robot_ros_domain_id "${ROBOT_PROFILE}")"
+fi
+export ROS_DOMAIN_ID
 ROBOT_GRIPPER_PORT_LEFT="${ROBOT_GRIPPER_PORT_LEFT:-/dev/ttyUSB0}"
 ROBOT_GRIPPER_PORT_RIGHT="${ROBOT_GRIPPER_PORT_RIGHT:-/dev/ttyUSB1}"
 USE_LEFT_GRIPPER="${USE_LEFT_GRIPPER:-false}"
@@ -61,11 +65,6 @@ if [[ -f "${BINDING_ENV}" ]]; then
 fi
 ROBOT_LEADER_DYNAMIXEL_PORT_LEFT="${ROBOT_LEADER_DYNAMIXEL_PORT_LEFT:-usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0}"
 ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT="${ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT:-usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0}"
-
-if [[ ! -f "${MARVIN_WS}/fastrtps_no_shm.xml" ]]; then
-  echo "ERROR: missing ${MARVIN_WS}/fastrtps_no_shm.xml" >&2
-  exit 1
-fi
 
 if [[ ! -f "${MARVIN_WS}/install/setup.bash" ]]; then
   echo "marvin_ws/install missing; trying bootstrap (GitLab Package Registry)..."
@@ -104,9 +103,8 @@ DOCKER_ARGS=(
   -e "ROBOT_LEADER_DYNAMIXEL_PORT_LEFT=${ROBOT_LEADER_DYNAMIXEL_PORT_LEFT}"
   -e "ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT=${ROBOT_LEADER_DYNAMIXEL_PORT_RIGHT}"
   -e "ROBOT_PROFILE=${ROBOT_PROFILE}"
-  -e "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-21}"
+  -e "ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
   -e "RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
-  -e "FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml"
   -v /dev:/dev
   -v "${MARVIN_WS}:/marvin_ws"
   -v "${SCRIPT_DIR}:/scripts:ro"
@@ -132,7 +130,6 @@ echo "Mount: ${MARVIN_WS} -> /marvin_ws"
 echo "Profile: ${ROBOT_PROFILE}"
 echo "Controller IP: ${ROBOT_IP}"
 echo "Image: ${IMAGE}"
-echo "FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml"
 
 if [[ -n "${MARVIN_LAUNCH_CMD}" ]]; then
   echo "Launch: ${MARVIN_LAUNCH_CMD}"

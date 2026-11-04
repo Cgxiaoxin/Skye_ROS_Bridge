@@ -276,7 +276,7 @@ def main(argv=None):
     parser.add_argument("--output-dir", type=Path,
                         help="parent for a new automatic session (default: /tmp/skye_factr_trials); omit per-arm outputs")
     parser.add_argument("--driver-config", type=Path)
-    parser.add_argument("--operator", required=True)
+    parser.add_argument("--operator", default="", help="optional operator name")
     parser.add_argument("--duration", type=float, default=180.0)
     parser.add_argument("--post-stop-seconds", type=float, default=3.0)
     args = parser.parse_args(argv)

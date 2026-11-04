@@ -3,11 +3,12 @@
 
 """Shared launch construction for the left, right, and dual M6 leaders."""
 
+import os
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, SetEnvironmentVariable
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -82,12 +83,25 @@ def _launch_setup(context, *, sides, hitl=False):
                 "config_path": config,
                 "sync_diagnostics": ParameterValue(
                     LaunchConfiguration("sync_diagnostics"), value_type=bool),
+                "temperature_publish_rate_hz": ParameterValue(
+                    LaunchConfiguration("temperature_publish_rate_hz"), value_type=float),
             }],
             remappings=leader_remappings(side, hitl=hitl),
             output="screen",
         )
         for side, config in files
     ]
+
+
+def _dds_profile_actions():
+    """Select the packaged Fast DDS profile unless the caller already has one."""
+    if os.environ.get("FASTRTPS_DEFAULT_PROFILES_FILE"):
+        return []
+    path = (Path(get_package_share_directory("skye_factr_teleop"))
+            / "config" / "fastrtps_teleop.xml")
+    if not path.is_file():
+        return []
+    return [SetEnvironmentVariable("FASTRTPS_DEFAULT_PROFILES_FILE", str(path))]
 
 
 def leader_launch_description(sides, *, hitl=False):
@@ -104,6 +118,10 @@ def leader_launch_description(sides, *, hitl=False):
         "sync_diagnostics", default_value="false", choices=["true", "false"],
         description="Publish eight-axis cycle diagnostics and read present current",
     ))
+    actions.append(DeclareLaunchArgument(
+        "temperature_publish_rate_hz", default_value="1.0",
+        description="Temperature publish rate in Hz; 0 disables reading and publishing",
+    ))
     for side in sides:
         actions.append(DeclareLaunchArgument(
             f"{side}_config", default_value="",
@@ -111,6 +129,7 @@ def leader_launch_description(sides, *, hitl=False):
                          "empty selects the robot_profile configuration; "
                          "absolute or relative to the package share"),
         ))
+    actions.extend(_dds_profile_actions())
     actions.append(OpaqueFunction(
         function=_launch_setup, kwargs={"sides": sides, "hitl": hitl}))
     return LaunchDescription(actions)

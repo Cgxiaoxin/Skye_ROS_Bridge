@@ -116,7 +116,7 @@ ament_package()
 
 Run:
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws
+cd skye_ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-select skye_hitl_dagger --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash

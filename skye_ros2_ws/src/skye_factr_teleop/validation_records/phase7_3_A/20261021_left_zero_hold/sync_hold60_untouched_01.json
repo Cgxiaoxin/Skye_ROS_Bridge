@@ -2,7 +2,7 @@
   "side": "left",
   "operator": "lyy",
   "started_utc": "2026-10-21T07:00:03.338518+00:00",
-  "config_path": "/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml",
+  "config_path": "/home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/src/skye_factr_teleop/config/grav_comp_m6_left.yaml",
   "config": {
     "name": "grav_comp_m6_left",
     "dynamixel": {

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """1 Hz 对照小臂 / 大臂关节角（内部仍订 250 Hz 最新帧）。
 
-主机与 FACTR 同 ROS_DOMAIN_ID（默认 21），FastDDS 关 SHM。
+主机与 FACTR 同 ROS_DOMAIN_ID（默认 21），FastDDS 用驱动包内 profile。
 
 用法:
   export ROS_DOMAIN_ID=21
   unset ROS_LOCALHOST_ONLY
   export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-  export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/marvin_ws/fastrtps_no_shm.xml"
+  export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/skye_ros2_ws/src/skye_robot_driver/config/fastrtps_teleop.xml"
   /usr/bin/python3 scripts/debug/watch_arm_joints.py
   /usr/bin/python3 scripts/debug/watch_arm_joints.py --hz 1
-  # 默认写 scripts/debug/watch_arm_joints_YYYYmmdd_HHMMSS.log（1 Hz）
+  # 默认写 scripts/debug/logs/watch_arm_joints_YYYYmmdd_HHMMSS.log（1 Hz）
 """
 
 from __future__ import annotations
@@ -26,6 +26,9 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+LOG_DIR = SCRIPT_DIR / "logs"
 
 # 大臂 URDF J4（rad），便于看是否贴边
 J4_BIG_MIN = -2.5307
@@ -204,13 +207,13 @@ def main() -> int:
     parser.add_argument(
         "--log",
         default="",
-        help="log 路径；默认写本目录 watch_arm_joints_YYYYmmdd_HHMMSS.log；传 - 则不写文件",
+        help="log 路径；默认写 logs/watch_arm_joints_YYYYmmdd_HHMMSS.log；传 - 则不写文件",
     )
     args = parser.parse_args()
 
     log_fp: TextIO | None = None
     if args.log != "-":
-        log_path = Path(args.log) if args.log else Path(__file__).resolve().parent / (
+        log_path = Path(args.log) if args.log else LOG_DIR / (
             f"watch_arm_joints_{time.strftime('%Y%m%d_%H%M%S')}.log"
         )
         log_path.parent.mkdir(parents=True, exist_ok=True)

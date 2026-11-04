@@ -83,12 +83,12 @@ python3 -m pytest -q \
 首次使用本工具或更新源码后，先从 `skye_ros2_ws` 目录重新构建包，并在当前终端加载工作区：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 colcon build --packages-select skye_factr_teleop --symlink-install
 source install/setup.bash
 ros2 pkg executables skye_factr_teleop
 # 根据设备更换为A/B后缀
-RECORD_ROOT=/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase2_5_2_A
+RECORD_ROOT=/home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase2_5_2_A
 mkdir -p "$RECORD_ROOT"
 ```
 
@@ -345,10 +345,10 @@ FTDI latency timer 为 `1`，然后重新测试并复核。
 
 ```bash
 # 根据设备更换为A/B后缀
-RECORD_ROOT=/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase2_5_3_A
+RECORD_ROOT=/home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/src/skye_factr_teleop/validation_records/phase2_5_3_A
 mkdir -p "$RECORD_ROOT"
 
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 SIDE=left  # 复核右侧时改为 right
@@ -391,7 +391,7 @@ PY
 测试其它 ID 时，把命令末尾的侧别、ID、型号和 USB by-id 一起改为实际值。
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 source install/setup.bash
 python3 - left 1 XM430-W350 usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0 <<'PY'
 import json

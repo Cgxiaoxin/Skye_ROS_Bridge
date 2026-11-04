@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, Protocol
 
 from skye_operator_ui.hints import next_hint
 from skye_operator_ui.session_state import SessionState
+from skye_operator_ui.sync_coach import build_sync_coach
 
 
 class _SupervisorLike(Protocol):
@@ -48,6 +50,15 @@ class SnapshotBuilder:
             align_status=align_status,
         )
 
+        sync_coach = build_sync_coach(
+            left=mailbox.get("sync_progress_left"),
+            right=mailbox.get("sync_progress_right"),
+            teleop_state=teleop_state,
+            hitl_mode=hitl_mode,
+            leader_arms=mailbox.get("leader_arms"),
+            now_s=time.time(),
+        )
+
         return {
             "session": session,
             "teleop": {"state": teleop_state},
@@ -76,6 +87,7 @@ class SnapshotBuilder:
             ),
             "next_hint": hint,
             "pending_op": pending_op,
+            "sync_coach": sync_coach,
         }
 
     def _banner(

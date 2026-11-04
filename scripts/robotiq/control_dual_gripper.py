@@ -71,7 +71,7 @@ LEFT_CLOSE_MM = 2.0   # 闭合：改这里
 
 # --- 右臂目标开度 (mm) ---
 RIGHT_OPEN_MM = 50.0  # 张开：改这里
-RIGHT_CLOSE_MM = 13.0  # 闭合：改这里
+RIGHT_CLOSE_MM = 8.0  # 闭合：改这里
 
 # 运动参数
 SPEED = 0x88   # 0~255

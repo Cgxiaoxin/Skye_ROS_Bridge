@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Scan Dynamixel FTDI buses, bind left/right, write .skye + yaml.
+"""Scan Dynamixel FTDI buses, bind left/right, write host-package yaml.
 
-Usage (Docker 内推荐):
-  python3 /scripts/bind_leader_arms.py
-  source /marvin_ws/.skye/leader_arms.env
+Usage (Orin / Thor host, no Docker):
+  export ROBOT_PROFILE=orin   # or thor
+  python3 scripts/bind_leader_arms.py
+  # exactly 2 buses: unplug LEFT USB when prompted
+  # >2 buses: pick left/right index
 
-  python3 /scripts/bind_leader_arms.py --dry-run
+  python3 scripts/bind_leader_arms.py --dry-run
 """
 from __future__ import annotations
 
@@ -18,19 +20,75 @@ from pathlib import Path
 
 BAUD = 4_000_000
 BY_ID = Path("/dev/serial/by-id")
+PORT_LINE = re.compile(
+    r'^(?P<prefix>\s*dynamixel_port:\s*)'
+    r'(?P<value>"[^"]+"|\S+)'
+    r'(?P<suffix>\s*(?:#.*)?)?$',
+    re.MULTILINE,
+)
 
 
-def repo_paths() -> tuple[Path, Path]:
+def repo_root() -> Path:
     here = Path(__file__).resolve().parent
-    # Skye_ROS_Bridge: scripts/ 与 marvin_ws/ 同级
-    if (here.parent / "marvin_ws").is_dir():
-        root, marvin = here.parent, here.parent / "marvin_ws"
-    elif Path("/marvin_ws").is_dir():
-        root = Path("/scripts") if Path("/scripts").is_dir() else here
-        marvin = Path("/marvin_ws")
+    root = here.parent
+    if (root / "skye_ros2_ws").is_dir() or (root / "marvin_ws").is_dir():
+        return root
+    if Path("/marvin_ws").is_dir():
+        return Path("/")
+    sys.exit("找不到仓库根目录（需要 skye_ros2_ws 或 marvin_ws）")
+
+
+def resolve_profile() -> str:
+    profile = os.environ.get(
+        "ROBOT_PROFILE", os.environ.get("MARVIN_PROFILE", "thor")
+    ).strip().lower()
+    if profile not in ("thor", "orin"):
+        profile = "thor"
+    return profile
+
+
+def host_config_paths(root: Path, profile: str) -> tuple[Path, Path] | None:
+    pkg = root / "skye_ros2_ws" / "src" / "skye_factr_teleop" / "config"
+    if not pkg.is_dir():
+        return None
+    if profile == "orin":
+        left = pkg / "orin" / "grav_comp_m6_left.yaml"
+        right = pkg / "orin" / "grav_comp_m6_right.yaml"
     else:
-        sys.exit("找不到 marvin_ws，请在仓库或 Docker(/marvin_ws) 中运行")
-    return root, marvin
+        left = pkg / "grav_comp_m6_left.yaml"
+        right = pkg / "grav_comp_m6_right.yaml"
+    return left, right
+
+
+def host_install_paths(root: Path, profile: str) -> tuple[Path, Path] | None:
+    share = (
+        root
+        / "skye_ros2_ws"
+        / "install"
+        / "skye_factr_teleop"
+        / "share"
+        / "skye_factr_teleop"
+        / "config"
+    )
+    if not share.is_dir():
+        return None
+    if profile == "orin":
+        left = share / "orin" / "grav_comp_m6_left.yaml"
+        right = share / "orin" / "grav_comp_m6_right.yaml"
+    else:
+        left = share / "grav_comp_m6_left.yaml"
+        right = share / "grav_comp_m6_right.yaml"
+    return left, right
+
+
+def marvin_config_paths(root: Path, profile: str) -> tuple[Path, Path] | None:
+    marvin = root / "marvin_ws" if (root / "marvin_ws").is_dir() else Path("/marvin_ws")
+    if not marvin.is_dir():
+        return None
+    cfg = marvin / "configs" / profile
+    left = cfg / "grav_comp_m6_left.yaml"
+    right = cfg / "grav_comp_m6_right.yaml"
+    return left, right
 
 
 def list_ftdi() -> list[str]:
@@ -103,6 +161,25 @@ def pick_two(cands: list[str]) -> tuple[str, str]:
     sys.exit("未检测到拔出变化，请重试")
 
 
+def patch_dynamixel_port(path: Path, name: str) -> bool:
+    if not path.is_file():
+        return False
+    text = path.read_text()
+
+    def repl(match: re.Match[str]) -> str:
+        prefix = match.group("prefix")
+        value = match.group("value")
+        suffix = match.group("suffix") or ""
+        quoted = value.startswith('"')
+        new_value = f'"{name}"' if quoted else name
+        return f"{prefix}{new_value}{suffix}"
+
+    new, n = PORT_LINE.subn(repl, text, count=1)
+    if n:
+        path.write_text(new)
+    return n > 0
+
+
 def write_env(path: Path, left: str, right: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -115,32 +192,6 @@ def write_env(path: Path, left: str, right: str) -> None:
 def write_yaml_map(path: Path, left: str, right: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"left_by_id: {left}\nright_by_id: {right}\n")
-
-
-def patch_dynamixel_port(path: Path, name: str) -> bool:
-    if not path.is_file():
-        return False
-    text = path.read_text()
-    new, n = re.subn(
-        r'(dynamixel_port:\s*")[^"]*(")',
-        rf"\g<1>{name}\2",
-        text,
-        count=1,
-    )
-    if n:
-        path.write_text(new)
-    return n > 0
-
-
-def patch_all_grav_comp_configs(config_dir: Path, left: str, right: str) -> None:
-    """Patch every grav_comp*.yaml under config_dir (install or overlay)."""
-    if not config_dir.is_dir():
-        print(f"  WARN 配置目录不存在: {config_dir}")
-        return
-    for path in sorted(config_dir.glob("grav_comp*.yaml")):
-        target = left if "left" in path.name else right
-        ok = patch_dynamixel_port(path, target)
-        print(f"  {'OK' if ok else 'SKIP'}  {path.name} -> {target}")
 
 
 def set_latency(names: list[str]) -> None:
@@ -162,59 +213,93 @@ def set_latency(names: list[str]) -> None:
             print(f"  latency 失败 {tty}: {e}（可手动: echo 1 | sudo tee {path}）")
 
 
-def apply(marvin: Path, left: str, right: str, dry: bool) -> None:
+def collect_targets(
+    root: Path, profile: str
+) -> list[tuple[str, Path, Path]]:
+    """Return labeled (left_yaml, right_yaml) pairs to patch."""
+    targets: list[tuple[str, Path, Path]] = []
+    host = host_config_paths(root, profile)
+    if host and host[0].is_file() and host[1].is_file():
+        targets.append(("skye_factr_teleop src", host[0], host[1]))
+    install = host_install_paths(root, profile)
+    if install and install[0].is_file() and install[1].is_file():
+        # Avoid double-writing when install is a symlink into src.
+        if not host or (
+            install[0].resolve() != host[0].resolve()
+            or install[1].resolve() != host[1].resolve()
+        ):
+            targets.append(("skye_factr_teleop install", install[0], install[1]))
+    marvin = marvin_config_paths(root, profile)
+    if marvin and (marvin[0].is_file() or marvin[1].is_file()):
+        targets.append(("marvin_ws configs", marvin[0], marvin[1]))
+    return targets
+
+
+def apply(root: Path, left: str, right: str, dry: bool) -> None:
+    profile = resolve_profile()
+    targets = collect_targets(root, profile)
+    marvin = root / "marvin_ws" if (root / "marvin_ws").is_dir() else Path("/marvin_ws")
     env = marvin / ".skye" / "leader_arms.env"
     yml = marvin / ".skye" / "leader_arms.yaml"
-    profile = os.environ.get("ROBOT_PROFILE", os.environ.get("MARVIN_PROFILE", "thor")).strip().lower()
-    if profile not in ("thor", "orin"):
-        profile = "thor"
-    left_cfg = marvin / "configs" / profile / "grav_comp_m6_left.yaml"
-    right_cfg = marvin / "configs" / profile / "grav_comp_m6_right.yaml"
-    install_left = marvin / "install/share/factr_teleop/configs/grav_comp_m6_left.yaml"
-    install_right = marvin / "install/share/factr_teleop/configs/grav_comp_m6_right.yaml"
 
     print("\n将写入:")
-    print(f"  {env}")
-    print(f"  {yml}")
-    print(f"  profile={profile}: {left_cfg.name}, {right_cfg.name} (dynamixel_port)")
-    if install_left.is_file() or install_right.is_file():
-        print(f"  install copies (if present): grav_comp_m6_left/right.yaml")
+    print(f"  profile={profile}")
+    if marvin.is_dir():
+        print(f"  {env}")
+        print(f"  {yml}")
+    if not targets:
+        sys.exit(
+            f"未找到可写配置（profile={profile}）。"
+            "确认 skye_ros2_ws/src/skye_factr_teleop/config 存在。"
+        )
+    for label, left_cfg, right_cfg in targets:
+        print(f"  [{label}] {left_cfg}")
+        print(f"  [{label}] {right_cfg}")
     if dry:
         print("[dry-run] 未写盘")
         return
 
-    write_env(env, left, right)
-    write_yaml_map(yml, left, right)
-    for path, port in ((left_cfg, left), (right_cfg, right)):
-        if path.is_file():
+    if marvin.is_dir():
+        write_env(env, left, right)
+        write_yaml_map(yml, left, right)
+
+    for label, left_cfg, right_cfg in targets:
+        for path, port in ((left_cfg, left), (right_cfg, right)):
             ok = patch_dynamixel_port(path, port)
-            print(f"  {'OK' if ok else 'SKIP'}  {path} -> {port}")
-    for path, port in ((install_left, left), (install_right, right)):
-        if path.is_file():
-            ok = patch_dynamixel_port(path, port)
-            print(f"  {'OK' if ok else 'SKIP'}  {path} -> {port}")
+            print(f"  {'OK' if ok else 'SKIP'}  [{label}] {path.name} -> {port}")
+
     print("设置 latency_timer=1 …")
     set_latency([left, right])
+
     print("\n验证 dynamixel_port:")
-    for path in (install_left, install_right):
-        if path.is_file():
+    for label, left_cfg, right_cfg in targets:
+        for path in (left_cfg, right_cfg):
+            if not path.is_file():
+                continue
             for line in path.read_text().splitlines():
                 if "dynamixel_port" in line:
-                    print(f"  {path.name}: {line.strip()}")
+                    print(f"  [{label}] {path.name}: {line.strip()}")
                     break
-    print("\n已写入。当前 shell 请执行:")
-    print(f"  source {env}")
-    print("  # Docker 内 launch 前务必 source /marvin_ws/install/setup.bash")
+
+    print("\n已写入。重启小臂 launch 即可（robot_profile 须与绑定一致）:")
+    print(f"  export ROBOT_PROFILE={profile}")
+    print(
+        "  ros2 launch skye_factr_teleop start_teleop_m6_dual.launch.py "
+        f"robot_profile:={profile}"
+    )
+    if marvin.is_dir():
+        print(f"  # 旧 Docker 流程另: source {env}")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="绑定左右主臂 FTDI 串口")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
-    _, marvin = repo_paths()
+    root = repo_root()
+    print(f"ROBOT_PROFILE={resolve_profile()}")
     cands = scan()
     left, right = pick_two(cands)
-    apply(marvin, left, right, args.dry_run)
+    apply(root, left, right, args.dry_run)
 
 
 if __name__ == "__main__":

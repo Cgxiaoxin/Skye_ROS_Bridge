@@ -1,5 +1,9 @@
 # 阶段 7.3：无大臂时的小臂走位与保持试验
 
+配置迁移说明（2026-10-29）：下文历史快照保留当时的 `sync_hold_control.gripper_setpoint`。
+用于当前程序前，应将其移到 `controller.limit_barrier_control.gripper.gripper_setpoint`，
+放在 `limit_min` 与 `kp` 之间；历史 JSON 记录保持原样。
+
 2026-10-23 补充：操作者确认无大臂同步验收已完成。当前保留参数以第 11、12 节为准：
 轨迹上限 `0.8 rad/s、1.0 rad/s²、5.0 rad/s³`。实际采用第 12 节的 `/tmp/` 路径、
 `record --duration 180` 及 `move --target 0 0 0 0 0 0 0 --execute` 终端输出进行分析；
@@ -33,7 +37,7 @@
 在主机执行：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-select skye_factr_teleop --symlink-install
 source install/setup.bash
@@ -54,7 +58,7 @@ Ruckig 预计耗时 `4.7 s`。`--start` 只用于离线预览，不能与 `--exe
 终端 A、B、C 各执行以下公共设置：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 SIDE=left
@@ -757,7 +761,7 @@ ros2 run skye_factr_teleop skye_factr_sync_trial move \
 使用 Bash；每个终端先执行以下命令。修改配置后须重启驱动，保证驱动与工具使用同一份文件。
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 

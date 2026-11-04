@@ -203,7 +203,11 @@ def test_complete_lifecycle_and_repeated_requests(rig):
         result = tick(rig)
         assert result.mode == ControlMode.TELEOP
         assert result.target_position is result.target_velocity is None
-        np.testing.assert_array_equal(result.tracking_torque, np.zeros(8))
+        np.testing.assert_array_equal(result.tracking_torque[:7], np.zeros(7))
+        gripper = core.config.controller.limit_barrier_control.gripper
+        assert result.tracking_torque[-1] == pytest.approx(
+            gripper.kp * (gripper.gripper_setpoint - result.state.gripper_position)
+            - gripper.kd * result.state.gripper_velocity)
         assert result.wrote_current  # Normal compensation remains available.
     assert backend.calls == calls
     core.handle("switch_stop", now=clock.advance())

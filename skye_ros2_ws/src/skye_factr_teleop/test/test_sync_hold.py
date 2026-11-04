@@ -65,6 +65,10 @@ def begin(core, *, now=1.0, target=0.1):
 
 def test_sync_captures_measured_eight_axis_state_and_copies_target():
     core, hardware, _, trajectories = make_core()
+    barrier = core.config.controller.limit_barrier_control
+    core.config = replace(core.config, controller=replace(
+        core.config.controller, limit_barrier_control=replace(
+            barrier, gripper=replace(barrier.gripper, gripper_setpoint=0.23))))
     raw_position = np.arange(8) * 0.03
     raw_velocity = np.arange(8) * 0.01
     core.joint_offsets[:] = 0.01
@@ -76,13 +80,17 @@ def test_sync_captures_measured_eight_axis_state_and_copies_target():
     np.testing.assert_allclose(trajectory.start_velocity, raw_velocity * core.joint_signs)
     target[:] = 99
     np.testing.assert_allclose(trajectory.target[:7], 0.1)
-    assert trajectory.target[-1] == core.config.controller.sync_hold_control.gripper_setpoint
+    assert trajectory.target[-1] == core.config.controller.limit_barrier_control.gripper.gripper_setpoint
     assert trajectory.calls == 0
     assert hardware.current_history_ma == []
 
 
 def test_left_teleop_baseline_keeps_gravity_but_removes_live_hold_pid():
     core, hardware, dynamics, trajectories = make_core()
+    barrier = core.config.controller.limit_barrier_control
+    core.config = replace(core.config, controller=replace(
+        core.config.controller, limit_barrier_control=replace(
+            barrier, gripper=replace(barrier.gripper, gripper_setpoint=0.31))))
     begin(core)
     trajectories[0].finished = True
     hardware.inject_state(np.full(8, 0.09) * core.joint_signs, np.zeros(8))
@@ -99,7 +107,7 @@ def test_left_teleop_baseline_keeps_gravity_but_removes_live_hold_pid():
     assert after.target_position is after.target_velocity is None
     np.testing.assert_array_equal(after.tracking_torque[:7], np.zeros(7))
     gripper = core.config.controller.limit_barrier_control.gripper
-    setpoint = core.config.controller.sync_hold_control.gripper_setpoint
+    setpoint = core.config.controller.limit_barrier_control.gripper.gripper_setpoint
     assert after.tracking_torque[-1] == pytest.approx(gripper_position_hold(
         after.state.gripper_position, after.state.gripper_velocity,
         setpoint, gripper.kp, gripper.kd,

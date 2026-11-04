@@ -9,7 +9,7 @@ WS="${REPO_ROOT}/skye_ros2_ws"
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-21}"
 unset ROS_LOCALHOST_ONLY || true
 export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
-FASTRTPS_XML="${REPO_ROOT}/marvin_ws/fastrtps_no_shm.xml"
+FASTRTPS_XML="${WS}/src/skye_robot_driver/config/fastrtps_teleop.xml"
 [[ -f "${FASTRTPS_XML}" ]] && export FASTRTPS_DEFAULT_PROFILES_FILE="${FASTRTPS_XML}"
 
 set +u

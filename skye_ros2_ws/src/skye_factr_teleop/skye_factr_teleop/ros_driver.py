@@ -26,11 +26,12 @@ from .config import load_config
 from .state_machine import ControlMode
 from .control_core import (
     ControlCore, GravityTestSettings, LimitTestSettings, FrictionTestSettings,
-    gripper_command_norm,
+    gripper_command_norm, transform_leader_state,
 )
 from .dynamics import PinocchioDynamics
 from .trajectory import RuckigTrajectory
 from .dynamixel_driver import DynamixelDriver
+from .sync_trial import preview_move, _sync_conditions
 
 
 def state_qos():
@@ -99,16 +100,22 @@ def validate_joint_state(
     stamp = sec + nanosec * 1e-9
     if stamp == 0:
         raise ValueError("JointState requires a nonzero timestamp")
-    if ros_now - stamp > max_age or stamp - ros_now > future_tolerance:
-        raise ValueError("JointState timestamp is stale or in the future")
+    age = ros_now - stamp
+    if age > max_age or -age > future_tolerance:
+        raise ValueError(
+            "JointState timestamp is stale or in the future "
+            f"(age={age:+.4f}s max_age={max_age:.3f}s "
+            f"future_tol={future_tolerance:.3f}s)"
+        )
     return JointSample(position, stamp, received_at)
 
 
-def _hardware_factory(config, *, read_present_current=False):
+def _hardware_factory(config, *, read_present_current=False, read_present_temperature=False):
     return DynamixelDriver(
         range(1, 9), config.dynamixel.servo_types,
         config.dynamixel.dynamixel_port, baudrate=config.dynamixel.baudrate,
         read_present_current=read_present_current,
+        read_present_temperature=read_present_temperature,
     )
 
 
@@ -139,6 +146,10 @@ class SkyeFactrTeleopNode(Node):
         self._published_friction_phase = None
         self._diagnostic_sequence = 0
         self._previous_cycle_time = None
+        self._sync_goal = None
+        self._sync_progress_mode = None
+        self._sync_progress_at = None
+        self._last_temperature_publish_time = None
         try:
             self._configure()
             self._create_ros_interfaces()
@@ -157,6 +168,11 @@ class SkyeFactrTeleopNode(Node):
         self._sync_diagnostics = self._parameter("sync_diagnostics", False)
         if type(self._sync_diagnostics) is not bool:
             raise ValueError("sync_diagnostics must be a bool")
+        rate = self._parameter("temperature_publish_rate_hz", 1.0)
+        if (isinstance(rate, bool) or not isinstance(rate, (int, float))
+                or not np.isfinite(rate) or rate < 0):
+            raise ValueError("temperature_publish_rate_hz must be a finite non-negative number")
+        self._temperature_publish_rate_hz = float(rate)
         self._gravity_test_only = self._parameter("gravity_test_only", False)
         self._limit_test_only = self._parameter("limit_test_only", False)
         self._friction_test_only = self._parameter("friction_test_only", False)
@@ -260,10 +276,22 @@ class SkyeFactrTeleopNode(Node):
 
     def _create_ros_interfaces(self):
         self._state_pub = self.create_publisher(String, "/teleop/state", latched_state_qos())
+        self._sync_progress_pub = None
+        if not self._test_only:
+            self._sync_progress_pub = self.create_publisher(
+                String, f"/leader_arm/{self.side}/sync_progress",
+                QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE,
+                           durability=DurabilityPolicy.TRANSIENT_LOCAL),
+            )
         self._current_pub = self.create_publisher(JointState, "/leader_arm/current_state", state_qos())
         self._target_pub = self.create_publisher(JointState, "/leader_arm/target_joint_state", state_qos())
         self._command_pub = self.create_publisher(JointState, "/joint_control", command_qos())
         self._gripper_pub = None
+        self._temperature_pub = None
+        if self._temperature_publish_rate_hz > 0:
+            self._temperature_pub = self.create_publisher(
+                Float64MultiArray, f"/leader_arm/{self.side}/temperature_c", state_qos(),
+            )
         self._diagnostic_pub = None
         if self._sync_diagnostics and not self._test_only:
             self._diagnostic_pub = self.create_publisher(
@@ -331,6 +359,7 @@ class SkyeFactrTeleopNode(Node):
                           else _hardware_factory(
                               self.config, read_present_current=(
                                   self._test_only or self._sync_diagnostics),
+                              read_present_temperature=self._temperature_publish_rate_hz > 0,
                           ))
         self._hardware.open(enable_torque=False)
         self.core = ControlCore(
@@ -364,6 +393,8 @@ class SkyeFactrTeleopNode(Node):
             if result.mode == ControlMode.IDLE:
                 self._follower_session_active = False
             self._publish_cycle(result)
+            self._publish_temperatures(cycle_time)
+            self._publish_sync_progress(result, cycle_time)
             self._publish_diagnostics(result, cycle_time)
             self._publish_friction_phase()
         except Exception as exc:
@@ -403,11 +434,40 @@ class SkyeFactrTeleopNode(Node):
         if self._closed or message.data != "switch_sync":
             return
         if self.core.mode != ControlMode.IDLE:
+            if self.core.mode == ControlMode.SYNCED:
+                self._report_sync(f"[{self.side}] SYNCED：已同步，继续保持目标姿态", "synced")
+            elif self.core.mode not in (ControlMode.TELEOP_SYNCING, ControlMode.HOLD_SETTLING):
+                self._report_sync(f"[{self.side}] 同步被拒绝：当前状态 {self.core.mode.name}，请先 stop", "failed")
             return
         if not self._fresh_follower():
             self.get_logger().warning("Synchronization requires fresh follower state")
+            self._report_sync(f"[{self.side}] 同步被拒绝：缺少新鲜的大臂关节状态", "failed")
             return
-        self._start_motion(self._follower.position, follower_session=True)
+        target = self._follower.position.copy()
+        try:
+            position, velocity = self._hardware.read_state()
+            state = transform_leader_state(
+                position, velocity, self.core.joint_offsets, self.core.joint_signs,
+            )
+        except Exception as exc:
+            self._fault(exc, phase="sync_preflight")
+            return
+        try:
+            plan = preview_move(
+                self.config, np.append(state.arm_position, state.gripper_position),
+                np.append(state.arm_velocity, state.gripper_velocity), target=target,
+            )
+        except Exception as exc:
+            text = f"Synchronization rejected [side={self.side}, phase=sync_preflight]: {exc}"
+            self.get_logger().error(text)
+            self._report_sync(text, "failed")
+            return
+        self._report_sync(
+            f"Synchronization preflight passed [side={self.side}]: "
+            f"trajectory={plan['trajectory_duration_s']:.3f}s, "
+            f"joint_delta_rad={(target - state.arm_position).tolist()}"
+        )
+        self._start_motion(target, follower_session=True)
 
     def _on_gravity_test(self, message):
         if self._closed or message.data != "switch_gravity_test":
@@ -475,6 +535,9 @@ class SkyeFactrTeleopNode(Node):
         try:
             self._hardware.set_torque_enabled(True)
             self.core.handle("switch_sync", now=self._monotonic(), follower_position=target)
+            self._sync_goal = self.core.sync_target_position
+            self._sync_progress_mode = None
+            self._sync_progress_at = None
             self._follower_session_active = follower_session
             self._publish_state()
         except Exception as exc:
@@ -518,8 +581,76 @@ class SkyeFactrTeleopNode(Node):
     def _publish_state(self):
         state = self.core.mode.name
         if state != self._published_state and self.context.ok():
+            previous = self._published_state
             self._state_pub.publish(String(data=state))
             self._published_state = state
+            if not self._closed and not self._test_only:
+                descriptions = {
+                    "IDLE": "空闲，等待同步指令",
+                    "TELEOP_SYNCING": "同步轨迹运动中",
+                    "HOLD_SETTLING": "轨迹完成，检查到位及持续稳定时间",
+                    "SYNCED": "同步成功（八轴已连续满足位置和速度阈值）",
+                    "TELEOP": "遥操中",
+                }
+                reason = self.core.sync_status["transition_reason"]
+                if state == "IDLE" and reason in ("sync_timeout", "settle_timeout"):
+                    self._report_sync(
+                        f"[{self.side}] 同步失败：{reason}；已停止并关闭力矩"
+                    )
+                elif state in ("TELEOP_SYNCING", "HOLD_SETTLING", "SYNCED"):
+                    self._report_sync(
+                        f"[{self.side}] {state}：{descriptions[state]}",
+                        "synced" if state == "SYNCED" else "active",
+                    )
+                elif state == "IDLE" and previous in ("TELEOP_SYNCING", "HOLD_SETTLING", "SYNCED"):
+                    self._report_sync(f"[{self.side}] IDLE：同步已停止，已关闭力矩", "stopped")
+                else:
+                    self.get_logger().info(
+                        f"[{self.side}] {state}：{descriptions.get(state, state)}"
+                    )
+
+    def _report_sync(self, text, outcome="active"):
+        if self._sync_progress_pub is not None and self.context.ok():
+            self._sync_progress_pub.publish(String(data=json.dumps({
+                "side": self.side, "text": text, "outcome": outcome,
+                "stamp_s": time.time(),
+            }, ensure_ascii=False)))
+
+    def _publish_sync_progress(self, result, now):
+        """Report final-goal blockers at 1 Hz, immediately on phase change/timeout."""
+        if self._sync_goal is None:
+            return
+        mode = result.mode.name
+        timed_out = (mode == "IDLE" and self.core.sync_status["transition_reason"]
+                     in ("sync_timeout", "settle_timeout"))
+        if mode not in ("TELEOP_SYNCING", "HOLD_SETTLING") and not timed_out:
+            if mode == "IDLE":
+                self._sync_goal = None
+            return
+        if (not timed_out and mode == self._sync_progress_mode
+                and self._sync_progress_at is not None
+                and now - self._sync_progress_at < 1.0):
+            return
+        hold = self.config.controller.sync_hold_control.hold
+        position = np.append(result.state.arm_position, result.state.gripper_position)
+        velocity = np.append(result.state.arm_velocity, result.state.gripper_velocity)
+        within = ((np.abs(self._sync_goal - position) <= hold.sync_position_tolerance)
+                  & (np.abs(velocity) <= hold.sync_velocity_tolerance))
+        packet = {
+            "position_rad": position, "velocity_rad_s": velocity,
+            "mode": mode, "sync_status": self.core.sync_status,
+        }
+        details = _sync_conditions(packet, self._sync_goal, hold)
+        lines = [f"[{self.side}] {mode}：{np.count_nonzero(within)}/8 轴当前达标（相对最终同步目标）"]
+        lines.extend(f"[{self.side}] {line}" for line in details.splitlines())
+        if timed_out:
+            reason = self.core.sync_status["transition_reason"]
+            lines.insert(0, f"[{self.side}] 同步失败：{reason}；已停止并关闭力矩")
+        self._report_sync("\n".join(lines), "failed" if timed_out else "active")
+        self._sync_progress_mode = mode
+        self._sync_progress_at = now
+        if timed_out:
+            self._sync_goal = None
 
     def _publish_friction_phase(self):
         if self._friction_phase_pub is None or not self.context.ok():
@@ -568,11 +699,25 @@ class SkyeFactrTeleopNode(Node):
             ]))
         self._publish_state()
 
+    def _publish_temperatures(self, cycle_time):
+        if self._temperature_pub is None:
+            return
+        if (self._last_temperature_publish_time is not None
+                and cycle_time - self._last_temperature_publish_time
+                < 1.0 / self._temperature_publish_rate_hz):
+            return
+        temperatures = self._hardware.present_temperatures_c
+        if temperatures is None:
+            return
+        temperatures = _vector(temperatures, 8, "present temperature")
+        self._temperature_pub.publish(Float64MultiArray(data=temperatures.tolist()))
+        self._last_temperature_publish_time = cycle_time
+
     def _fault(self, exc, *, phase=None):
         phase = phase or self.core.mode.name
-        self.get_logger().error(
-            f"Control stopped after failure [side={self.side}, phase={phase}]: {exc}"
-        )
+        text = f"Control stopped after failure [side={self.side}, phase={phase}]: {exc}"
+        self.get_logger().error(text)
+        self._report_sync(text, "failed")
         if exc.__cause__ is not None:
             self.get_logger().error(f"Additional error context: {exc.__cause__}")
         self.shutdown_control()

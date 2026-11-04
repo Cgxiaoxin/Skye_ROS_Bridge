@@ -8,10 +8,14 @@ import subprocess
 import time
 from collections.abc import Callable
 
-from skye_operator_ui.playbooks import playbook_for
+from skye_operator_ui.playbooks import fastdds_profile_path, playbook_for
 from skye_operator_ui.process_step import ProcessStep
 from skye_operator_ui.session_state import SessionLogic, SessionState, UiMode
-from skye_operator_ui.teardown import run_safe_teardown
+from skye_operator_ui.teardown import (
+    marvin_container_name,
+    run_safe_teardown,
+    teardown_effective_bool,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +114,9 @@ class SessionSupervisor:
             step.terminate()
 
         try:
-            notes = run_safe_teardown(self.repo_root, self.cfg)
+            notes = run_safe_teardown(
+                self.repo_root, self.cfg, mode=self.logic.mode()
+            )
             for note in notes:
                 logger.warning("safe teardown: %s", note)
         except Exception:  # noqa: BLE001 - must still reach IDLE
@@ -255,9 +261,84 @@ class SessionSupervisor:
             return str(ips[key])
         return _DEFAULT_CONTROLLER_IPS.get(key, _DEFAULT_CONTROLLER_IPS["orin"])
 
-    def _default_precheck(self) -> tuple[bool, str]:
+    @staticmethod
+    def _is_docker_rm_argv(argv: list) -> bool:
+        return len(argv) >= 2 and argv[0] == "docker" and argv[1] == "rm"
+
+    def _cleanup_commands_for_precheck(
+        self,
+        *,
+        skip_docker_rm: bool,
+        keep_launch: bool,
+    ) -> list[list[str]]:
+        raw_commands = self.cfg.get("cleanup_stale_commands")
+        if raw_commands is None:
+            commands = list(_DEFAULT_DRIVER_CLEANUP)
+        else:
+            commands = list(raw_commands)
+        if skip_docker_rm:
+            commands = [argv for argv in commands if not self._is_docker_rm_argv(argv)]
+        elif teardown_effective_bool(self.cfg, "docker_rm", self.logic.mode()):
+            if not any(self._is_docker_rm_argv(argv) for argv in commands):
+                commands = list(commands) + [
+                    ["docker", "rm", "-f", marvin_container_name(self.cfg)]
+                ]
+        if keep_launch:
+            skip_tokens = (
+                "skye_robot_driver",
+                "factr_teleop",
+                "skye_factr_teleop",
+                "skye_marvin_m6",
+                "teleop.sh",
+            )
+            commands = [
+                argv
+                for argv in commands
+                if not any(tok in " ".join(str(p) for p in argv) for tok in skip_tokens)
+            ]
+        return commands
+
+    def _run_precheck_cleanup(self, commands: list[list[str]]) -> tuple[bool, str]:
+        if not commands:
+            return True, "ok"
+        ok, reason = self._run_cleanup_commands(commands)
+        if not ok:
+            return False, f"启动前清理失败: {reason}"
+        time.sleep(0.3)
+        logger.info("启动前已执行残留进程清理")
+        return True, "ok"
+
+    def _teleop_record_precheck(self, profile: str | None) -> tuple[bool, str]:
+        commands = self._cleanup_commands_for_precheck(
+            skip_docker_rm=True,
+            keep_launch=False,
+        )
+        ok, reason = self._run_precheck_cleanup(commands)
+        if not ok:
+            return False, reason
+
+        robot = (profile or "thor").strip().lower()
+        argv = [
+            "bash",
+            os.path.join(self.repo_root, "scripts", "teleop.sh"),
+            "check",
+            "--robot",
+            robot,
+            "--fix-latency",
+        ]
+        try:
+            result = subprocess.run(
+                argv, capture_output=True, text=True, timeout=60.0
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return False, f"teleop 预检失败: {exc}"
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            return False, detail or "teleop.sh check failed"
+        return True, "ok"
+
+    def _dagger_precheck(self, profile: str | None) -> tuple[bool, str]:
         precheck_cfg = self.cfg.get("precheck", {})
-        profile = self.logic.profile()
         controller_ip = self._controller_ip_for_profile(profile)
 
         if not precheck_cfg.get("skip_ping", False):
@@ -274,47 +355,41 @@ class SessionSupervisor:
                 label = (profile or "thor").upper()
                 return False, f"无法 ping 通 {label} ({controller_ip})"
 
-        xml_path = os.path.join(
-            self.repo_root, "marvin_ws", "fastrtps_no_shm.xml"
-        )
+        xml_path = fastdds_profile_path(self.repo_root)
         if not os.path.isfile(xml_path):
             return False, f"缺少 FastDDS 配置: {xml_path}"
 
         mode = self.logic.mode()
         allow = bool(self.cfg.get("allow_existing_driver", False))
-        first_is_driver = False
+        first_reuse_launch = False
         if profile is not None and mode is not None:
             steps = playbook_for(mode, self.repo_root, profile, self.cfg)
-            first_is_driver = bool(steps) and steps[0].get("id") == "driver"
+            first_id = steps[0].get("id") if steps else None
+            first_reuse_launch = first_id in ("driver", "teleop")
 
         count = self._count_skye_robot_driver()
-        keep_driver = allow and first_is_driver and count > 0
+        keep_launch = allow and first_reuse_launch and count > 0
 
-        raw_commands = self.cfg.get("cleanup_stale_commands")
-        if raw_commands is None:
-            commands = list(_DEFAULT_DRIVER_CLEANUP)
-        else:
-            commands = list(raw_commands)
-        if keep_driver:
-            # Reuse existing driver/marvin: still clear align/recorder orphans.
-            skip_tokens = ("skye_robot_driver", "factr_teleop", "skye_marvin_m6")
-            commands = [
-                argv
-                for argv in commands
-                if not any(tok in " ".join(str(p) for p in argv) for tok in skip_tokens)
-            ]
+        commands = self._cleanup_commands_for_precheck(
+            skip_docker_rm=False,
+            keep_launch=keep_launch,
+        )
 
         if commands:
-            ok, reason = self._run_cleanup_commands(commands)
+            ok, reason = self._run_precheck_cleanup(commands)
             if not ok:
-                return False, f"启动前清理失败: {reason}"
-            time.sleep(0.3)
+                return False, reason
 
-        if self._count_skye_robot_driver() > 0 and not keep_driver:
+        if self._count_skye_robot_driver() > 0 and not keep_launch:
             return False, "检测到残留 skye_robot_driver，自动清理后仍存在"
-        if count > 0 and not keep_driver:
+        if count > 0 and not keep_launch:
             logger.warning("已自动清理残留进程（含 driver）")
-        elif commands:
-            logger.info("启动前已执行残留进程清理")
 
         return True, "ok"
+
+    def _default_precheck(self) -> tuple[bool, str]:
+        profile = self.logic.profile()
+        mode = self.logic.mode()
+        if mode == UiMode.teleop_record:
+            return self._teleop_record_precheck(profile)
+        return self._dagger_precheck(profile)

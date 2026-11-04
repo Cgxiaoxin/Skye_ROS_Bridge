@@ -105,7 +105,7 @@ pkill -f gento_robot_driver || true
 source /marvin_ws/install/setup.bash
 export ROS_DOMAIN_ID=21 ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-export FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml
+# FastDDS profile 用镜像内自带（launch 自动加载）；主机不再下发 marvin_ws xml
 ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_keyboard:=false
 ```
 
@@ -136,7 +136,7 @@ source /marvin_ws/install/setup.bash
 export ROS_DOMAIN_ID=22
 export ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-export FASTRTPS_DEFAULT_PROFILES_FILE=/marvin_ws/fastrtps_no_shm.xml
+# FastDDS profile 用镜像内自带（launch 自动加载）；主机不再下发 marvin_ws xml
 ls "$FASTRTPS_DEFAULT_PROFILES_FILE"
 echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
 echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB1/latency_timer
@@ -225,7 +225,7 @@ ros2 topic echo /align/status --qos-durability transient_local --qos-reliability
 # 或：
 source skye_ros2_ws/install/setup.bash
 export ROS_DOMAIN_ID=21
-export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/marvin_ws/fastrtps_no_shm.xml"
+export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/skye_ros2_ws/src/skye_robot_driver/config/fastrtps_teleop.xml"
 ros2 launch skye_follower_align follower_align.launch.py \
   robot_profile:=orin enable_keyboard:=true
 ```
@@ -292,7 +292,7 @@ ros2 service call /skye/data_recorder/stop  std_srvs/srv/Trigger {}
 
 ```bash
 export ROS_DOMAIN_ID=21
-export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/marvin_ws/fastrtps_no_shm.xml"
+export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/skye_ros2_ws/src/skye_robot_driver/config/fastrtps_teleop.xml"
 source skye_ros2_ws/install/setup.bash
 
 ros2 topic hz /gento/joint_states --window 100   # 期望 ~250 Hz

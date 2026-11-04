@@ -50,3 +50,10 @@ ros2 launch skye_robot_driver skye_robot_driver.launch.py
 - 控制器 IP：Thor `6.6.7.191` / Orin `6.6.7.190`；UDP `50000–50010`
 - 只用 `libGentoSDK.so`（不要 PY so）
 - 同一控制器同时只允许一个驱动连接
+
+## 大臂小臂通用启动流程
+
+原生 `skye_factr_teleop` 双臂启动使用统一入口：[统一启动说明](skye_ros2_ws/src/skye_factr_teleop/大小臂通用启动指南.md)
+
+- 支持小臂 A/B 交叉连接 大臂 Thor/Orin
+- 小臂由 USB 唯一序列号自动识别左右侧及标定，不需重命名 USB。

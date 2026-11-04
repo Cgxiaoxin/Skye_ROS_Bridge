@@ -38,6 +38,66 @@ def test_snapshot_contains_hint_and_session(monkeypatch):
     assert snap["session"]["profile"] == "thor"
     assert "next_hint" in snap
     assert snap["teleop"]["state"] == "SYNCED"
+    assert snap["sync_coach"]["visible"] is False
+
+
+def test_snapshot_includes_sync_coach_when_syncing():
+    from skye_operator_ui.snapshot import SnapshotBuilder
+    from skye_operator_ui.session_state import SessionLogic, UiMode
+
+    logic = SessionLogic()
+    logic.begin_start("orin", UiMode.teleop_record)
+    logic.precheck_ok()
+    logic.mark_ready()
+
+    class FakeSup:
+        cfg = {}
+
+        def snapshot_fields(self):
+            return {
+                "state": logic.state().name,
+                "profile": "orin",
+                "mode": "teleop_record",
+                "step": None,
+            }
+
+    class Bridge:
+        def mailbox(self):
+            return {
+                "teleop_state": "TELEOP_SYNCING",
+                "align_status": None,
+                "hitl_mode": None,
+                "hitl_source": None,
+                "left_joints": [],
+                "right_joints": [],
+                "left_gripper": None,
+                "right_gripper": None,
+                "health": {},
+                "recording_active": False,
+                "leader_arms": {
+                    "left_enabled": True,
+                    "right_enabled": True,
+                    "locked": False,
+                },
+                "sync_progress_left": {
+                    "side": "left",
+                    "mode": "HOLD_SETTLING",
+                    "within": 8,
+                    "total": 8,
+                    "blockers": [],
+                    "settling": {"current_s": 0.1, "need_s": 0.25},
+                    "outcome": "active",
+                    "stamp_s": __import__("time").time(),
+                    "raw_text": "",
+                    "parse_ok": True,
+                },
+                "sync_progress_right": None,
+            }
+
+    FakeSup.logic = logic
+    snap = SnapshotBuilder().build(FakeSup(), Bridge(), pending_op=None)
+    assert snap["sync_coach"]["visible"] is True
+    assert snap["sync_coach"]["left"]["within"] == 8
 
 
 def test_snapshot_exposes_leader_arms_and_feature_flag():
@@ -175,6 +235,7 @@ def test_robot_state_cached_in_mailbox():
     bridge._control_mode_stamp = None
     bridge._ui_mode = None
     bridge._leader_gate = LeaderArmGate()
+    bridge._sync_progress = {"left": None, "right": None}
 
     class FakeMsg:
         data = [1, 2]

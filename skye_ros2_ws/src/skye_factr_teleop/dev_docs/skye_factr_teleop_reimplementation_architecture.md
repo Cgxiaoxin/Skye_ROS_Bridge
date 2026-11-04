@@ -38,10 +38,10 @@ Skye/M6 扩展。这不再属于严格意义上的 clean-room 实现，但仍坚
 最终选择：
 
 ```text
-/home/lyy/projects/leader_for_skye/skye_ros2_ws/src/skye_factr_teleop
+/home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws/src/skye_factr_teleop
 ```
 
-不放在仓库根目录 `/home/lyy/projects/leader_for_skye`，原因是 `skye_ros2_ws` 已经是标准 colcon 工作区，且已有以下相关 ROS 2 包：
+不放在仓库根目录 `/home/lyy/projects/Skye_ROS_Bridge`，原因是 `skye_ros2_ws` 已经是标准 colcon 工作区，且已有以下相关 ROS 2 包：
 
 ```text
 skye_robot_driver
@@ -53,7 +53,7 @@ skye_data_recorder
 新包放入 `skye_ros2_ws/src` 后，可以统一构建和加载：
 
 ```bash
-cd /home/lyy/projects/leader_for_skye/skye_ros2_ws
+cd /home/lyy/projects/Skye_ROS_Bridge/skye_ros2_ws
 colcon build --packages-select skye_factr_teleop
 source install/setup.bash
 ```
@@ -740,7 +740,7 @@ gripper_teleop
 controller
 ```
 
-当前 M6 配置改用顶层 `dynamixel`、`controller` 和可选的 `runtime`。`initialization` 与 `end_effector` 位于 `controller` 下，紧随 `null_space_regulation`；夹爪上下限与独立增益在 `controller.limit_barrier_control`，默认同步目标在 `controller.sync_hold_control.gripper_setpoint`；leader URDF 在 `controller.joint_gravity_comp.dynamics`，从臂模型参数在 `controller.force_feedback_control.joint.dynamics`，从臂重力补偿开关在 `controller.force_feedback_control.joint`。不再使用顶层 `arm_teleop` 和 `gripper_teleop`。
+当前 M6 配置改用顶层 `dynamixel`、`controller` 和可选的 `runtime`。`initialization` 与 `end_effector` 位于 `controller` 下，紧随 `null_space_regulation`；夹爪上下限与独立增益在 `controller.limit_barrier_control`，默认同步目标在 `controller.limit_barrier_control.gripper.gripper_setpoint`；leader URDF 在 `controller.joint_gravity_comp.dynamics`，从臂模型参数在 `controller.force_feedback_control.joint.dynamics`，从臂重力补偿开关在 `controller.force_feedback_control.joint`。不再使用顶层 `arm_teleop` 和 `gripper_teleop`。
 
 但参数值不从 Franka 示例继承。左右 M6 的端口、型号、方向、关节限制、增益、
 follower offset 和夹爪参数，应以当前已验证的 M6 YAML 为迁移输入，再由

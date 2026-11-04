@@ -1,4 +1,4 @@
-"""Best-effort session teardown: remove Marvin Docker + disable leader DXL."""
+"""Best-effort session teardown: optional Marvin Docker rm + disable leader DXL."""
 
 from __future__ import annotations
 
@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+from skye_operator_ui.session_state import UiMode
 
 logger = logging.getLogger(__name__)
 
@@ -21,29 +23,52 @@ def _teardown_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
     return dict(raw) if isinstance(raw, dict) else {}
 
 
-def run_safe_teardown(repo_root: str, cfg: dict[str, Any]) -> list[str]:
-    """Remove Marvin container then (optionally) disable leader Dynamixel.
+def marvin_container_name(cfg: dict[str, Any]) -> str:
+    tcfg = _teardown_cfg(cfg)
+    return str(tcfg.get("marvin_container_name") or DEFAULT_CONTAINER)
 
-    Disable prefers a one-shot Docker run (host often lacks dynamixel_sdk).
+
+def teardown_effective_bool(
+    cfg: dict[str, Any], key: str, mode: UiMode | None
+) -> bool:
+    """Mode defaults when ``teardown.<key>`` is omitted (teleop host, dagger docker)."""
+    tcfg = _teardown_cfg(cfg)
+    if key in tcfg:
+        return bool(tcfg[key])
+    if mode == UiMode.dagger:
+        return True
+    return False
+
+
+def run_safe_teardown(
+    repo_root: str,
+    cfg: dict[str, Any],
+    *,
+    mode: UiMode | None = None,
+) -> list[str]:
+    """Optionally remove Marvin container then (optionally) disable leader Dynamixel.
+
+    Disable prefers host Python when ``disable_via_docker`` is false (default).
     Never raises. Returns human-readable notes for any failures.
     """
     tcfg = _teardown_cfg(cfg)
     notes: list[str] = []
-    name = str(tcfg.get("marvin_container_name") or DEFAULT_CONTAINER)
+    name = marvin_container_name(cfg)
     docker_timeout = float(tcfg.get("docker_rm_timeout_s", 20.0))
     disable_timeout = float(tcfg.get("disable_timeout_s", 60.0))
     disable_leader = bool(tcfg.get("disable_leader", True))
+    docker_rm = teardown_effective_bool(cfg, "docker_rm", mode)
     image = str(
         tcfg.get("marvin_image")
         or os.environ.get("IMAGE")
         or DEFAULT_IMAGE
     )
-    # via_docker default True — host Python usually has no dynamixel_sdk.
-    via_docker = bool(tcfg.get("disable_via_docker", True))
+    via_docker = teardown_effective_bool(cfg, "disable_via_docker", mode)
 
-    note = _docker_rm_f(name, timeout_s=docker_timeout)
-    if note:
-        notes.append(note)
+    if docker_rm:
+        note = _docker_rm_f(name, timeout_s=docker_timeout)
+        if note:
+            notes.append(note)
 
     if disable_leader:
         note = _disable_leader(

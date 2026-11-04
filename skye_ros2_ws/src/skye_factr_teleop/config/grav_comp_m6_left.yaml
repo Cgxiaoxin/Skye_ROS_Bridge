@@ -24,7 +24,7 @@ dynamixel:
   joint_signs: [1, 1, 1, 1, 1, -1, -1, 1] # 遥操设备A（Thor）（checked 26/10/9）
 
 controller:
-  frequency: 500
+  frequency: 250   # 500 -> 250: halve DDS command rate (500 Hz overflowed UDP rcvbuf)
 
   joint_gravity_comp:
     enable: true
@@ -33,12 +33,15 @@ controller:
       leader_urdf: urdf/m6left_isomorphism.urdf
     # position_velocity: RNEA(q,dq,0); position_only: RNEA(q,0,0)
     mode: position_only
-    gain: [0.5, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]
+    # 重力补偿参数值
+    gain: [0.2, 0.2, 0.5, 0.5, 0.5, 0.5, 0.5]  
+    # gain: [0.5, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]
 
   static_friction_comp:
     enable: true
     enable_speed: 0.05
-    gain: [0.15, 0.15, 0.15, 0.1, 0.1, 0.1, 0.2]
+    # 重力补偿参数值
+    gain: [0.15, 0.15, 0.15, 0.1, 0.1, 0.1, 0.2]  # 摩擦系数微调
 
   null_space_regulation:
     enable: true
@@ -57,11 +60,11 @@ controller:
     gripper:
       limit_max: 0.52517
       limit_min: -0.0175
+      gripper_setpoint: 0.5
       kp: 0.301658022
       kd: 0.0315069084
 
   sync_hold_control:
-    gripper_setpoint: 0.5
     ruckig:
       gravity_comp_gain: [0.5, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0]
       kp: [0.50, 0.60, 0.80, 0.50, 0.35, 0.35, 0.35, 0.35]

@@ -1,0 +1,3 @@
+# runtime captures — keep directory, ignore contents
+*
+!.gitignore

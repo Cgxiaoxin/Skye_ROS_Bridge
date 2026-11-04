@@ -112,6 +112,7 @@ def test_launch_profiles_sides_and_remaps(expand_launch, profile, kind, sides):
         config = config_dir / f"grav_comp_m6_{side}.yaml"
         assert parameters[0][node.node_name]["ros__parameters"] == {
             "config_path": str(config), "sync_diagnostics": False,
+            "temperature_publish_rate_hz": 1.0,
         }
         loaded = load_config(config, require_runtime=True)
         assert loaded.dynamixel.current_limit_ma == (50.0,) * 8
@@ -127,6 +128,13 @@ def test_config_override(expand_launch, absolute):
     node, _, _, parameters = result[0]
     assert parameters[-1][node.node_name]["ros__parameters"]["config_path"] == str(
         expand_launch.share / "config/orin/grav_comp_m6_left.yaml")
+
+
+@pytest.mark.parametrize("kind", ["left", "right", "dual"])
+@pytest.mark.parametrize("rate", ["0.0", "2.0"])
+def test_launch_forwards_temperature_rate_to_every_arm(expand_launch, kind, rate):
+    for node, _, _, parameters in expand_launch(kind, temperature_publish_rate_hz=rate):
+        assert parameters[0][node.node_name]["ros__parameters"]["temperature_publish_rate_hz"] == float(rate)
 
 
 def test_default_profile_is_thor(expand_launch):
@@ -188,9 +196,12 @@ def test_profile_configuration_matches_leader_devices_and_preserves_gains():
     assert thor_left.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTBEO9L1-if00-port0"
     assert thor_right.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTBEO8WL-if00-port0"
     assert thor_right.dynamixel.joint_signs == (1, -1, 1, -1, 1, 1, 1, 1)
+    # Orin ports track the machine FTDI; bind_leader_arms.py may rewrite them.
     assert left.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTB8HNOT-if00-port0"
     assert right.dynamixel.dynamixel_port == "usb-FTDI_USB__-__Serial_Converter_FTAO51EA-if00-port0"
-    assert right.dynamixel.joint_signs == (1, -1, 1, -1, 1, 1, 1, -1)
+    assert left.dynamixel.dynamixel_port != right.dynamixel.dynamixel_port
+    assert left.dynamixel.dynamixel_port != thor_left.dynamixel.dynamixel_port
+    assert right.dynamixel.joint_signs == (1, -1, 1, -1, 1, -1, -1, -1)
     assert left.controller.joint_gravity_comp.gain == (0.25, 0.2, 0.7, 0.6, 1.0, 0.8, 1.0)
     assert right.controller.joint_gravity_comp.gain == (0.25, 0.2, 1.0, 1.0, 1.0, 0.8, 1.0)
     assert thor_left.controller.limit_barrier_control.enable

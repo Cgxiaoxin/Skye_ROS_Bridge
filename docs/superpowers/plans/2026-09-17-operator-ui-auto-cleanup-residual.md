@@ -162,7 +162,7 @@ def test_cleanup_stale_pkill_exit_1_is_ok(tmp_path, monkeypatch):
 Run:
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws && \
+cd skye_ros2_ws && \
   python3 -m pytest src/skye_operator_ui/test/test_supervisor.py::test_precheck_auto_cleans_residual_driver \
   src/skye_operator_ui/test/test_supervisor.py::test_precheck_fails_if_residual_remains_after_cleanup \
   src/skye_operator_ui/test/test_supervisor.py::test_cleanup_stale_pkill_exit_1_is_ok -v
@@ -264,7 +264,7 @@ if argv[:2] == ["docker", "rm"] and returncode in (0, 1):
 - [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws && \
+cd skye_ros2_ws && \
   python3 -m pytest src/skye_operator_ui/test/test_supervisor.py -v
 ```
 

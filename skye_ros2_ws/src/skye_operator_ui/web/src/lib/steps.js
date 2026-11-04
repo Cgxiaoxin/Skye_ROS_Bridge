@@ -2,11 +2,9 @@
 
 export const TELEOP_STEPS = [
   { id: 'precheck', label: '预检' },
-  { id: 'driver', label: '大臂 Driver', logId: 'driver' },
-  { id: 'marvin', label: '小臂 Marvin', logId: 'marvin' },
+  { id: 'teleop', label: '大小臂 Teleop', logId: 'teleop' },
   { id: 'sync', label: '小臂同步' },
-  { id: 'align', label: 'Follower 对齐', logId: 'align', optional: true },
-  { id: 'teleop', label: '遥操' },
+  { id: 'teleop_run', label: '遥操' },
   { id: 'record', label: '数采', logId: 'recorder' },
 ];
 
@@ -21,7 +19,7 @@ export const DAGGER_STEPS = [
 ];
 
 const PLAYBOOK_IDS = {
-  teleop_record: ['driver', 'marvin', 'align', 'recorder'],
+  teleop_record: ['teleop', 'recorder'],
   dagger: ['driver', 'marvin', 'arbiter', 'dummy_policy'],
 };
 
@@ -38,7 +36,6 @@ export function stepStatus(step, ctx) {
     sessionState,
     currentStepId,
     teleopState,
-    alignStatus,
     hitlMode,
     recording,
     health,
@@ -95,14 +92,7 @@ export function stepStatus(step, ctx) {
     return 'pending';
   }
 
-  if (step.id === 'align') {
-    if (alignStatus === 'ALIGNING') return 'active';
-    if (['ALIGNED', 'TIMEOUT_WARN'].includes(alignStatus)) return 'done';
-    if (alignStatus === 'TIMEOUT_WARN') return 'done';
-    return teleopState === 'SYNCED' ? 'pending' : 'pending';
-  }
-
-  if (step.id === 'teleop') {
+  if (step.id === 'teleop_run') {
     if (teleopState === 'TELEOP') return 'done';
     if (teleopState === 'SYNCED') return 'active';
     return 'pending';

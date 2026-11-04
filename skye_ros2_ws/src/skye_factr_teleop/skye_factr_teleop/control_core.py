@@ -389,6 +389,11 @@ class ControlCore:
         return self._last_transition
 
     @property
+    def sync_target_position(self) -> np.ndarray | None:
+        """Final eight-axis synchronization goal, independent of trajectory samples."""
+        return None if self._target is None else self._target.copy()
+
+    @property
     def sync_status(self) -> dict:
         """Read-only timing and transition evidence for synchronization diagnostics."""
         transition = self._last_transition
@@ -645,7 +650,7 @@ class ControlCore:
                 gripper = ctrl.limit_barrier_control.gripper
                 tracking[-1] = gripper_position_hold(
                     state.gripper_position, state.gripper_velocity,
-                    ctrl.sync_hold_control.gripper_setpoint,
+                    gripper.gripper_setpoint,
                     gripper.kp, gripper.kd,
                 )
             motion = self.mode in (ControlMode.TELEOP_SYNCING, ControlMode.HOLD_SETTLING, ControlMode.SYNCED)
@@ -789,7 +794,7 @@ class ControlCore:
                     raise RuntimeError("synchronization requires a trajectory_factory with explicit limits")
                 arm = _vector(follower_position, ARM_JOINT_COUNT, "follower_position")
                 grip = _scalar(
-                    self.config.controller.sync_hold_control.gripper_setpoint
+                    self.config.controller.limit_barrier_control.gripper.gripper_setpoint
                     if gripper_setpoint is None else gripper_setpoint, "gripper_setpoint",
                 )
                 self._target = np.append(arm, grip)

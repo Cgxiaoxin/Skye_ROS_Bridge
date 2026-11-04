@@ -51,7 +51,7 @@ def test_failed_suggest_retry_or_stop():
     assert "失败" in hint or "重试" in hint
 
 
-def test_teleop_synced_suggests_align():
+def test_hint_after_synced_prompts_teleop():
     s = SessionLogic()
     s.begin_start("thor", UiMode.teleop_record)
     s.precheck_ok()
@@ -62,7 +62,8 @@ def test_teleop_synced_suggests_align():
         hitl_mode=None,
         align_status="IDLE",
     )
-    assert "对齐" in hint
+    assert "遥操" in hint
+    assert "对齐" not in hint
 
 
 def test_dagger_autonomous_suggests_takeover():

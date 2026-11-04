@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import threading
@@ -11,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from skye_operator_ui.commands import validate_op
 from skye_operator_ui.leader_arms import LeaderArmGate
+from skye_operator_ui.sync_progress_parse import parse_sync_progress_message
 from skye_operator_ui.session_state import UiMode
 
 if TYPE_CHECKING:
@@ -88,12 +90,14 @@ def run_leader_arm_gate(
     container: str,
     timeout_s: float = LEADER_GATE_TIMEOUT_S,
     image: str | None = None,
+    robot_profile: str | None = None,
 ) -> tuple[bool, str]:
     script = Path(repo_root) / "scripts" / "leader_arm_gate.sh"
     env = os.environ.copy()
-    env["MARVIN_CONTAINER_NAME"] = container
-    if image:
-        env["MARVIN_IMAGE"] = image
+    if robot_profile:
+        env["ROBOT_PROFILE"] = robot_profile
+    elif "ROBOT_PROFILE" not in env:
+        env["ROBOT_PROFILE"] = "thor"
     try:
         result = subprocess.run(
             [str(script), side, action],
@@ -109,11 +113,6 @@ def run_leader_arm_gate(
         return False, f"找不到小臂开关脚本: {script}"
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "leader_arm_gate failed").strip()
-        if "No such container" in detail:
-            return (
-                False,
-                f"Marvin 容器 {container} 未运行，无法开关小臂。请确认会话已启动且 marvin 正常。",
-            )
         return False, detail
     return True, ""
 
@@ -147,6 +146,7 @@ class RosBridge:
 
         self._node = node
         self._ui_mode: UiMode | None = None
+        self._robot_profile: str | None = None
         self._cb_group = ReentrantCallbackGroup()
         self._repo_root = repo_root
         self._leader_gate = leader_gate or LeaderArmGate()
@@ -174,6 +174,7 @@ class RosBridge:
         self._right_gripper: float | None = None
         self._robot_state: list[int] | None = None
         self._recording_active = False
+        self._sync_progress: dict[str, Any] = {"left": None, "right": None}
 
         state_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -183,6 +184,12 @@ class RosBridge:
         teleop_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        progress_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
@@ -229,6 +236,14 @@ class RosBridge:
             teleop_qos,
             callback_group=self._cb_group,
         )
+        for side in ("left", "right"):
+            node.create_subscription(
+                String,
+                f"/leader_arm/{side}/sync_progress",
+                self._sync_progress_callback,
+                progress_qos,
+                callback_group=self._cb_group,
+            )
         if ControlMode is not None:
             node.create_subscription(
                 ControlMode,
@@ -244,7 +259,11 @@ class RosBridge:
     def set_session_mode(self, mode: UiMode | None) -> None:
         self._ui_mode = mode
         if mode is None:
+            self._robot_profile = None
             self.clear_session_cache()
+
+    def set_session_profile(self, profile: str | None) -> None:
+        self._robot_profile = profile
 
     def clear_session_cache(self) -> None:
         """Drop latched session state so a stopped session shows no stale values."""
@@ -255,6 +274,7 @@ class RosBridge:
         self._align_stamp = None
         self._control_mode_stamp = None
         self._recording_active = False
+        self._sync_progress = {"left": None, "right": None}
 
     def recording_active(self) -> bool:
         return self._recording_active
@@ -287,6 +307,8 @@ class RosBridge:
             "health": self._health_map(),
             "recording_active": self._recording_active,
             "leader_arms": self._leader_gate.snapshot(),
+            "sync_progress_left": self._sync_progress.get("left"),
+            "sync_progress_right": self._sync_progress.get("right"),
         }
 
     def health(self, key: str) -> bool:
@@ -298,8 +320,11 @@ class RosBridge:
             )
         if key == "arbiter":
             return self._is_fresh(self._control_mode_stamp, FRESHNESS_S)
-        if key == "marvin":
-            return self._teleop_state is not None
+        if key in ("teleop", "marvin"):
+            return (
+                self._teleop_state is not None
+                and self._is_fresh(self._joint_states_stamp, FRESHNESS_S)
+            )
         if key == "recorder":
             return self._service_ready(self._recorder_service_name())
         if key == "policy":
@@ -339,6 +364,7 @@ class RosBridge:
                     container=self._leader_gate_container,
                     timeout_s=self._leader_gate_timeout_s,
                     image=self._leader_gate_image,
+                    robot_profile=self._robot_profile,
                 )
                 if not ok:
                     return False, reason
@@ -354,6 +380,7 @@ class RosBridge:
             "driver": self.health("driver"),
             "align": self.health("align"),
             "arbiter": self.health("arbiter"),
+            "teleop": self.health("teleop"),
             "marvin": self.health("marvin"),
             "recorder": self.health("recorder"),
             "policy": self.health("policy"),
@@ -410,6 +437,22 @@ class RosBridge:
     def _align_status_callback(self, msg: Any) -> None:
         self._align_status = msg.data
         self._align_stamp = time.monotonic()
+
+    def _sync_progress_callback(self, msg: Any) -> None:
+        self._ingest_sync_progress(msg.data)
+
+    def _ingest_sync_progress(self, data: str) -> None:
+        try:
+            payload = json.loads(data)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return
+        if not isinstance(payload, dict):
+            return
+        parsed = parse_sync_progress_message(payload)
+        side = parsed.get("side")
+        if side not in ("left", "right"):
+            return
+        self._sync_progress[side] = parsed
 
     def _control_mode_callback(self, msg: Any) -> None:
         self._control_mode_stamp = self._touch_stamp(msg)

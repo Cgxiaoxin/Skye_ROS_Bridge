@@ -21,8 +21,8 @@ from skye_operator_ui.supervisor import SessionSupervisor
 
 def _detect_repo_root(start: Path | None = None) -> str:
     markers = (
-        "marvin_ws/fastrtps_no_shm.xml",
-        "scripts/build.sh",
+        "skye_ros2_ws/src/skye_robot_driver/package.xml",
+        "skye_ros2_ws/scripts/build.sh",
     )
     for base in (start or Path.cwd(), Path(__file__).resolve().parents[4]):
         current = base.resolve()
@@ -80,6 +80,10 @@ def main(args=None) -> None:
             bridge.dispatch("switch_stop")
         except Exception:  # noqa: BLE001 - teardown continues
             node.get_logger().warning("switch_stop during teardown failed")
+        try:
+            bridge.dispatch("hold_current")
+        except Exception:  # noqa: BLE001 - teardown continues
+            node.get_logger().warning("hold_current during teardown failed")
         bridge.set_session_mode(None)
         leader_gate.reset()
 

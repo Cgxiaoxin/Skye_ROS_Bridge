@@ -17,11 +17,6 @@ from skye_operator_ui.session_state import UiMode
 # same contract as docs/Thor_Orin_遥操启动.md — and also exported as ROBOT_PROFILE
 # / ROBOT_IP so nested docker/launch paths stay consistent.
 
-_TELEOP_MARVIN_LAUNCH = (
-    "source /marvin_ws/install/setup.bash && "
-    "ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py "
-    "use_keyboard:=false"
-)
 _HITL_MARVIN_LAUNCH = (
     "source /marvin_ws/install/setup.bash && "
     "ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento_hitl.launch.py "
@@ -34,6 +29,17 @@ _CONTROLLER_IP = {
     "orin": "6.6.7.190",
 }
 
+_DOMAIN = {"thor": "20", "orin": "21"}
+
+# marvin_ws/fastrtps_no_shm.xml was removed in cb0f3e7; the profile now ships
+# with the driver package (4 MB UDP + SHM).
+_FASTDDS_PROFILE = ("skye_ros2_ws", "src", "skye_robot_driver", "config",
+                    "fastrtps_teleop.xml")
+
+
+def fastdds_profile_path(repo_root: str) -> str:
+    return os.path.join(repo_root, *_FASTDDS_PROFILE)
+
 
 def _step_timeout(cfg: dict[str, Any]) -> float:
     return float(cfg.get("step_timeout_s", 120.0))
@@ -44,12 +50,19 @@ def _base_env(profile: str, repo_root: str, cfg: dict[str, Any]) -> dict[str, st
     env = {
         "ROBOT_PROFILE": key,
         "ROBOT_IP": _CONTROLLER_IP.get(key, _CONTROLLER_IP["thor"]),
-        "ROS_DOMAIN_ID": str(cfg.get("ros_domain_id", 21)),
-        "RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
-        "FASTRTPS_DEFAULT_PROFILES_FILE": os.path.join(
-            repo_root, "marvin_ws", "fastrtps_no_shm.xml"
+        "ROS_DOMAIN_ID": str(
+            cfg.get("ros_domain_id", _DOMAIN.get(key, "21"))
         ),
+        "RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
     }
+    return env
+
+
+def _dagger_base_env(
+    profile: str, repo_root: str, cfg: dict[str, Any]
+) -> dict[str, str]:
+    env = _base_env(profile, repo_root, cfg)
+    env["FASTRTPS_DEFAULT_PROFILES_FILE"] = fastdds_profile_path(repo_root)
     launch_cmd = cfg.get("playbook", {}).get("marvin_launch_cmd")
     if launch_cmd:
         env["MARVIN_LAUNCH_CMD"] = str(launch_cmd)
@@ -102,30 +115,21 @@ def _teleop_playbook(
 ) -> list[dict[str, Any]]:
     timeout_s = _step_timeout(cfg)
     env = _base_env(profile, repo_root, cfg)
-    marvin_env = copy.copy(env)
-    marvin_env.setdefault("MARVIN_LAUNCH_CMD", _TELEOP_MARVIN_LAUNCH)
+    key = profile.strip().lower()
     return [
         _make_step(
-            "driver",
-            [os.path.join(repo_root, "scripts", "start_skye_for_factr.sh"), profile],
+            "teleop",
+            [
+                "bash",
+                os.path.join(repo_root, "scripts", "teleop.sh"),
+                "start",
+                "--robot",
+                key,
+                "--skip-precheck",
+            ],
             env,
-            "driver",
+            "teleop",
             timeout_s,
-        ),
-        _make_step(
-            "marvin",
-            _marvin_argv(repo_root, cfg, profile),
-            marvin_env,
-            "marvin",
-            timeout_s,
-        ),
-        _make_step(
-            "align",
-            [os.path.join(repo_root, "scripts", "start_follower_align.sh"), profile],
-            env,
-            "align",
-            timeout_s,
-            optional=True,
         ),
         _make_step(
             "recorder",
@@ -143,7 +147,7 @@ def _dagger_playbook(
     cfg: dict[str, Any],
 ) -> list[dict[str, Any]]:
     timeout_s = _step_timeout(cfg)
-    env = _base_env(profile, repo_root, cfg)
+    env = _dagger_base_env(profile, repo_root, cfg)
     marvin_env = copy.copy(env)
     marvin_env["MARVIN_LAUNCH_CMD"] = marvin_env.get(
         "MARVIN_LAUNCH_CMD", _HITL_MARVIN_LAUNCH

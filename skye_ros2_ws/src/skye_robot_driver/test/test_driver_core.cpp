@@ -1,10 +1,52 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cmath>
 
 #include "skye_robot_driver/driver_core.hpp"
 
 using skye_robot_driver::DriverCore;
+
+TEST(DriverCore, DecodeStateKeepsTorqueSourcesAndArmsSeparate) {
+  ROBOT_RT feedback{};
+  for (std::size_t i = 0; i < 7; ++i) {
+    const float value = static_cast<float>(i + 1);
+    auto &left = feedback.m_ARMS[0].m_ARM_OUT;
+    auto &right = feedback.m_ARMS[1].m_ARM_OUT;
+    left.m_ARM_FBK_Joint_Pos[i] = 90.0f * value;
+    right.m_ARM_FBK_Joint_Pos[i] = -90.0f * value;
+    left.m_ARM_FBK_Joint_Vel[i] = 180.0f * value;
+    right.m_ARM_FBK_Joint_Vel[i] = -180.0f * value;
+    left.m_ARM_FBK_Joint_SensorTor[i] = value;
+    right.m_ARM_FBK_Joint_SensorTor[i] = -value;
+    left.m_ARM_FBK_Joint_ExternalTorEst[i] = 10.0f + value;
+    right.m_ARM_FBK_Joint_ExternalTorEst[i] = -10.0f - value;
+  }
+  for (std::size_t i = 0; i < 6; ++i) {
+    feedback.m_ARMS[0].m_ARM_OUT.m_ARM_FBK_Flange_FTSensor[i] =
+        20.0f + static_cast<float>(i);
+    feedback.m_ARMS[1].m_ARM_OUT.m_ARM_FBK_Flange_FTSensor[i] =
+        -20.0f - static_cast<float>(i);
+  }
+
+  const auto state = DriverCore::decode_state(feedback);
+  const double pi = std::acos(-1.0);
+  for (std::size_t i = 0; i < 7; ++i) {
+    const double value = static_cast<double>(i + 1);
+    EXPECT_NEAR(state.left_position[i], pi / 2.0 * value, 1e-12);
+    EXPECT_NEAR(state.right_position[i], -pi / 2.0 * value, 1e-12);
+    EXPECT_NEAR(state.left_velocity[i], pi * value, 1e-12);
+    EXPECT_NEAR(state.right_velocity[i], -pi * value, 1e-12);
+    EXPECT_DOUBLE_EQ(state.left_sensor_torque[i], value);
+    EXPECT_DOUBLE_EQ(state.right_sensor_torque[i], -value);
+    EXPECT_DOUBLE_EQ(state.left_external_torque[i], 10.0 + value);
+    EXPECT_DOUBLE_EQ(state.right_external_torque[i], -10.0 - value);
+  }
+  for (std::size_t i = 0; i < 6; ++i) {
+    EXPECT_DOUBLE_EQ(state.left_flange_wrench[i], 20.0 + i);
+    EXPECT_DOUBLE_EQ(state.right_flange_wrench[i], -20.0 - i);
+  }
+}
 
 namespace {
 

@@ -86,7 +86,7 @@ def test_gripper_command_norm_rejects_invalid_limits():
 Run:
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws
+cd skye_ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 python3 -m pytest src/skye_factr_teleop/test/test_control_core.py::test_gripper_command_norm_endpoints_and_midpoint \
@@ -227,7 +227,7 @@ Also assert gravity-test path does not require `_gripper_pub` (leave `None` or a
 - [ ] **Step 2: Run the new/updated tests — expect FAIL**
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws
+cd skye_ros2_ws
 source /opt/ros/humble/setup.bash && source install/setup.bash
 python3 -m pytest src/skye_factr_teleop/test/test_ros_driver.py::test_interfaces_qos_and_disabled_startup \
   src/skye_factr_teleop/test/test_ros_driver.py::test_teleop_publishes_gripper_ctrl_and_idle_does_not -v
@@ -328,7 +328,7 @@ assert node.expanded_remapping_rules == [
 - [ ] **Step 2: Run launch test — expect FAIL**
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws
+cd skye_ros2_ws
 source /opt/ros/humble/setup.bash && source install/setup.bash
 python3 -m pytest src/skye_factr_teleop/test/test_launch.py::test_launch_profiles_sides_and_remaps -v
 ```
@@ -368,7 +368,7 @@ Expected: PASS.
 Rebuild package so install/launch pick up remaps:
 
 ```bash
-cd /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws
+cd skye_ros2_ws
 ./scripts/build.sh skye_factr_teleop
 # or: colcon build --packages-select skye_factr_teleop --symlink-install
 ```
@@ -400,7 +400,7 @@ EOF
 # FTDI latency = 1 for both leader arms
 echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
 echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB1/latency_timer
-source /data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws/scripts/setup_factr_teleop_env.sh
+source skye_ros2_ws/scripts/setup_factr_teleop_env.sh
 ```
 
 - [ ] **Step 2: Start driver + dual teleop (Thor)**

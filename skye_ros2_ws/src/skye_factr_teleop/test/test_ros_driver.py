@@ -47,6 +47,7 @@ class Hardware(FakeDynamixelIO):
         self.open_calls = []
         self.close_calls = 0
         self.present_currents_ma = np.zeros(8)
+        self.present_temperatures_c = np.arange(30.0, 38.0)
 
     def open(self, *, enable_torque=True):
         self.open_calls.append(enable_torque)
@@ -103,7 +104,8 @@ def make_node(context, monkeypatch, tmp_path):
 
     def make(side="left", *, parameters=None, config_path_override=None,
              hardware=None, record_publishers=True, gravity_test=None, limit_test=None,
-             friction_test=None, diagnostics=False, use_default_factory=False, **kwargs):
+             friction_test=None, diagnostics=False, use_default_factory=False,
+             temperature_rate=None, **kwargs):
         source = Path(__file__).parents[1] / "config" / f"grav_comp_m6_{side}.yaml"
         document = yaml.safe_load(source.read_text(encoding="utf-8"))
         document["dynamixel"].update({
@@ -130,6 +132,8 @@ def make_node(context, monkeypatch, tmp_path):
 
         overrides = [Parameter("config_path", value=str(config_path_override or config_path))]
         overrides.append(Parameter("sync_diagnostics", value=diagnostics))
+        if temperature_rate is not None:
+            overrides.append(Parameter("temperature_publish_rate_hz", value=temperature_rate))
         if gravity_test is not None:
             overrides.append(Parameter("gravity_test_only", value=True))
             overrides.extend(Parameter(f"gravity_test_{key}", value=value)
@@ -153,7 +157,8 @@ def make_node(context, monkeypatch, tmp_path):
         monkeypatch.setattr(node, "_ros_now", lambda: clock.now)
         pubs = list(node.publishers)
         if record_publishers:
-            for name in ("_state_pub", "_current_pub", "_target_pub", "_command_pub", "_gripper_pub"):
+            for name in ("_state_pub", "_current_pub", "_target_pub", "_command_pub", "_gripper_pub",
+                         "_sync_progress_pub", "_temperature_pub"):
                 if getattr(node, name, None) is not None:
                     setattr(node, name, Recorder())
             if diagnostics:
@@ -189,6 +194,9 @@ def test_interfaces_qos_and_disabled_startup(make_node, side):
     assert pubs["/gripper/ctrl"].qos_profile.reliability == ReliabilityPolicy.BEST_EFFORT
     assert pubs["/gripper/ctrl"].qos_profile.depth == 1
     assert pubs["/teleop/state"].qos_profile.durability == DurabilityPolicy.TRANSIENT_LOCAL
+    progress_qos = pubs[f"/leader_arm/{side}/sync_progress"].qos_profile
+    assert progress_qos.reliability == ReliabilityPolicy.RELIABLE
+    assert progress_qos.durability == DurabilityPolicy.TRANSIENT_LOCAL
     for topic in ("/leader_arm/current_state", "/leader_arm/target_joint_state"):
         assert pubs[topic].qos_profile.reliability == ReliabilityPolicy.RELIABLE
         assert pubs[topic].qos_profile.durability == DurabilityPolicy.VOLATILE
@@ -368,6 +376,97 @@ def test_friction_test_destroy_disables_torque(make_node):
     rig.node.destroy_node()
     assert not rig.hardware.torque_enabled
     np.testing.assert_array_equal(rig.hardware.last_currents_ma, np.zeros(8))
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+@pytest.mark.parametrize("case,reason", [
+    ("start", "J6=0.810000 rad, allowed=[-0.800000, 0.800000] rad"),
+    ("target", "J7=0.750000 rad, allowed=[-0.700000, 0.700000] rad"),
+    ("velocity", "J2: |velocity|=0.060000 rad/s > 0.050000 rad/s"),
+    ("duration", "timeout"),
+])
+def test_sync_preflight_rejection_never_enables_torque(make_node, monkeypatch, side, case, reason):
+    rig = make_node(side)
+    node = rig.node
+    position, velocity = np.zeros(8), np.zeros(8)
+    message = packet(side)
+    if case == "start":
+        position[5] = 0.81
+    elif case == "target":
+        message.position[6] = 0.75
+    elif case == "velocity":
+        velocity[1] = 0.06
+    else:
+        sync = node.config.controller.sync_hold_control
+        node.config = replace(node.config, controller=replace(
+            node.config.controller, sync_hold_control=replace(
+                sync, ruckig=replace(sync.ruckig, trajectory_timeout=0.1))))
+    rig.hardware.inject_state(position * node.core.joint_signs, velocity * node.core.joint_signs)
+    errors, torque_calls = [], []
+    monkeypatch.setattr(node, "get_logger", lambda: SimpleNamespace(error=errors.append))
+    monkeypatch.setattr(rig.hardware, "set_torque_enabled", torque_calls.append)
+    node._on_follower(message)
+
+    node._on_sync(String(data="switch_sync"))
+
+    assert node.core.mode == ControlMode.IDLE
+    assert not rig.hardware.torque_enabled
+    assert torque_calls == []
+    assert rig.trajectories == []
+    assert not node._closed and not node._follower_session_active
+    assert len(errors) == 1
+    assert f"side={side}, phase=sync_preflight" in errors[0]
+    assert reason in errors[0]
+    feedback = json.loads(node._sync_progress_pub.messages[-1].data)
+    assert feedback["outcome"] == "failed" and reason in feedback["text"]
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_sync_preflight_uses_logical_pose_and_accepts_large_feasible_move(make_node, monkeypatch, side):
+    rig = make_node(side, parameters={"joint_offsets": [0.2] * 8})
+    node = rig.node
+    position = np.array([2.0, 0, 0, 0, 0, 0, 0, 0.4])
+    rig.hardware.inject_state(position * node.core.joint_signs + node.core.joint_offsets,
+                              np.zeros(8))
+    message = packet(side)
+    message.position = [-2.0] + [0.0] * 6
+    node._on_follower(message)
+    preview = module.preview_move
+    observed, logs = [], []
+
+    def checked_preview(config, q, dq, *, target):
+        assert not rig.hardware.torque_enabled
+        observed.append((q.copy(), dq.copy(), target.copy()))
+        return preview(config, q, dq, target=target)
+
+    monkeypatch.setattr(module, "preview_move", checked_preview)
+    monkeypatch.setattr(node, "get_logger", lambda: SimpleNamespace(info=logs.append))
+
+    node._on_sync(String(data="switch_sync"))
+
+    np.testing.assert_allclose(observed[0][0], position)
+    np.testing.assert_allclose(observed[0][1], np.zeros(8))
+    np.testing.assert_allclose(rig.trajectories[0].target[:7], observed[0][2])
+    assert node.core.mode == ControlMode.TELEOP_SYNCING
+    assert rig.hardware.torque_enabled
+    feedback = json.loads(node._sync_progress_pub.messages[0].data)["text"]
+    assert f"side={side}" in feedback and "trajectory=" in feedback
+    assert "joint_delta_rad=[-4.0," in feedback
+    assert logs == []
+
+
+def test_sync_preflight_read_failure_uses_existing_fault_cleanup(make_node, monkeypatch):
+    rig = make_node()
+    rig.node._on_follower(packet())
+    rig.hardware.fail_next_read(RuntimeError("read failed"))
+    errors = []
+    monkeypatch.setattr(rig.node, "get_logger", lambda: SimpleNamespace(error=errors.append))
+
+    rig.node._on_sync(String(data="switch_sync"))
+
+    assert rig.node._closed and rig.node.core.mode == ControlMode.IDLE
+    assert not rig.hardware.torque_enabled and rig.trajectories == []
+    assert "phase=sync_preflight" in errors[0] and "read failed" in errors[0]
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
@@ -707,6 +806,112 @@ def test_settle_timeout_diagnostics_preserve_reason_after_target_cleared(make_no
     assert diagnostic["sync_status"]["transition_from"] == "HOLD_SETTLING"
 
 
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_terminal_sync_progress_uses_final_goal_and_is_rate_limited(make_node, monkeypatch, side):
+    rig = make_node(side)
+    node = rig.node
+    logs = []
+    monkeypatch.setattr(node, "get_logger", lambda: SimpleNamespace(info=logs.append))
+    message = packet(side)
+    message.position = [0.3] + [0.0] * 6
+    node._on_joint_move(message)
+    goal = node.core.sync_target_position
+    goal[:] = 99  # Diagnostic callers cannot change the control target.
+    goal = node.core.sync_target_position
+    position = goal.copy()
+    position[0] = 0.0
+    velocity = np.zeros(8)
+    hold = node.config.controller.sync_hold_control.hold
+    velocity[1] = 2 * hold.sync_velocity_tolerance[1]
+    rig.hardware.inject_state(position * node.core.joint_signs,
+                              velocity * node.core.joint_signs)
+    # Tracking the current trajectory sample perfectly is not final-goal convergence.
+    rig.trajectories[0].position = position.copy()
+    rig.trajectories[0].velocity = velocity.copy()
+    rig.clock.now += 0.002
+    node._tick()
+    assert not node._closed
+    feedback = node._sync_progress_pub.messages
+    progress = json.loads(feedback[-1].data)["text"]
+    assert f"[{side}] TELEOP_SYNCING：6/8" in progress
+    assert f"J1: |position error|=0.300000 rad > {hold.sync_position_tolerance[0]:.6f} rad" in progress
+    assert "J2: |velocity|=0.100000 rad/s > 0.050000 rad/s" in progress
+    assert "J3:" not in progress and "gripper(ID8):" not in progress
+    count = len(feedback)
+    rig.clock.now += 0.5
+    node._tick()
+    assert len(feedback) == count
+    rig.clock.now += 0.51
+    node._tick()
+    assert len(feedback) == count + 1
+    assert logs == []
+
+
+def test_terminal_sync_logs_phase_changes_settling_and_success_once(make_node, monkeypatch):
+    rig = make_node()
+    node = rig.node
+    logs = []
+    monkeypatch.setattr(node, "get_logger", lambda: SimpleNamespace(info=logs.append))
+    monkeypatch.setattr(node, "_report_sync", lambda text, outcome="active": logs.append(text))
+    node._on_joint_move(packet())
+    assert "TELEOP_SYNCING" in logs[-1]
+    rig.trajectories[0].finished = True
+    goal = node.core.sync_target_position
+    rig.hardware.inject_state(goal * node.core.joint_signs, np.zeros(8))
+    rig.clock.now += 0.002
+    node._tick()
+    assert any("HOLD_SETTLING：轨迹完成" in line for line in logs)
+    assert "8/8" in logs[-1] and "Continuous settling: 0.000 / 0.250 s" in logs[-1]
+    rig.clock.now += 0.252
+    node._tick()
+    assert node.core.mode == ControlMode.SYNCED
+    assert sum("SYNCED：同步成功" in line for line in logs) == 1
+    count = len(logs)
+    rig.clock.now += 1.0
+    node._tick()
+    assert len(logs) == count
+    node._on_stop(None)
+    assert "IDLE" in logs[-1]
+    node._on_joint_move(packet(stamp=rig.clock.now))
+    rig.clock.now += 0.002
+    node._tick()
+    assert "TELEOP_SYNCING：" in logs[-1] and "/8" in logs[-1]
+
+
+@pytest.mark.parametrize("phase,reason", [
+    ("ruckig", "sync_timeout"), ("hold", "settle_timeout"),
+])
+def test_terminal_sync_timeout_reports_current_blockers_once(make_node, monkeypatch, phase, reason):
+    rig = make_node()
+    node = rig.node
+    warnings = []
+    monkeypatch.setattr(node, "get_logger", lambda: SimpleNamespace(
+        info=lambda message: None,
+        warning=lambda message: pytest.fail("sync progress leaked to terminal A")))
+    monkeypatch.setattr(node, "_report_sync", lambda text, outcome="active": warnings.append(text))
+    node._on_joint_move(packet())
+    if phase == "hold":
+        rig.trajectories[0].finished = True
+        rig.clock.now += 0.002
+        node._tick()
+    sync = node.config.controller.sync_hold_control
+    rig.clock.now += sync.ruckig.trajectory_timeout if phase == "ruckig" else sync.hold.settle_timeout
+    # No intermediate progress sample: the timeout must use the latest measured state.
+    position = np.zeros(8)
+    position[0] = -0.2
+    rig.hardware.inject_state(position * node.core.joint_signs, np.zeros(8))
+    node._tick()
+    assert node.core.mode == ControlMode.IDLE and not rig.hardware.torque_enabled
+    assert node.core.sync_target_position is None
+    assert any(f"同步失败：{reason}" in line for line in warnings)
+    assert "J1: |position error|=0.300000 rad" in warnings[-1]
+    assert "gripper(ID8)" in warnings[-1]
+    count = len(warnings)
+    rig.clock.now += 0.002
+    node._tick()
+    assert len(warnings) == count
+
+
 def test_constructor_failure_closes_partially_open_device(make_node):
     hardware = Hardware()
 
@@ -767,6 +972,9 @@ def test_dual_ros_graph_types_remaps_and_isolation(make_node, context):
             node = rig.node
             expected_pubs = {
                 "/teleop/state": "std_msgs/msg/String",
+                f"/leader_arm/{side}/temperature_c": "std_msgs/msg/Float64MultiArray",
+                f"/leader_arm/{side}/sync_progress": "std_msgs/msg/String",
+                "/gripper/ctrl": "sensor_msgs/msg/JointState",
                 f"/{side}_leader_arm/current_state": "sensor_msgs/msg/JointState",
                 f"/{side}_leader_arm/target_joint_state": "sensor_msgs/msg/JointState",
                 f"/gento/{side}_joint_control": "sensor_msgs/msg/JointState",
@@ -958,7 +1166,101 @@ def test_diagnostics_are_optional_and_enable_present_current_reads(make_node, mo
     hardware = Hardware()
     monkeypatch.setattr(module, "_hardware_factory", lambda config, **kw: calls.append(kw) or hardware)
     make_node(diagnostics=True, use_default_factory=True, hardware=hardware)
-    assert calls == [{"read_present_current": True}]
+    assert calls == [{"read_present_current": True, "read_present_temperature": True}]
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+@pytest.mark.parametrize("rate,interval", [(None, 1.0), (2.0, 0.5)])
+def test_temperature_topic_preserves_servo_order_and_limits_publish_rate(make_node, side, rate, interval):
+    rig = make_node(side, temperature_rate=rate)
+    node = rig.node
+    assert f"/leader_arm/{side}/temperature_c" in {pub.topic_name for pub in rig.publishers}
+    node._tick()
+    assert list(node._temperature_pub.messages[-1].data) == list(range(30, 38))
+    rig.hardware.present_temperatures_c = np.arange(40.0, 48.0)
+    rig.clock.now += interval / 2
+    node._tick()
+    assert len(node._temperature_pub.messages) == 1
+    rig.clock.now += interval / 2
+    node._tick()
+    assert [list(msg.data) for msg in node._temperature_pub.messages] == [list(range(30, 38)), list(range(40, 48))]
+    node.shutdown_control()
+    rig.clock.now += interval
+    node._tick()
+    assert len(node._temperature_pub.messages) == 2
+
+
+@pytest.mark.parametrize("rate,enabled", [(None, True), (0.0, False)])
+def test_temperature_rate_controls_hardware_reads_and_publisher(make_node, monkeypatch, rate, enabled):
+    hardware = Hardware()
+    calls = []
+    monkeypatch.setattr(module, "_hardware_factory", lambda config, **kw: calls.append(kw) or hardware)
+    rig = make_node(use_default_factory=True, temperature_rate=rate)
+    assert calls == [{"read_present_current": False, "read_present_temperature": enabled}]
+    assert (rig.node._temperature_pub is not None) == enabled
+    if not enabled:
+        assert not any(pub.topic_name.endswith("/temperature_c") for pub in rig.publishers)
+        rig.node._tick()
+        assert not rig.node._closed
+
+
+@pytest.mark.parametrize("rate", [-1.0, float("nan"), float("inf"), True, "1.0"])
+def test_invalid_temperature_rate_is_rejected_before_opening_hardware(make_node, rate):
+    hardware = Hardware()
+    with pytest.raises(ValueError, match="temperature_publish_rate_hz"):
+        make_node(temperature_rate=rate, hardware=hardware)
+    assert hardware.open_calls == []
+
+
+def test_failed_read_does_not_republish_cached_temperature(make_node):
+    rig = make_node()
+    rig.node._tick()
+    rig.clock.now += 1.0
+    rig.hardware.fail_next_read(TimeoutError("temperature sample failed"))
+    rig.node._tick()
+    assert len(rig.node._temperature_pub.messages) == 1
+    assert rig.node._closed
+
+
+def test_temperature_waits_for_a_sample_and_parameter_is_read_only(make_node):
+    rig = make_node()
+    rig.hardware.present_temperatures_c = None
+    rig.node._tick()
+    assert rig.node._temperature_pub.messages == []
+    rig.hardware.present_temperatures_c = np.arange(30.0, 38.0)
+    rig.node._tick()
+    assert list(rig.node._temperature_pub.messages[-1].data) == list(range(30, 38))
+    result = rig.node.set_parameters([Parameter("temperature_publish_rate_hz", value=0.0)])
+    assert not result[0].successful
+
+
+def test_temperature_topics_deliver_distinct_left_and_right_samples_over_ros(make_node, context):
+    from rclpy.executors import SingleThreadedExecutor
+
+    rigs = {side: make_node(side, record_publishers=False) for side in ("left", "right")}
+    rigs["right"].hardware.present_temperatures_c = np.arange(40.0, 48.0)
+    received = {side: [] for side in rigs}
+    executor = SingleThreadedExecutor(context=context)
+    try:
+        for side, rig in rigs.items():
+            rig.node._timer.cancel()
+            executor.add_node(rig.node)
+            rigs["left"].node.create_subscription(
+                module.Float64MultiArray, f"/leader_arm/{side}/temperature_c",
+                lambda message, side=side: received[side].append(list(message.data)),
+                module.state_qos(),
+            )
+        deadline = time.monotonic() + 5.0
+        while not all(received.values()) and time.monotonic() < deadline:
+            for rig in rigs.values():
+                if rig.node._temperature_pub.get_subscription_count() > 0:
+                    rig.node._tick()
+            executor.spin_once(timeout_sec=0.01)
+        assert received == {"left": [list(range(30, 38))], "right": [list(range(40, 48))]}
+    finally:
+        for rig in rigs.values():
+            executor.remove_node(rig.node)
+        executor.shutdown()
 
 
 def test_teleop_recorder_over_ros_keeps_command_applied_feedback_and_stop_tail(make_node, tmp_path, monkeypatch):
@@ -1103,7 +1405,8 @@ def test_trial_cli_over_ros_with_fake_hardware(make_node, side, motion_source, t
         spin_until(lambda: node.core.mode == ControlMode.SYNCED)
         assert node._follower_session_active == (follower is not None)
         if follower is not None:
-            np.testing.assert_allclose(node.core._target, follower_target + [0.4])
+            setpoint = node.config.controller.limit_barrier_control.gripper.gripper_setpoint
+            np.testing.assert_allclose(node.core._target, follower_target + [setpoint])
         stop = node.create_publisher(String, "/mode/switch_stop", module.event_qos())
         spin_until(lambda: stop.get_subscription_count() > 0)
         stop.publish(String(data="switch_stop"))
@@ -1117,7 +1420,7 @@ def test_trial_cli_over_ros_with_fake_hardware(make_node, side, motion_source, t
             "IDLE", "TELEOP_SYNCING", "HOLD_SETTLING", "SYNCED", "IDLE"]
         assert record["follower_command_count"] == 0
         assert record["side"] == side
-        assert record["config"]["controller"]["sync_hold_control"]["gripper_setpoint"] == 0.4
+        assert record["config"]["controller"]["limit_barrier_control"]["gripper"]["gripper_setpoint"] == node.config.controller.limit_barrier_control.gripper.gripper_setpoint
         assert output.with_suffix(".trace.jsonl").stat().st_size > 0
         trace = [json.loads(line) for line in output.with_suffix(".trace.jsonl").read_text().splitlines()]
         assert sum("data" in row for row in trace) == sum(p["samples"] for p in record["phases"].values())

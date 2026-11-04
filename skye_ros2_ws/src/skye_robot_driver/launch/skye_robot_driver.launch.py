@@ -2,7 +2,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, SetEnvironmentVariable
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -12,6 +12,10 @@ _REMAPS = [
     ("/joint_states", "/gento/joint_states"),
     ("/left_joint_states", "/gento/left_joint_states"),
     ("/right_joint_states", "/gento/right_joint_states"),
+    ("/left_joint_external_torque", "/gento/left_joint_external_torque"),
+    ("/right_joint_external_torque", "/gento/right_joint_external_torque"),
+    ("/left_flange_wrench", "/gento/left_flange_wrench"),
+    ("/right_flange_wrench", "/gento/right_flange_wrench"),
     ("/left_joint_control", "/gento/left_joint_control"),
     ("/right_joint_control", "/gento/right_joint_control"),
     ("/left_joint_control_abs", "/gento/left_joint_control_abs"),
@@ -83,6 +87,27 @@ def _default_robot_profile() -> str:
     return "thor"
 
 
+def _dds_profile_actions():
+    """Use the packaged Fast DDS profile unless the caller already set one.
+
+    The Python teleop nodes load the same profile (see
+    skye_factr_teleop/launch_support.py); both sides must agree on transports,
+    otherwise data falls back to plain UDP and overflows the socket buffer
+    under 250-500 Hz load ("sequence size exceeds remaining buffer").
+    config/fastrtps_teleop.xml must stay identical in both packages.
+    """
+    if os.environ.get("FASTRTPS_DEFAULT_PROFILES_FILE"):
+        return []
+    path = os.path.join(
+        get_package_share_directory("skye_robot_driver"),
+        "config",
+        "fastrtps_teleop.xml",
+    )
+    if not os.path.isfile(path):
+        return []
+    return [SetEnvironmentVariable("FASTRTPS_DEFAULT_PROFILES_FILE", path)]
+
+
 def _launch_setup(context, *args, **kwargs):
     pkg_share = get_package_share_directory("skye_robot_driver")
     params_file = LaunchConfiguration("params_file").perform(context)
@@ -122,7 +147,7 @@ def _launch_setup(context, *args, **kwargs):
         }
     )
 
-    return [
+    return _dds_profile_actions() + [
         Node(
             package="skye_robot_driver",
             executable="skye_robot_driver",
