@@ -371,7 +371,7 @@ class SessionSupervisor:
         keep_launch = allow and first_reuse_launch and count > 0
 
         commands = self._cleanup_commands_for_precheck(
-            skip_docker_rm=False,
+            skip_docker_rm=True,
             keep_launch=keep_launch,
         )
 

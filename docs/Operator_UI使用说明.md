@@ -21,7 +21,7 @@
 Operator UI 是本机浏览器控制台，封装现有 `scripts/*.sh` 与会话状态机，支持：
 
 - **遥操数采**（`teleop_record`）：主机 `scripts/teleop.sh`（预检 + 启动大小臂 teleop）→ `skye_data_recorder`（可选：同步前关单侧小臂，见下节）
-- **HITL DAgger**（`dagger`）：driver → Docker HITL launch → `start_hitl_host.sh`（arbiter）。接管拆成「同步」→ 确认后「进入遥操」
+- **HITL DAgger**（`dagger`）：driver → 主机 HITL 小臂（`start_teleop_m6_dual_hitl.launch.py`）→ `start_hitl_host.sh`（arbiter）→ 可选 dummy 策略。接管拆成「同步」→ 确认后「进入遥操」
 
 遥操数采**不再**依赖 Docker 小臂容器或 follower 对齐步骤；FTDI/串口绑定请在会话外运行 `scripts/bind_leader_arms.py`（或等价离线流程）。**不要**把 `teleop.sh build` 放进每次「开始会话」。
 
@@ -64,14 +64,14 @@ google-chrome --app=http://127.0.0.1:8765
 
 | 操作                        | 作用                                                                                                                   |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| **开始会话**                  | **遥操数采**：清残留 → `teleop.sh check --robot <thor\|orin> --fix-latency`（含控制器 ping、串口/latency、install）→ `teleop.sh start --skip-precheck`（一体大小臂）→ 数采 recorder。**DAgger**：仍按旧 playbook（含 Docker 小臂）。 |
+| **开始会话**                  | **遥操数采**：清残留 → `teleop.sh check --robot <thor\|orin> --fix-latency` → `teleop.sh start --skip-precheck` → 数采 recorder。**DAgger**：清残留 → ping/FastDDS 预检 → `start_skye_for_factr.sh` → 主机 `start_teleop_m6_dual_hitl.launch.py` → `start_hitl_host.sh --arbiter-only` → 可选 dummy。 |
 | **结束会话**                  | 有序停止子进程组，并默认跑小臂 Dynamixel 去使能；回到 IDLE。**结束前请托住小臂**（去使能后会下落）。改 profile 或模式前必须先结束 |
 | **急停** (`emergency_stop`) | 调用 `/gento/emergency_stop`，**不结束会话**；会话仍在 READY/RUNNING，可继续操作或再点结束会话                                                 |
 
 
-急停不受「尚未就绪」等向导门禁拦截。结束会话退场顺序：停录 → `switch_stop` → 倒序 SIGTERM 进程组 → 主臂 Dynamixel 去使能（**遥操数采**默认主机跑 `scripts/disable_leader_dynamixel.py`，不 `docker rm`；**DAgger** 默认先 `docker rm -f skye_marvin_m6`，去使能优先 Marvin 镜像内执行，失败再回退主机）。可用 `teardown.disable_leader: false` 关闭去使能；`teardown.docker_rm` / `teardown.disable_via_docker` 可在配置里显式覆盖上述模式默认值。
+急停不受「尚未就绪」等向导门禁拦截。结束会话退场顺序：停录 → `switch_stop` → 倒序 SIGTERM 进程组 → 主臂 Dynamixel 去使能（**遥操数采与 DAgger** 默认均主机跑 `scripts/disable_leader_dynamixel.py`，**不** `docker rm`）。可用 `teardown.disable_leader: false` 关闭去使能；若仍需旧 Docker 退场，可显式设 `teardown.docker_rm` / `teardown.disable_via_docker: true`。
 
-**遥操数采** 启动预检走主机 `teleop.sh check`，不会执行 `docker rm`。**DAgger** 结束会话（及启动前清理，若列表里未写）仍会 **`docker rm -f skye_marvin_m6`**。历史上未命名的残留容器（例如随机名）不会被自动清掉，需一次性：`docker ps` 后 `docker rm -f <id>`。
+**两种模式** 启动预检默认都不执行 `docker rm`。若本机仍有历史 Marvin 容器，需手动：`docker ps` 后 `docker rm -f <id>`。
 
 ## 同步前关单侧小臂（遥操数采）
 
@@ -120,21 +120,17 @@ pkill -f 'skye_operator_ui|operator_ui' || true
 kill -9 2400740
 ```
 
-## Docker 小臂步骤（DAgger / 遗留）
+## DAgger 主机启停（默认）
 
-**遥操数采** playbook 已改为主机 `teleop.sh`，本节主要适用于 **DAgger** 或仍使用 `playbook.marvin_start_cmd` 覆盖的旧配置。
+与 [`docs/dagger_dev/phase1_hitl_isomorphic_startup.md`](dagger_dev/phase1_hitl_isomorphic_startup.md) 对齐：
 
-v1 默认 `scripts/run_marvin_m6_impedance.sh` 使用 **交互式** `docker run -it`，Operator UI 无法在无人工确认的情况下自动完成容器内 launch。
+1. 大臂：`start_skye_for_factr.sh <thor|orin>`
+2. HITL 小臂：`ros2 launch skye_factr_teleop start_teleop_m6_dual_hitl.launch.py robot_profile:=…`
+3. Arbiter：`start_hitl_host.sh --arbiter-only`
+4. 可选：`ros2 run skye_hitl_dagger pub_dummy_policy_chunk`
 
-可选绕过方式（任选其一）：
-
-1. 在 `config/default.yaml` 或运行时参数中设置 `playbook.marvin_start_cmd` 为非交互包装脚本（argv 列表）
-2. 设置环境变量 `MARVIN_LAUNCH_CMD` 为容器内非交互 launch，例如：
-  - 遥操：`ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento.launch.py use_keyboard:=false`
-  - HITL：`ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento_hitl.launch.py use_keyboard:=false`
-3. 在 `playbook.marvin_launch_cmd` 中写入同上 launch 行
-
-详见 `[docs/Hint_Dagger启动使用说明.md](Hint_Dagger启动使用说明.md)` 与 spec §3.4。
+设计：[`docs/superpowers/specs/2026-11-04-operator-ui-host-dagger-integration-design.md`](superpowers/specs/2026-11-04-operator-ui-host-dagger-integration-design.md)。  
+旧 Docker Marvin 路径仅作遗留；需要时用 `playbook_override.dagger` 或显式 `teardown.docker_rm`。
 
 ## 无真机验收
 

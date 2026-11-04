@@ -1,4 +1,4 @@
-"""Best-effort session teardown: optional Marvin Docker rm + disable leader DXL."""
+"""Best-effort session teardown: optional Docker rm + disable leader DXL."""
 
 from __future__ import annotations
 
@@ -31,12 +31,16 @@ def marvin_container_name(cfg: dict[str, Any]) -> str:
 def teardown_effective_bool(
     cfg: dict[str, Any], key: str, mode: UiMode | None
 ) -> bool:
-    """Mode defaults when ``teardown.<key>`` is omitted (teleop host, dagger docker)."""
+    """Mode defaults when ``teardown.<key>`` is omitted.
+
+    Both ``teleop_record`` and ``dagger`` default to host teardown (no docker rm /
+    no disable-via-docker). Explicit ``teardown.<key>`` still wins. ``mode`` is
+    accepted for call-site compatibility.
+    """
+    _ = mode  # defaults are host for all modes; keep signature stable
     tcfg = _teardown_cfg(cfg)
     if key in tcfg:
         return bool(tcfg[key])
-    if mode == UiMode.dagger:
-        return True
     return False
 
 

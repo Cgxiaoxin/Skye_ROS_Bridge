@@ -11,7 +11,7 @@ export const TELEOP_STEPS = [
 export const DAGGER_STEPS = [
   { id: 'precheck', label: '预检' },
   { id: 'driver', label: '大臂 Driver', logId: 'driver' },
-  { id: 'marvin', label: 'HITL 小臂', logId: 'marvin' },
+  { id: 'leaders', label: 'HITL 小臂', logId: 'leaders' },
   { id: 'arbiter', label: 'Arbiter', logId: 'arbiter' },
   { id: 'policy', label: '策略源', logId: 'dummy_policy', optional: true },
   { id: 'control', label: '控制权' },
@@ -20,7 +20,7 @@ export const DAGGER_STEPS = [
 
 const PLAYBOOK_IDS = {
   teleop_record: ['teleop', 'recorder'],
-  dagger: ['driver', 'marvin', 'arbiter', 'dummy_policy'],
+  dagger: ['driver', 'leaders', 'arbiter', 'dummy_policy'],
 };
 
 export function stepsForMode(mode) {

@@ -273,7 +273,7 @@ def test_precheck_fails_if_residual_remains_after_cleanup(tmp_path, monkeypatch)
     assert "残留" in reason
 
 
-def test_dagger_precheck_appends_docker_rm_when_absent(tmp_path, monkeypatch):
+def test_dagger_precheck_skips_docker_rm_by_default(tmp_path, monkeypatch):
     calls = []
 
     def fake_run(argv, **kwargs):
@@ -290,6 +290,11 @@ def test_dagger_precheck_appends_docker_rm_when_absent(tmp_path, monkeypatch):
     monkeypatch.setattr("skye_operator_ui.supervisor.time.sleep", lambda _s: None)
 
     cfg = _precheck_cfg(tmp_path)
+    # Explicit docker cleanup in whitelist should still be filtered out for host dagger.
+    cfg["cleanup_stale_commands"] = [
+        ["pkill", "-f", "skye_robot_driver"],
+        ["docker", "rm", "-f", "skye_marvin_m6"],
+    ]
     sup = SessionSupervisor(
         repo_root=str(tmp_path),
         cfg=cfg,
@@ -297,7 +302,7 @@ def test_dagger_precheck_appends_docker_rm_when_absent(tmp_path, monkeypatch):
     )
     ok, reason = sup.start("thor", UiMode.dagger)
     assert ok, reason
-    assert any(c[:4] == ["docker", "rm", "-f", "skye_marvin_m6"] for c in calls)
+    assert not any(c[:3] == ["docker", "rm", "-f"] for c in calls)
 
 
 def test_teleop_record_precheck_runs_teleop_check(tmp_path, monkeypatch):

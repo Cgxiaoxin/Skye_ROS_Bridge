@@ -8,21 +8,6 @@ from typing import Any
 
 from skye_operator_ui.session_state import UiMode
 
-# The marvin step runs run_marvin_m6_impedance.sh, which executes MARVIN_LAUNCH_CMD
-# non-interactively in the container when that env var is set (and only drops into
-# a shell when it is not). The per-mode defaults below supply that launch line;
-# cfg.playbook.marvin_start_cmd can replace the wrapper argv entirely.
-#
-# Profile (thor|orin) is passed as argv[1] to start_skye / run_marvin / align —
-# same contract as docs/Thor_Orin_遥操启动.md — and also exported as ROBOT_PROFILE
-# / ROBOT_IP so nested docker/launch paths stay consistent.
-
-_HITL_MARVIN_LAUNCH = (
-    "source /marvin_ws/install/setup.bash && "
-    "ros2 launch /marvin_ws/launch_overlay/start_teleop_m6_dual_gento_hitl.launch.py "
-    "use_keyboard:=false"
-)
-
 # Keep in sync with scripts/lib/robot_profile.sh robot_controller_ip().
 _CONTROLLER_IP = {
     "thor": "6.6.7.191",
@@ -31,8 +16,7 @@ _CONTROLLER_IP = {
 
 _DOMAIN = {"thor": "20", "orin": "21"}
 
-# marvin_ws/fastrtps_no_shm.xml was removed in cb0f3e7; the profile now ships
-# with the driver package (4 MB UDP + SHM).
+# FastDDS profile ships with the driver package (4 MB UDP + SHM).
 _FASTDDS_PROFILE = ("skye_ros2_ws", "src", "skye_robot_driver", "config",
                     "fastrtps_teleop.xml")
 
@@ -63,21 +47,20 @@ def _dagger_base_env(
 ) -> dict[str, str]:
     env = _base_env(profile, repo_root, cfg)
     env["FASTRTPS_DEFAULT_PROFILES_FILE"] = fastdds_profile_path(repo_root)
-    launch_cmd = cfg.get("playbook", {}).get("marvin_launch_cmd")
-    if launch_cmd:
-        env["MARVIN_LAUNCH_CMD"] = str(launch_cmd)
-    elif os.environ.get("MARVIN_LAUNCH_CMD"):
-        env["MARVIN_LAUNCH_CMD"] = os.environ["MARVIN_LAUNCH_CMD"]
     return env
 
 
-def _marvin_argv(repo_root: str, cfg: dict[str, Any], profile: str) -> list[str]:
-    override = cfg.get("playbook", {}).get("marvin_start_cmd")
-    if override:
-        return list(override)
+def _hitl_leaders_argv(repo_root: str, profile: str) -> list[str]:
+    setup = os.path.join(repo_root, "skye_ros2_ws", "install", "setup.bash")
+    key = profile.strip().lower()
     return [
-        os.path.join(repo_root, "scripts", "run_marvin_m6_impedance.sh"),
-        profile,
+        "bash",
+        "-lc",
+        (
+            f"source {setup} && "
+            f"ros2 launch skye_factr_teleop start_teleop_m6_dual_hitl.launch.py "
+            f"robot_profile:={key}"
+        ),
     ]
 
 
@@ -148,10 +131,6 @@ def _dagger_playbook(
 ) -> list[dict[str, Any]]:
     timeout_s = _step_timeout(cfg)
     env = _dagger_base_env(profile, repo_root, cfg)
-    marvin_env = copy.copy(env)
-    marvin_env["MARVIN_LAUNCH_CMD"] = marvin_env.get(
-        "MARVIN_LAUNCH_CMD", _HITL_MARVIN_LAUNCH
-    )
     setup = os.path.join(repo_root, "skye_ros2_ws", "install", "setup.bash")
     arbiter_env = copy.copy(env)
     if cfg.get("enable_hitl_recorder", False):
@@ -165,10 +144,10 @@ def _dagger_playbook(
             timeout_s,
         ),
         _make_step(
-            "marvin",
-            _marvin_argv(repo_root, cfg, profile),
-            marvin_env,
-            "marvin",
+            "leaders",
+            _hitl_leaders_argv(repo_root, profile),
+            env,
+            "teleop",
             timeout_s,
         ),
         _make_step(

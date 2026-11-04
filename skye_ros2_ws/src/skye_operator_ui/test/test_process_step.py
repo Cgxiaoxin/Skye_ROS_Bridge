@@ -89,18 +89,26 @@ def test_playbook_for_dagger():
     repo = "/data/repo"
     cfg = {"step_timeout_s": 90.0}
     steps = playbook_for(UiMode.dagger, repo, "orin", cfg)
+    assert [s["id"] for s in steps] == [
+        "driver", "leaders", "arbiter", "dummy_policy",
+    ]
     assert steps[0]["health_key"] == "driver"
     assert steps[0]["argv"] == [f"{repo}/scripts/start_skye_for_factr.sh", "orin"]
     assert steps[0]["env"]["ROBOT_IP"] == "6.6.7.190"
-    assert steps[1]["argv"] == [
-        f"{repo}/scripts/run_marvin_m6_impedance.sh",
-        "orin",
-    ]
+    assert steps[1]["id"] == "leaders"
+    assert steps[1]["health_key"] == "teleop"
+    assert steps[1]["argv"][:2] == ["bash", "-lc"]
+    leaders_cmd = steps[1]["argv"][2]
+    assert "start_teleop_m6_dual_hitl.launch.py" in leaders_cmd
+    assert "robot_profile:=orin" in leaders_cmd
+    assert "run_marvin_m6_impedance.sh" not in leaders_cmd
+    assert "FASTRTPS_DEFAULT_PROFILES_FILE" in steps[1]["env"]
     assert steps[2]["id"] == "arbiter"
     assert steps[2]["argv"] == [f"{repo}/scripts/start_hitl_host.sh", "--arbiter-only"]
     assert steps[2]["env"]["ROBOT_PROFILE"] == "orin"
     assert steps[2]["env"]["ROBOT_IP"] == "6.6.7.190"
     assert "ENABLE_RECORDER" not in steps[2]["env"]
+    assert steps[3]["optional"] is True
     hitl_hosts = [
         s["argv"]
         for s in steps

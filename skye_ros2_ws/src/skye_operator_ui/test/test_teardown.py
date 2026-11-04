@@ -183,11 +183,10 @@ def test_teardown_teleop_mode_defaults_host_path(tmp_path, monkeypatch):
     assert not any(c[:3] == ["docker", "rm", "-f"] for c in calls)
 
 
-def test_teardown_dagger_mode_defaults_docker_rm_and_disable(tmp_path, monkeypatch):
+def test_teardown_dagger_mode_defaults_host_disable_no_docker(tmp_path, monkeypatch):
     disable_script = Path(tmp_path) / "scripts" / "disable_leader_dynamixel.py"
     disable_script.parent.mkdir(parents=True)
     disable_script.write_text("# stub\n")
-    (Path(tmp_path) / "marvin_ws").mkdir()
     calls = []
 
     def fake_run(argv, **kwargs):
@@ -203,10 +202,10 @@ def test_teardown_dagger_mode_defaults_docker_rm_and_disable(tmp_path, monkeypat
         mode=UiMode.dagger,
     )
 
-    assert len(calls) == 2
-    assert calls[0][:4] == ["docker", "rm", "-f", "skye_marvin_m6"]
-    assert calls[1][0:3] == ["docker", "run", "--rm"]
-    assert "img:1" in calls[1]
+    assert len(calls) == 1
+    assert str(disable_script) in calls[0]
+    assert not any(c[:3] == ["docker", "rm", "-f"] for c in calls)
+    assert not any(c[0:3] == ["docker", "run", "--rm"] for c in calls)
 
 
 def test_supervisor_stop_invokes_safe_teardown(tmp_path, monkeypatch):
