@@ -15,6 +15,7 @@ from skye_factr_teleop.control_core import (
     ControlCore, ControlTerms, GravityTestSettings, LeaderState, gravity_compensation,
     gripper_position_hold, joint_limit_barrier, LimitTestSettings, FrictionTestSettings,
     nullspace_regulation, static_friction_compensation, transform_leader_state,
+    wrap_arm_angles_to_pi, wrap_to_pi,
 )
 from skye_factr_teleop.state_machine import ControlMode
 
@@ -60,6 +61,24 @@ def test_signed_state_mapping():
     assert state.gripper_position == 0
     assert state.gripper_velocity == -1
     np.testing.assert_array_equal(raw, original)
+
+
+def test_wrap_to_pi_folds_multi_turn_without_changing_pose_mod_2pi():
+    assert wrap_to_pi(5.924234) == pytest.approx(5.924234 - 2.0 * np.pi)
+    assert wrap_to_pi(-4.626486) == pytest.approx(-4.626486 + 2.0 * np.pi)
+    assert wrap_to_pi(0.5) == pytest.approx(0.5)
+    wrapped = wrap_arm_angles_to_pi([5.924234, 0.0, -4.626486, 0.1, 0.0, 0.0, 0.0])
+    assert wrapped[0] == pytest.approx(5.924234 - 2.0 * np.pi)
+    assert wrapped[2] == pytest.approx(-4.626486 + 2.0 * np.pi)
+    assert abs(wrapped[0]) < 2.9 and abs(wrapped[2]) < 2.9
+
+
+def test_transform_leader_state_folds_multi_turn_arm_angles():
+    # Raw multi-turn reading equivalent to ~-0.36 rad after offset/sign.
+    raw = np.array([5.924234, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    state = transform_leader_state(raw, np.zeros(8), np.zeros(8), np.ones(8))
+    np.testing.assert_allclose(state.arm_position[0], 5.924234 - 2.0 * np.pi)
+    assert -2.9 <= state.arm_position[0] <= 2.9
 
 
 def test_gripper_position_hold_pulls_toward_setpoint():

@@ -190,6 +190,27 @@ def _scalar(value: object, name: str) -> float:
         raise ValueError(f"{name} must be finite")
     return result
 
+def wrap_to_pi(angle: float) -> float:
+    """Map an angle to (-π, π] without changing the physical pose (mod 2π)."""
+    value = _scalar(angle, "angle")
+    wrapped = (value + math.pi) % (2.0 * math.pi) - math.pi
+    # Keep +π as +π (not -π) so the open upper end of (-π, π] is stable.
+    if wrapped <= -math.pi:
+        wrapped = math.pi
+    return float(wrapped)
+
+
+def wrap_arm_angles_to_pi(arm: object) -> np.ndarray:
+    """Fold J1..J7 multi-turn readings into (-π, π] for soft-limit / sync math.
+
+    Dynamixel multi-turn Present Position can report q±2πk after teleop. Soft
+    limits live near ±3 rad (< π cut), so this fold does not introduce a jump
+    for motion that stayed inside the configured barrier.
+    """
+    values = _vector(arm, ARM_JOINT_COUNT, "arm_position")
+    return np.asarray([wrap_to_pi(float(v)) for v in values], dtype=float)
+
+
 def transform_leader_state(
     raw_position: object, raw_velocity: object, offsets: object, joint_signs: object,
 ) -> LeaderState:
@@ -200,8 +221,10 @@ def transform_leader_state(
     signs = _vector(joint_signs, MOTOR_COUNT, "joint_signs")
     if not np.all(np.isin(signs, (-1.0, 1.0))):
         raise ValueError("joint_signs must contain only -1 or 1")
+    arm = (position[:ARM_JOINT_COUNT] - zero[:ARM_JOINT_COUNT]) * signs[:ARM_JOINT_COUNT]
+    arm = wrap_arm_angles_to_pi(arm)
     return LeaderState(
-        (position[:ARM_JOINT_COUNT] - zero[:ARM_JOINT_COUNT]) * signs[:ARM_JOINT_COUNT],
+        arm,
         velocity[:ARM_JOINT_COUNT] * signs[:ARM_JOINT_COUNT],
         float((position[-1] - zero[-1]) * signs[-1]),
         float(velocity[-1] * signs[-1]),
