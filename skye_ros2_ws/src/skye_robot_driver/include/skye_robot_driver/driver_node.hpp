@@ -94,6 +94,10 @@ class DriverNode : public rclcpp::Node {
   JointArray right_maximum_{};
   double max_delta_per_cycle_{0.05};
   double command_timeout_s_{0.20};
+  // After relative seed, temporarily widen max_delta for N frames to avoid
+  // first-frame clamp bounce (clutch engagement feel).
+  int teleop_seed_ramp_frames_{8};
+  double teleop_seed_ramp_max_delta_scale_{3.0};
   TeleopMappingMode teleop_mapping_mode_{TeleopMappingMode::kRelative};
   // Relative assist (soft compress / bounded leash / offset resync). Defaults
   // keep recording-safe: idle resync rate 0; motion-masked resync is mild.
@@ -109,6 +113,12 @@ class DriverNode : public rclcpp::Node {
   double tracking_error_freeze_rad_{0.14};  // ~8° follower lag → freeze o
   std::optional<JointArray> left_gento_ref_;
   std::optional<JointArray> right_gento_ref_;
+  // Latest relative leader frame received while abs path blocked the session;
+  // used to seed atomically once relative is allowed again.
+  std::optional<JointArray> left_pending_leader_;
+  std::optional<JointArray> right_pending_leader_;
+  int left_seed_ramp_remaining_{0};
+  int right_seed_ramp_remaining_{0};
   // Continuous (unwrapped) leader tracking per arm, used by the relative teleop
   // path. Initialized on teleop session entry and re-based by clutch on limits.
   JointArray left_leader_prev_{};

@@ -37,6 +37,10 @@ skye_robot_driver:
     # 左臂首轮遥操从 0.001 rad/帧开始，结合实际频率和跟随滞后复核。
     max_delta_per_cycle: 0.01 # 原来0.005
     command_timeout_s: 0.50
+    # After relative clutch seed, widen max_delta for N frames (~tens of ms at
+    # 100–250 Hz) to avoid first-frame clamp bounce / spring-back feel.
+    teleop_seed_ramp_frames: 8
+    teleop_seed_ramp_max_delta_scale: 3.0
     # relative: delta from teleop entry (safe if sync incomplete). absolute: legacy.
     teleop_mapping_mode: relative     # relative | absolute
     # Relative assist on top of clutch: soft edge + bounded leash + mild o→o_cal.

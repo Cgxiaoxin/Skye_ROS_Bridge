@@ -132,6 +132,17 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   const auto cmd_cycle_time_ms = declare_parameter<int>("cmd_cycle_time_ms", 4);
   max_delta_per_cycle_ = declare_parameter<double>("max_delta_per_cycle", 0.25);
   command_timeout_s_ = declare_parameter<double>("command_timeout_s", 0.50);
+  teleop_seed_ramp_frames_ =
+      declare_parameter<int>("teleop_seed_ramp_frames", 8);
+  teleop_seed_ramp_max_delta_scale_ =
+      declare_parameter<double>("teleop_seed_ramp_max_delta_scale", 3.0);
+  if (teleop_seed_ramp_frames_ < 0) {
+    teleop_seed_ramp_frames_ = 0;
+  }
+  if (!std::isfinite(teleop_seed_ramp_max_delta_scale_) ||
+      teleop_seed_ramp_max_delta_scale_ < 1.0) {
+    teleop_seed_ramp_max_delta_scale_ = 1.0;
+  }
   teleop_mapping_mode_ = parse_teleop_mapping_mode(
       declare_parameter<std::string>("teleop_mapping_mode", "relative"));
   relative_assist_enable_ =
@@ -599,17 +610,21 @@ DriverNode::TeleopMappingMode DriverNode::parse_teleop_mapping_mode(
 }
 
 void DriverNode::reset_teleop_session(DriverCore::Arm arm) {
+  // Keep pending_leader_* across hold/reset so a relative frame received while
+  // abs was active can still seed the next session.
   if (arm == DriverCore::Arm::kLeft) {
     left_gento_ref_.reset();
     left_last_command_.reset();
     left_streaming_ = false;
     left_still_elapsed_s_ = 0.0;
+    left_seed_ramp_remaining_ = 0;
     return;
   }
   right_gento_ref_.reset();
   right_last_command_.reset();
   right_streaming_ = false;
   right_still_elapsed_s_ = 0.0;
+  right_seed_ramp_remaining_ = 0;
 }
 
 void DriverNode::reset_absolute_session(DriverCore::Arm arm) {
@@ -693,18 +708,6 @@ void DriverNode::handle_set_mode(
 void DriverNode::handle_command(
     DriverCore::Arm arm, const JointState::SharedPtr message) {
   const char *arm_name = arm == DriverCore::Arm::kLeft ? "left" : "right";
-  // Scheme B: while absolute align (or any abs stream) is active, ignore relative
-  // / teleop joint_control so FACTR SYNC can stay on without fighting abs.
-  // When abs stops (publisher gone + timeout, or hold_current), path_active(abs)
-  // becomes false and the next relative frame reseeds a fresh teleop session.
-  if (path_active(arm, /*absolute=*/true)) {
-    RCLCPP_INFO_THROTTLE(
-        get_logger(), *get_clock(), 2000,
-        "%s relative/teleop cmd ignored while absolute path is active "
-        "(align or abs stream); relative will resume after abs ends",
-        arm_name);
-    return;
-  }
   if (message->position.size() != DriverCore::JointArray{}.size()) {
     RCLCPP_ERROR(
         get_logger(),
@@ -715,6 +718,19 @@ void DriverNode::handle_command(
 
   JointArray leader{};
   std::copy(message->position.begin(), message->position.end(), leader.begin());
+
+  // Scheme B: while abs is active, do not command relative — but cache the
+  // latest leader frame so seed can use it once abs ends (no silent drop).
+  auto &pending_leader =
+      arm == DriverCore::Arm::kLeft ? left_pending_leader_ : right_pending_leader_;
+  if (path_active(arm, /*absolute=*/true)) {
+    pending_leader = leader;
+    RCLCPP_INFO_THROTTLE(
+        get_logger(), *get_clock(), 2000,
+        "%s relative/teleop cached (abs active); will seed after abs ends",
+        arm_name);
+    return;
+  }
 
   const auto &order =
       arm == DriverCore::Arm::kLeft ? left_joint_order_ : right_joint_order_;
@@ -744,6 +760,9 @@ void DriverNode::handle_command(
                                 : right_last_command_time_;
   auto &streaming =
       arm == DriverCore::Arm::kLeft ? left_streaming_ : right_streaming_;
+  auto &seed_ramp_remaining = arm == DriverCore::Arm::kLeft
+                                  ? left_seed_ramp_remaining_
+                                  : right_seed_ramp_remaining_;
 
   const bool resuming = !streaming;
   if (resuming) {
@@ -758,21 +777,31 @@ void DriverNode::handle_command(
         arm == DriverCore::Arm::kLeft ? state->left_position
                                       : state->right_position,
         minimum, maximum);
-    leader_prev = leader;
-    leader_continuous = leader;
-    leader_cont_ref = leader;
+    // Atomic clutch seed: same-tick leader_ref (+ optional cached frame) and
+    // gento_ref from feedback, with a wall timestamp for handover logs.
+    const JointArray seed_leader = pending_leader.value_or(leader);
+    pending_leader.reset();
+    leader_prev = seed_leader;
+    leader_continuous = seed_leader;
+    leader_cont_ref = seed_leader;
     gento_ref = feedback;
     last_command = feedback;
+    seed_ramp_remaining = teleop_seed_ramp_frames_;
+    const double seed_stamp_s = now().seconds();
     if (teleop_mapping_mode_ == TeleopMappingMode::kRelative) {
       RCLCPP_INFO(
           get_logger(),
-          "%s relative teleop: captured leader/gento refs (big arm holds "
-          "current pose on entry)",
-          arm_name);
+          "%s relative teleop seed t=%.3f leader=[%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,"
+          "%.4f] gento=[%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f] ramp_frames=%d",
+          arm_name, seed_stamp_s, seed_leader[0], seed_leader[1], seed_leader[2],
+          seed_leader[3], seed_leader[4], seed_leader[5], seed_leader[6],
+          feedback[0], feedback[1], feedback[2], feedback[3], feedback[4],
+          feedback[5], feedback[6], seed_ramp_remaining);
     } else {
       RCLCPP_INFO(
           get_logger(),
-          "%s absolute teleop: seeded last_command from feedback", arm_name);
+          "%s absolute teleop: seeded last_command from feedback t=%.3f",
+          arm_name, seed_stamp_s);
     }
   }
 
@@ -913,8 +942,12 @@ void DriverNode::handle_command(
     }
   }
 
-  mapped =
-      DriverCore::limit_delta(mapped, *last_command, max_delta_per_cycle_);
+  double delta_limit = max_delta_per_cycle_;
+  if (seed_ramp_remaining > 0) {
+    delta_limit = max_delta_per_cycle_ * teleop_seed_ramp_max_delta_scale_;
+    --seed_ramp_remaining;
+  }
+  mapped = DriverCore::limit_delta(mapped, *last_command, delta_limit);
   mapped = DriverCore::clamp_to_limits(mapped, minimum, maximum);
 
   if (!core_.send_position(arm, mapped)) {

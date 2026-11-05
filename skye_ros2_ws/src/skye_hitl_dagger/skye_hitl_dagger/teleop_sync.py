@@ -121,8 +121,14 @@ class TeleopHandshake:
                 and is_teleop_state(self._state))
 
     def pending_command(self) -> Optional[str]:
-        """Mode command to (re)publish while the current phase is unconfirmed."""
+        """Mode command to (re)publish while the current phase is unconfirmed.
+
+        Once SYNCED hold is satisfied, stop asking for switch_sync — waiting for
+        enter_teleop must not keep re-driving the leaders.
+        """
         if self._phase is SyncPhase.WAIT_ALIGNED:
+            if self.aligned_ready():
+                return None
             return "switch_sync"
         if self._phase is SyncPhase.WAIT_TELEOP:
             return "switch_teleop"

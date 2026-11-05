@@ -36,7 +36,17 @@ def test_switch_teleop_requested_after_alignment_not_after_teleop():
     assert not hs.aligned_ready()
     hs.on_state("SYNCED")
     assert hs.aligned_ready()
+    assert hs.pending_command() is None
+
+
+def test_pending_switch_sync_clears_once_aligned_ready():
+    hs = TeleopHandshake()
+    hs.start_sync()
     assert hs.pending_command() == "switch_sync"
+    hs.on_state("TELEOP_SYNCING")
+    assert hs.pending_command() == "switch_sync"
+    hs.on_state("SYNCED")
+    assert hs.pending_command() is None
 
 
 def test_latched_synced_before_takeover_is_ignored():

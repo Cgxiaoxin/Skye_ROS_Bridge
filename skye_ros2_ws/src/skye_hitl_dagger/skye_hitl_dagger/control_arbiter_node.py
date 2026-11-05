@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Optional, Sequence
 
@@ -27,12 +28,15 @@ from skye_hitl_dagger.chunk_continuity import (
 from skye_hitl_dagger.control_mode import ControlArbiterLogic, ControlModeState
 from skye_hitl_dagger.msg import ControlMode, PolicyActionChunk
 from skye_hitl_dagger.policy_abs import follower_pose_to_leader_abs
-from skye_hitl_dagger.teleop_sync import TeleopHandshake
+from skye_hitl_dagger.sync_retry import DualArmSyncTracker, SyncRetryPolicy
+from skye_hitl_dagger.teleop_sync import SyncPhase, TeleopHandshake
 
 JOINTS_PER_ARM = 7
 DEFAULT_JOINT_ORDER = list(range(JOINTS_PER_ARM))
 DEFAULT_JOINT_SIGNS = [1.0] * JOINTS_PER_ARM
 MODE_COMMANDS = ("switch_sync", "switch_teleop", "switch_stop")
+# 默认同步重试间隔时间，单位：秒
+DEFAULT_SYNC_BACKOFF_S = [5.0, 10.0, 20.0]
 
 
 def policy_gripper_value(value: float, invert: bool) -> float:
@@ -46,6 +50,8 @@ class ControlArbiterNode(Node):
         self.declare_parameter("gripper_invert_on_driver", True)
         self.declare_parameter("sync_timeout_s", 5.0)
         self.declare_parameter("min_sync_hold_s", 2.0)
+        self.declare_parameter("sync_backoff_s", DEFAULT_SYNC_BACKOFF_S)
+        self.declare_parameter("sync_max_attempts", 3)
         self.declare_parameter("chunk_start_max_jump_rad", 0.1)
         self.declare_parameter("chunk_freshness_fallback_s", 2.0)
         self.declare_parameter("feedback_stale_s", 0.2)
@@ -68,6 +74,11 @@ class ControlArbiterNode(Node):
         self._sync_timeout = float(self.get_parameter("sync_timeout_s").value)
         self._min_sync_hold = max(
             0.0, float(self.get_parameter("min_sync_hold_s").value))
+        backoff_raw = self.get_parameter("sync_backoff_s").value
+        self._sync_backoff_s = [
+            float(v) for v in (backoff_raw or DEFAULT_SYNC_BACKOFF_S)]
+        self._sync_max_attempts = max(
+            1, int(self.get_parameter("sync_max_attempts").value))
         self._chunk_start_max_jump = max(
             0.0, float(self.get_parameter("chunk_start_max_jump_rad").value))
         self._freshness_fallback = float(
@@ -101,6 +112,10 @@ class ControlArbiterNode(Node):
         self._logic = ControlArbiterLogic()
         self._player = ChunkPlayer()
         self._handshake = TeleopHandshake(min_sync_hold_s=self._min_sync_hold)
+        self._sync_retry = SyncRetryPolicy(
+            backoff_s=self._sync_backoff_s,
+            max_attempts=self._sync_max_attempts)
+        self._arm_sync = DualArmSyncTracker()
         self._policy_version = ""
         self._last_target: Optional[dict] = None
         self._hold_target: Optional[dict] = None
@@ -112,6 +127,8 @@ class ControlArbiterNode(Node):
         self._joint_feedback: Optional[dict] = None
         self._feedback_received_at: Optional[float] = None
         self._abs_hold_after_teleop_request = False
+        self._hold_ack_pending = False
+        self._enter_teleop_after_hold = False
 
         cmd_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST, depth=1,
@@ -170,6 +187,8 @@ class ControlArbiterNode(Node):
         self.create_subscription(
             String, "/skye/intervention_cmd", self._intervention_callback, 10)
         self.create_subscription(
+            String, "/mode/switch_stop", self._switch_stop_callback, 10)
+        self.create_subscription(
             JointState, joint_states_topic, self._joint_states_callback,
             state_qos)
         teleop_state_qos = QoSProfile(
@@ -178,6 +197,15 @@ class ControlArbiterNode(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(
             String, "/teleop/state", self._state_callback, teleop_state_qos)
+        progress_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST, depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        for side in DualArmSyncTracker.SIDES:
+            self.create_subscription(
+                String, f"/leader_arm/{side}/sync_progress",
+                lambda msg, s=side: self._sync_progress_callback(s, msg),
+                progress_qos)
 
         self.create_timer(1.0 / 250.0, self._joint_timer_callback)
         self.create_timer(1.0 / gripper_rate, self._gripper_timer_callback)
@@ -240,77 +268,132 @@ class ControlArbiterNode(Node):
     def _intervention_callback(self, msg: String) -> None:
         if msg.data == "takeover" and self._logic.request_takeover():
             self._abs_hold_after_teleop_request = False
+            self._hold_ack_pending = False
+            self._enter_teleop_after_hold = False
             self._sync_started = time.monotonic()
             sampled = self._player.sample(self._now_seconds())
             if sampled is not None:
                 self._last_target = sampled
             self._hold_target = self._last_target or self._feedback_target()
             self._player.clear()
+            self._arm_sync.reset()
+            self._sync_retry.reset()
             self._publish_mode_command("switch_sync")
+            self._sync_retry.note_sync_published(time.monotonic())
             self._handshake.start_sync()
             self._publish_mode()
             self.get_logger().info(
-                "takeover: holding via abs + switch_sync; waiting for "
-                "enter_teleop after SYNCED")
+                "event=takeover state=HANDOVER_SYNC cmd=switch_sync; "
+                "waiting for SYNCED then enter_teleop")
         elif msg.data == "enter_teleop" and self._logic.request_enter_teleop():
             if not self._handshake.aligned_ready():
-                # Allow request but keep waiting; sync timer will fire teleop
-                # once min_sync_hold is satisfied. If never aligned, timeout
-                # republishes switch_sync until operator returns.
                 self.get_logger().warning(
                     "enter_teleop before SYNCED hold complete; will switch_"
-                    "teleop once alignment is ready")
+                    "teleop once alignment is ready and hold_current acks")
             self._begin_enter_teleop()
             self._publish_mode()
         elif msg.data == "return" and self._logic.request_return():
-            self._abs_hold_after_teleop_request = False
-            self._sync_started = None
-            self._handshake.reset()
-            self._player.clear()
-            self._return_time = self._now_seconds()
-            self._return_wall_time = time.monotonic()
-            self._chunk_fallback_warned = False
-            feedback = self._feedback_target() if self._feedback_is_recent() else None
-            self._hold_target = feedback
-            self._last_target = feedback
-            self._publish_mode_command(self._return_command)
-            self._publish_mode()
+            self._cancel_handover(publish_command=self._return_command)
+        elif msg.data == "stop":
+            self._handle_stop(source="intervention_cmd")
+
+    def _switch_stop_callback(self, msg: String) -> None:
+        if msg.data != "switch_stop":
+            return
+        self._handle_stop(source="mode/switch_stop")
+
+    def _handle_stop(self, *, source: str) -> None:
+        """Full-semantic stop: arbiter → AUTONOMOUS + leaders switch_stop."""
+        already_idle = (
+            self._logic.mode() == ControlModeState.AUTONOMOUS
+            and self._handshake.phase() is SyncPhase.IDLE
+            and self._sync_started is None
+            and not self._enter_teleop_after_hold
+            and not self._hold_ack_pending)
+        self._logic.request_stop()
+        if already_idle:
+            # Avoid publish↔subscribe echo loops on /mode/switch_stop.
+            self.get_logger().info(
+                f"event=stop source={source} state=AUTONOMOUS (noop)")
+            return
+        self._cancel_handover(publish_command="switch_stop")
+        self.get_logger().info(
+            f"event=stop source={source} state=AUTONOMOUS "
+            "cmd=switch_stop (idempotent)")
+
+    def _cancel_handover(self, *, publish_command: str) -> None:
+        self._abs_hold_after_teleop_request = False
+        self._hold_ack_pending = False
+        self._enter_teleop_after_hold = False
+        self._sync_started = None
+        self._handshake.reset()
+        self._arm_sync.reset()
+        self._sync_retry.reset()
+        self._player.clear()
+        self._return_time = self._now_seconds()
+        self._return_wall_time = time.monotonic()
+        self._chunk_fallback_warned = False
+        feedback = self._feedback_target() if self._feedback_is_recent() else None
+        self._hold_target = feedback
+        self._last_target = feedback
+        self._publish_mode_command(publish_command)
+        self._publish_mode()
 
     def _begin_enter_teleop(self) -> None:
-        """Stop abs stream, hold pose, request FACTR teleop."""
-        self._call_hold_current()
+        """Hold pose with ack, then request FACTR teleop (explicit handshake)."""
         self._abs_hold_after_teleop_request = True
+        self._enter_teleop_after_hold = True
         self._sync_started = time.monotonic()
-        if self._handshake.aligned_ready():
-            self._publish_mode_command("switch_teleop")
-            self._handshake.start_teleop()
-            self.get_logger().info(
-                "enter_teleop: hold_current done; switch_teleop published")
-        else:
-            self.get_logger().info(
-                "enter_teleop: hold_current done; waiting for SYNCED before "
-                "switch_teleop")
+        self._call_hold_current(require_ack_before_teleop=True)
 
-    def _call_hold_current(self) -> None:
+    def _publish_switch_teleop_if_ready(self) -> None:
+        if self._hold_ack_pending or not self._enter_teleop_after_hold:
+            return
+        if not self._logic.teleop_requested():
+            return
+        if not self._handshake.aligned_ready():
+            self.get_logger().info(
+                "enter_teleop: hold_current acked; waiting for SYNCED before "
+                "switch_teleop")
+            return
+        if self._handshake.pending_command() == "switch_teleop":
+            return
+        self._publish_mode_command("switch_teleop")
+        self._handshake.start_teleop()
+        self._sync_started = time.monotonic()
+        self.get_logger().info(
+            "event=enter_teleop state=HANDOVER_SYNC cmd=switch_teleop "
+            "after hold_current ack")
+
+    def _call_hold_current(self, *, require_ack_before_teleop: bool) -> None:
         """Clear abs/relative streaming and freeze arms at current pose."""
         if not self._hold_client.wait_for_service(timeout_sec=0.5):
             self.get_logger().warning(
                 "hold_current service unavailable; continuing without reset")
+            self._hold_ack_pending = False
+            if require_ack_before_teleop:
+                self._publish_switch_teleop_if_ready()
             return
+        self._hold_ack_pending = True
         future = self._hold_client.call_async(Trigger.Request())
-        # Best-effort: do not block the executor; fire-and-forget with log.
+
         def _done(fut) -> None:
+            self._hold_ack_pending = False
             try:
                 result = fut.result()
             except Exception as exc:  # noqa: BLE001
                 self.get_logger().warning(f"hold_current failed: {exc}")
+                if require_ack_before_teleop:
+                    self._publish_switch_teleop_if_ready()
                 return
             if result is None or not result.success:
                 msg = getattr(result, "message", "")
-                self.get_logger().warning(
-                    f"hold_current rejected: {msg}")
+                self.get_logger().warning(f"hold_current rejected: {msg}")
             else:
-                self.get_logger().info("hold_current ok; relative session reset")
+                self.get_logger().info(
+                    "hold_current ok; relative session reset (ack)")
+            if require_ack_before_teleop:
+                self._publish_switch_teleop_if_ready()
 
         future.add_done_callback(_done)
 
@@ -348,56 +431,110 @@ class ControlArbiterNode(Node):
         }
 
     def _state_callback(self, msg: String) -> None:
+        previous_ready = self._handshake.aligned_ready()
         self._handshake.on_state(msg.data)
+        if (not previous_ready and self._handshake.aligned_ready()
+                and self._logic.mode() == ControlModeState.HANDOVER_SYNC):
+            self.get_logger().info(
+                f"event=sync_ok state={self._handshake.state()} "
+                "aligned_ready=1; stop switch_sync republish")
+            self._log_arm_sync_hints()
+            if self._logic.teleop_requested():
+                self._publish_switch_teleop_if_ready()
+
+    def _sync_progress_callback(self, side: str, msg: String) -> None:
+        try:
+            payload = json.loads(msg.data)
+        except (TypeError, json.JSONDecodeError):
+            return
+        outcome = payload.get("outcome")
+        text = payload.get("text") or ""
+        classified = self._arm_sync.on_progress(side, outcome, text)
+        self.get_logger().info(
+            f"event=sync_progress side={side} outcome={classified.name} "
+            f"text={text[:160]}",
+            throttle_duration_sec=1.0)
+        if (self._logic.mode() == ControlModeState.HANDOVER_SYNC
+                and self._arm_sync.all_deterministic_failed()):
+            self._enter_sync_fault(
+                "both arms rejected sync (deterministic); "
+                + "; ".join(self._arm_sync.operator_hints()))
+
+    def _log_arm_sync_hints(self) -> None:
+        for hint in self._arm_sync.operator_hints():
+            self.get_logger().error(
+                f"sync arm fault (non-blocking for sibling): {hint}")
+
+    def _enter_sync_fault(self, reason: str) -> None:
+        if not self._logic.report_sync_fault(reason):
+            return
+        self._abs_hold_after_teleop_request = False
+        self._hold_ack_pending = False
+        self._enter_teleop_after_hold = False
+        self._sync_started = None
+        self._handshake.reset()
+        self._sync_retry.reset()
+        self._publish_mode()
+        self.get_logger().error(f"event=sync_fail state=FAULT reason={reason}")
 
     def _sync_timer_callback(self) -> None:
         if self._logic.mode() != ControlModeState.HANDOVER_SYNC:
             return
 
+        now = time.monotonic()
+        aligned = self._handshake.aligned_ready()
+        dual_terminal = self._arm_sync.dual_terminal()
+
         # Phase A: sync only — never auto-enter teleop.
         if not self._logic.teleop_requested():
-            if (self._sync_started is not None
-                    and time.monotonic() - self._sync_started
-                    >= self._sync_timeout):
-                pending = self._handshake.pending_command()
-                if pending == "switch_sync":
-                    self.get_logger().warning(
-                        f"sync timeout in state {self._handshake.state()}; "
-                        "re-publishing switch_sync")
-                    self._publish_mode_command("switch_sync")
-                    self._sync_started = time.monotonic()
+            if aligned or dual_terminal:
+                if dual_terminal and not aligned:
+                    self._log_arm_sync_hints()
+                return
+            if self._sync_retry.exhausted():
+                self._enter_sync_fault(
+                    "sync republish exhausted without SYNCED; "
+                    + "; ".join(self._arm_sync.operator_hints()
+                                or ["check leader bounds / domain"]))
+                return
+            if self._sync_retry.should_republish_sync(
+                    now, aligned_ready=False, dual_terminal=False):
+                self.get_logger().warning(
+                    f"event=sync_retry attempt={self._sync_retry.attempts + 1} "
+                    f"state={self._handshake.state()} cmd=switch_sync "
+                    f"backoff_s={self._sync_retry.next_backoff_s()}")
+                self._publish_mode_command("switch_sync")
+                self._sync_retry.note_sync_published(now)
+                self._sync_started = now
             return
 
         # Phase B: operator requested enter_teleop.
         if self._handshake.teleop_ready():
             self._complete_sync()
             return
-        if (self._handshake.aligned_ready()
-                and self._handshake.pending_command() != "switch_teleop"):
-            # Aligned after enter_teleop was pressed early — fire teleop now.
-            self._publish_mode_command("switch_teleop")
-            self._handshake.start_teleop()
-            self._sync_started = time.monotonic()
-            return
+        self._publish_switch_teleop_if_ready()
         if (self._sync_started is not None
-                and time.monotonic() - self._sync_started >= self._sync_timeout):
+                and now - self._sync_started >= self._sync_timeout):
             pending = self._handshake.pending_command()
-            self.get_logger().warning(
-                f"teleop sync timeout in state {self._handshake.state()}; "
-                f"re-publishing {pending}")
-            if pending is not None:
+            if pending == "switch_teleop" and not self._hold_ack_pending:
+                self.get_logger().warning(
+                    f"event=teleop_retry state={self._handshake.state()} "
+                    f"cmd={pending}")
                 self._publish_mode_command(pending)
-            self._sync_started = time.monotonic()
+                self._sync_started = now
 
     def _complete_sync(self) -> None:
         if self._logic.sync_completed():
             self._abs_hold_after_teleop_request = False
+            self._enter_teleop_after_hold = False
+            self._hold_ack_pending = False
             self._handshake.reset()
+            self._sync_retry.reset()
             self._sync_started = None
             self._publish_mode()
             self.get_logger().info(
-                "HUMAN: relative teleop forwarding enabled "
-                "(driver will reseed on first frame)")
+                "event=enter_teleop_ok state=HUMAN source=teleop; "
+                "relative forwarding on (driver seeds on first/cached frame)")
 
     def _joint_timer_callback(self) -> None:
         mode = self._logic.mode()
@@ -407,7 +544,7 @@ class ControlArbiterNode(Node):
         if (mode == ControlModeState.HANDOVER_SYNC
                 and self._abs_hold_after_teleop_request):
             return
-        if mode == ControlModeState.HANDOVER_SYNC:
+        if mode in (ControlModeState.HANDOVER_SYNC, ControlModeState.FAULT):
             if self._hold_target is not None:
                 self._publish_policy_abs(
                     self._hold_target["left"], self._hold_target["right"])
@@ -438,8 +575,10 @@ class ControlArbiterNode(Node):
         if (mode == ControlModeState.HANDOVER_SYNC
                 and self._abs_hold_after_teleop_request):
             return
-        sampled = (self._hold_target if mode == ControlModeState.HANDOVER_SYNC
-                   else self._player.sample(self._now_seconds()))
+        if mode in (ControlModeState.HANDOVER_SYNC, ControlModeState.FAULT):
+            sampled = self._hold_target
+        else:
+            sampled = self._player.sample(self._now_seconds())
         if sampled is None:
             sampled = self._last_target
         if sampled is None or "left_gripper" not in sampled:

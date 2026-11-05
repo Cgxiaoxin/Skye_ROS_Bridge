@@ -167,16 +167,11 @@ ros2 topic echo /skye/control_mode
 
 **根因（日志已证实）：**
 
-- `switch_stop` **只**让 `skye_factr_teleop_*` → `IDLE`
-- **不会**改变 `control_arbiter` 模式
-- 若 arbiter 仍在 `HANDOVER_SYNC`（例如 stop 前又发了 `takeover`，或一直卡在等 SYNC），定时器会持续：
+- **已修（A/B）：** `switch_stop`（或 `intervention_cmd=stop`）会让 **arbiter → AUTONOMOUS** 并取消 handover；`SYNCED` 后不再无限 `switch_sync`。
+- 确定性预检失败（超界等）会记入 `sync_progress`，**不拖死**已 SYNCED 的另一侧；双臂都确定性失败或重试耗尽 → `FAULT`。
+- 详见 [`hitl_arbiter_state_machine.md`](hitl_arbiter_state_machine.md)。
 
-  `sync timeout in state …; re-publishing switch_sync`
-
-- 左臂有时能过预检 → 又同步；右臂本轮因 **目标 J1≈-2.94 超 `[-2.9, 2.9]`** 一直 `Synchronization rejected` → 看起来「只有左臂自己同步」
-
-**正确停法：** 先 `return`（或停掉 arbiter 进程），再 `switch_stop`。  
-看到 arbiter 再刷 `re-publishing switch_sync` 时，立刻 `return` 或 Ctrl+C arbiter。
+**停法：** 直接 `switch_stop` 即可（幂等）；不必再记「先 return 再 stop」。
 
 ### 5.3 同步预检拒绝（限位 / URDF）
 
@@ -207,5 +202,6 @@ ros2 topic echo /skye/control_mode
 |------|------|
 | [`phase1_hitl_isomorphic_startup.md`](phase1_hitl_isomorphic_startup.md) | 正式/调试拓扑与 remap |
 | [`项目开发梳理.md`](项目开发梳理.md) | 总进度 |
+| [`hitl_arbiter_state_machine.md`](hitl_arbiter_state_machine.md) | 交接状态转移表（A/B/C） |
 | [`../Operator_UI使用说明.md`](../Operator_UI使用说明.md) | UI DAgger 主机 playbook |
 | [`../Hint_Dagger启动使用说明.md`](../Hint_Dagger启动使用说明.md) | 旧 Marvin 路径（逐步废弃） |

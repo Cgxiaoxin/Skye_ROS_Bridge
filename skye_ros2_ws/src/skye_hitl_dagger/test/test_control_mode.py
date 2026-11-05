@@ -60,3 +60,43 @@ def test_takeover_ignored_when_not_autonomous():
     logic = ControlArbiterLogic()
     logic.request_takeover()
     assert logic.request_takeover() is False
+
+
+def test_stop_from_any_state_is_idempotent_idle():
+    logic = ControlArbiterLogic()
+    assert logic.request_stop() is True
+    assert logic.mode() == ControlModeState.AUTONOMOUS
+
+    logic.request_takeover()
+    assert logic.request_stop() is True
+    assert logic.mode() == ControlModeState.AUTONOMOUS
+    assert logic.teleop_requested() is False
+
+    logic.request_takeover()
+    logic.request_enter_teleop()
+    logic.sync_completed()
+    assert logic.mode() == ControlModeState.HUMAN
+    assert logic.request_stop() is True
+    assert logic.mode() == ControlModeState.AUTONOMOUS
+    assert logic.request_stop() is True  # idempotent
+
+
+def test_sync_fault_then_stop_recovers():
+    logic = ControlArbiterLogic()
+    logic.request_takeover()
+    assert logic.report_sync_fault("right J1 out of bounds") is True
+    assert logic.mode() == ControlModeState.FAULT
+    assert logic.fault_reason() == "right J1 out of bounds"
+    assert logic.active_source() == "fault"
+    assert logic.request_takeover() is False
+    assert logic.request_stop() is True
+    assert logic.mode() == ControlModeState.AUTONOMOUS
+    assert logic.fault_reason() is None
+
+
+def test_return_clears_fault():
+    logic = ControlArbiterLogic()
+    logic.request_takeover()
+    logic.report_sync_fault("both arms rejected")
+    assert logic.request_return() is True
+    assert logic.mode() == ControlModeState.AUTONOMOUS
