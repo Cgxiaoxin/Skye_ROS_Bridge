@@ -50,6 +50,9 @@ class ControlArbiterNode(Node):
         self.declare_parameter("gripper_invert_on_driver", True)
         self.declare_parameter("sync_timeout_s", 5.0)
         self.declare_parameter("min_sync_hold_s", 2.0)
+        # One takeover → one switch_sync by default; operator re-issues takeover
+        # to retry. Set true only if you want timed software republish.
+        self.declare_parameter("sync_auto_republish", False)
         self.declare_parameter("sync_backoff_s", DEFAULT_SYNC_BACKOFF_S)
         self.declare_parameter("sync_max_attempts", 3)
         self.declare_parameter("chunk_start_max_jump_rad", 0.1)
@@ -74,11 +77,17 @@ class ControlArbiterNode(Node):
         self._sync_timeout = float(self.get_parameter("sync_timeout_s").value)
         self._min_sync_hold = max(
             0.0, float(self.get_parameter("min_sync_hold_s").value))
+        self._sync_auto_republish = bool(
+            self.get_parameter("sync_auto_republish").value)
         backoff_raw = self.get_parameter("sync_backoff_s").value
         self._sync_backoff_s = [
             float(v) for v in (backoff_raw or DEFAULT_SYNC_BACKOFF_S)]
         self._sync_max_attempts = max(
             1, int(self.get_parameter("sync_max_attempts").value))
+        if not self._sync_auto_republish:
+            # Initial takeover publish still counts as attempt 1; keep policy
+            # constructed but never drive timed republish / exhaust-fault.
+            self._sync_max_attempts = 1
         self._chunk_start_max_jump = max(
             0.0, float(self.get_parameter("chunk_start_max_jump_rad").value))
         self._freshness_fallback = float(
@@ -129,6 +138,7 @@ class ControlArbiterNode(Node):
         self._abs_hold_after_teleop_request = False
         self._hold_ack_pending = False
         self._enter_teleop_after_hold = False
+        self._sync_hints_logged = False
 
         cmd_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST, depth=1,
@@ -148,7 +158,8 @@ class ControlArbiterNode(Node):
             JointState, "/gento/left_joint_control", cmd_qos)
         self._right_rel_pub = self.create_publisher(
             JointState, "/gento/right_joint_control", cmd_qos)
-        # AUTONOMOUS / HANDOVER hold → absolute path (follower-space policy).
+        # AUTONOMOUS only → absolute path (follower-space policy).
+        # HANDOVER_SYNC must not stream abs (leaders sync read-only to follower).
         self._left_abs_pub = self.create_publisher(
             JointState, "/gento/left_joint_control_abs", cmd_qos)
         self._right_abs_pub = self.create_publisher(
@@ -270,20 +281,28 @@ class ControlArbiterNode(Node):
             self._abs_hold_after_teleop_request = False
             self._hold_ack_pending = False
             self._enter_teleop_after_hold = False
+            self._sync_hints_logged = False
             self._sync_started = time.monotonic()
             sampled = self._player.sample(self._now_seconds())
             if sampled is not None:
                 self._last_target = sampled
-            self._hold_target = self._last_target or self._feedback_target()
+            # Freeze follower once; do not stream abs hold during sync (that
+            # nudges /gento and can push targets past leader safe bounds).
+            self._hold_target = None
             self._player.clear()
             self._arm_sync.reset()
             self._sync_retry.reset()
+            self._call_hold_current(require_ack_before_teleop=False)
             self._publish_mode_command("switch_sync")
             self._sync_retry.note_sync_published(time.monotonic())
             self._handshake.start_sync()
             self._publish_mode()
+            republish = (
+                "auto_republish=on" if self._sync_auto_republish
+                else "auto_republish=off (re-takeover to retry)")
             self.get_logger().info(
                 "event=takeover state=HANDOVER_SYNC cmd=switch_sync; "
+                f"{republish}; follower quiet (hold_current); "
                 "waiting for SYNCED then enter_teleop")
         elif msg.data == "enter_teleop" and self._logic.request_enter_teleop():
             if not self._handshake.aligned_ready():
@@ -325,6 +344,7 @@ class ControlArbiterNode(Node):
         self._abs_hold_after_teleop_request = False
         self._hold_ack_pending = False
         self._enter_teleop_after_hold = False
+        self._sync_hints_logged = False
         self._sync_started = None
         self._handshake.reset()
         self._arm_sync.reset()
@@ -474,6 +494,7 @@ class ControlArbiterNode(Node):
         self._sync_started = None
         self._handshake.reset()
         self._sync_retry.reset()
+        self._hold_target = None
         self._publish_mode()
         self.get_logger().error(f"event=sync_fail state=FAULT reason={reason}")
 
@@ -488,8 +509,13 @@ class ControlArbiterNode(Node):
         # Phase A: sync only — never auto-enter teleop.
         if not self._logic.teleop_requested():
             if aligned or dual_terminal:
-                if dual_terminal and not aligned:
+                if dual_terminal and not aligned and not self._sync_hints_logged:
                     self._log_arm_sync_hints()
+                    self._sync_hints_logged = True
+                return
+            if not self._sync_auto_republish:
+                # Wait for SYNCED / deterministic dual failure / operator
+                # re-takeover; do not re-fire switch_sync or exhaust→FAULT.
                 return
             if self._sync_retry.exhausted():
                 self._enter_sync_fault(
@@ -537,17 +563,8 @@ class ControlArbiterNode(Node):
                 "relative forwarding on (driver seeds on first/cached frame)")
 
     def _joint_timer_callback(self) -> None:
-        mode = self._logic.mode()
-        if mode == ControlModeState.HUMAN:
-            return
-        # After enter_teleop + hold_current: do not fight relative reseed with abs.
-        if (mode == ControlModeState.HANDOVER_SYNC
-                and self._abs_hold_after_teleop_request):
-            return
-        if mode in (ControlModeState.HANDOVER_SYNC, ControlModeState.FAULT):
-            if self._hold_target is not None:
-                self._publish_policy_abs(
-                    self._hold_target["left"], self._hold_target["right"])
+        # Sync/teleop/fault: no abs writes to /gento (leaders read follower only).
+        if not self._logic.should_publish_policy_abs():
             return
         sampled = self._player.sample(self._now_seconds())
         if self._return_time is not None and self._hold_target is None:
@@ -567,18 +584,11 @@ class ControlArbiterNode(Node):
                 self._last_target["left"], self._last_target["right"])
 
     def _gripper_timer_callback(self) -> None:
-        mode = self._logic.mode()
-        if mode == ControlModeState.HUMAN:
+        if not self._logic.should_publish_policy_abs():
             return
-        if mode == ControlModeState.AUTONOMOUS and self._return_time is not None:
+        if self._return_time is not None:
             return
-        if (mode == ControlModeState.HANDOVER_SYNC
-                and self._abs_hold_after_teleop_request):
-            return
-        if mode in (ControlModeState.HANDOVER_SYNC, ControlModeState.FAULT):
-            sampled = self._hold_target
-        else:
-            sampled = self._player.sample(self._now_seconds())
+        sampled = self._player.sample(self._now_seconds())
         if sampled is None:
             sampled = self._last_target
         if sampled is None or "left_gripper" not in sampled:

@@ -33,6 +33,14 @@ class ControlArbiterLogic:
             return "fault"
         return "teleop"
 
+    def should_publish_policy_abs(self) -> bool:
+        """Follower abs/gripper stream only while AUTONOMOUS.
+
+        HANDOVER_SYNC / FAULT must not write /gento/* so leaders can sync to a
+        frozen follower pose; HUMAN uses relative teleop forwarding instead.
+        """
+        return self._mode == ControlModeState.AUTONOMOUS
+
     def request_takeover(self) -> bool:
         """Enter sync-only handover; does not request teleop yet."""
         if self._mode != ControlModeState.AUTONOMOUS:

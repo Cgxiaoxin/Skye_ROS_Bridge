@@ -8,10 +8,10 @@
 | 操作员表 | 代码 `ControlModeState` | 源 |
 |----------|-------------------------|----|
 | IDLE | `AUTONOMOUS` | policy（abs） |
-| SYNCING | `HANDOVER_SYNC` + handshake `WAIT_ALIGNED` 未 ready | hold abs |
-| SYNCED | `HANDOVER_SYNC` + `aligned_ready` | hold abs；**不再**发 `switch_sync` |
+| SYNCING | `HANDOVER_SYNC` + handshake `WAIT_ALIGNED` 未 ready | `hold_current` 一次冻姿；**不**再流式写 `/gento/*_abs`（小臂只读大臂） |
+| SYNCED | `HANDOVER_SYNC` + `aligned_ready` | 同上安静；**不再**发 `switch_sync` |
 | TELEOP | `HUMAN` | relative teleop 转发 |
-| FAULT | `FAULT` | hold abs；等 `stop`/`return` |
+| FAULT | `FAULT` | 不写 `/gento`；等 `stop`/`return` |
 
 ## 事件 × 状态
 
@@ -25,7 +25,7 @@
 | **TELEOP 确认** | — | — | → TELEOP | stay | — |
 | **return** | ignore | → IDLE；发 `return_mode_command` | 同左 | → IDLE | → IDLE |
 | **stop** (`/mode/switch_stop` 或 `intervention_cmd=stop`) | noop（幂等） | → IDLE；`switch_stop`；取消 handover/定时逻辑 | 同左 | 同左 | 同左 |
-| **timeout / backoff** | — | `5s→10s→20s` 有限次 `switch_sync`；耗尽 → FAULT | **不**重发 sync | `switch_teleop` 有限重试 | — |
+| **timeout / backoff** | — | 默认 **`sync_auto_republish:=false`**：只发一次 `switch_sync`，等 SYNCED / 确定性失败 / 操作员再 `takeover`；设 `true` 时才 `5s→10s→20s` 有限重发，耗尽 → FAULT | **不**重发 sync | `switch_teleop` 有限重试 | — |
 
 ## 交接握手（Fix C）
 

@@ -14,9 +14,26 @@ def test_takeover_stays_in_handover_until_enter_teleop():
     assert logic.mode() == ControlModeState.HANDOVER_SYNC
     assert logic.active_source() == "hold"
     assert logic.teleop_requested() is False
+    assert logic.should_publish_policy_abs() is False
     # Must not complete to HUMAN without enter_teleop.
     assert logic.sync_completed() is False
     assert logic.mode() == ControlModeState.HANDOVER_SYNC
+
+
+def test_policy_abs_only_in_autonomous():
+    logic = ControlArbiterLogic()
+    assert logic.should_publish_policy_abs() is True
+    logic.request_takeover()
+    assert logic.should_publish_policy_abs() is False
+    logic.request_enter_teleop()
+    logic.sync_completed()
+    assert logic.mode() == ControlModeState.HUMAN
+    assert logic.should_publish_policy_abs() is False
+    logic.request_stop()
+    assert logic.should_publish_policy_abs() is True
+    logic.request_takeover()
+    logic.report_sync_fault("bounds")
+    assert logic.should_publish_policy_abs() is False
 
 
 def test_enter_teleop_then_sync_completed_reaches_human():

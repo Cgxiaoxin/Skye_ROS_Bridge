@@ -138,30 +138,31 @@ Ctrl+C：C arbiter → B 小臂 → A driver；托住小臂再去使能。
 
 **较可能原因（按优先级）：**
 
-1. **进入遥操前 arbiter 长时间 `re-publishing switch_sync`**  
-   即使 `/teleop/state` 已是 `SYNCED`，`HANDOVER_SYNC` 下约每 5s 仍重发 sync。会反复打断/重开同步轨迹，切换瞬间阻抗/相对会话容易「顶牛」。  
+1. **进入遥操前 arbiter 长时间 `re-publishing switch_sync`**（旧行为）  
+   现默认 `sync_auto_republish:=false`：`takeover` 只发一次 `switch_sync`，到位后由小臂 hold+积分保持，需重试再发 `takeover`。若仍看到周期性 `switch_sync`，检查 profile / 参数是否被改回 `true`。  
    → 对齐后尽快 `enter_teleop`，不要在 `SYNCED` 空等很久。
 
-2. **`hold_current` → relative 首帧 reseed**  
-   `enter_teleop` 会调 `/gento/hold_current` 冻姿再切相对遥操；若 reseed 与人手增量不同步，大臂会像弹簧回到 hold 点。  
+2. **`takeover` 时大臂微动（已修）**  
+   旧逻辑在 `HANDOVER_SYNC` 下 250Hz 流式发 abs hold，大臂会被轻推，且可能把目标顶出小臂 `±2.9` 预检界（左 `target J1≈-2.91`）。  
+   → 现：`takeover` 只调一次 `hold_current`，同步阶段**不再**写 `/gento/*_abs`；`enter_teleop` 仍 ack 后再 `switch_teleop`。
+
+3. **`hold_current` → relative 首帧 reseed**  
+   `enter_teleop` 会再调 `/gento/hold_current` 冻姿再切相对遥操；若 reseed 与人手增量不同步，大臂会像弹簧回到 hold 点。  
    → 进 TELEOP 后先轻推确认跟随，再大幅运动；交接时托住大臂。
 
-3. **限位/标定边缘**  
-   本轮右臂 follower 目标曾出现 `J1≈-2.94`（超小臂安全界 `±2.9`），说明大臂姿态已贴边；腕部 J4/J5 在阻抗下更容易「自己拧」。  
-   → 同步前把大小臂摆到工作区中部再 takeover。
+4. **限位/标定边缘**  
+   大臂目标贴边（如左 `J1≈-2.91`，允许 `±2.9`）会 `sync_preflight` 拒同步；与是否微动无关时也要把大臂收回工作区中部再 takeover。
 
-4. **小臂重力补偿手感**（若弹的是小臂本身）  
+5. **小臂重力补偿手感**（若弹的是小臂本身）  
    TELEOP 下 leader 是力矩重力补偿，不是锁位；J4/J5 偏沉会「往回掉」，与大臂跟随是两件事。
 
 **建议下次抓日志：**
 
 ```bash
 ros2 topic echo /skye/control_mode
-# 进 HUMAN 后确认不再刷 sync timeout / switch_sync
-# 同时看小臂是否仍出现 TELEOP_SYNCING
+# HANDOVER_SYNC 期间确认 /gento/*_joint_control_abs 无新帧（arbiter 不写）
+# 进 HUMAN 后确认不再刷 switch_sync
 ```
-
-代码侧待跟进：`SYNCED` 且未请求 `enter_teleop` 时不应无限重发 `switch_sync`（或应封顶/改等操作员）。
 
 ### 5.2 `switch_stop` 后左臂又自己同步、右臂不同
 

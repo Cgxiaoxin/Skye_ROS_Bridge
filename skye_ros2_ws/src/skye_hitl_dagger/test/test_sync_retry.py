@@ -1,5 +1,8 @@
 """Sync republish termination, backoff, and failure classification."""
 
+import yaml
+from pathlib import Path
+
 from skye_hitl_dagger.sync_retry import (
     SideSyncOutcome,
     SyncRetryPolicy,
@@ -79,3 +82,20 @@ def test_reset_clears_attempts():
     policy.reset()
     assert policy.attempts == 0
     assert not policy.exhausted()
+
+
+def test_single_attempt_never_republishes_after_initial():
+    """Manual re-sync mode: one publish then wait (no timed retries)."""
+    policy = SyncRetryPolicy(backoff_s=(5.0, 10.0), max_attempts=1)
+    policy.note_sync_published(now=0.0)
+    assert policy.exhausted() is True
+    assert policy.should_republish_sync(
+        now=100.0, aligned_ready=False, dual_terminal=False) is False
+
+
+def test_profiles_disable_sync_auto_republish_by_default():
+    root = Path(__file__).resolve().parents[1] / "config" / "profiles"
+    for name in ("thor.yaml", "orin.yaml"):
+        doc = yaml.safe_load((root / name).read_text(encoding="utf-8"))
+        params = doc["control_arbiter"]["ros__parameters"]
+        assert params.get("sync_auto_republish") is False, name
