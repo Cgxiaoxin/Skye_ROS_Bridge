@@ -2,7 +2,7 @@
 
 > 部署树：`server5090/`（5090 推理机）、`client_thor/`（Thor 机器人侧）。  
 > Thor client 源码已落入 `client_thor/vendor/remote_inference_async/`，并完成 `--dagger-mode` 接入（pub `/skye/policy_action`，不写控制器）。  
-> **实机验收清单：** [`unijepa_dagger_实机验证流程.md`](unijepa_dagger_实机验证流程.md)。
+> **实机验收清单（含「本地 / Thor / 5090 分工」）：** [`unijepa_dagger_实机验证流程.md`](unijepa_dagger_实机验证流程.md)。
 
 ## 目标拓扑（HITL on）
 
