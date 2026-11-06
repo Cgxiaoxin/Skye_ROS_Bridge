@@ -1,0 +1,57 @@
+# UniJEPA → HITL DAgger 接入说明
+
+> 部署树：`server5090/`（5090 推理机）、`client_thor/`（Thor 机器人侧）。  
+> **本仓目前没有完整 UniJEPA / `remote_inference_async` 源码**，只有现场 `cat` 到的片段；缺件清单见各目录 `NEED_FROM_YOU.md`。
+
+## 目标拓扑（HITL on）
+
+```text
+[5090]  serve_unijepa（口 5568，可先不动协议）
+           ▲ obs / ▼ action（现有私有协议）
+[Thor]  cameras + client（采图、组观测、调 5090）
+           │  改写点：禁止再写 CONTROLLER_IP
+           ▼
+        /skye/policy_action   PolicyActionChunk
+           ▼
+        control_arbiter  →  /gento/*_abs  →  skye_robot_driver → 6.6.7.191
+        (+ HITL 小臂；takeover / enter_teleop / return)
+```
+
+**禁止：** `run_robot.sh` 与 `skye_robot_driver` 同时直连控制器。
+
+## 启停顺序（联调）
+
+| 顺序 | 机器 | 做什么 |
+|------|------|--------|
+| 1 | Thor | `skye_robot_driver`（`start_skye_for_factr.sh thor`） |
+| 2 | Thor | HITL 小臂 `start_teleop_m6_dual_hitl.launch.py robot_profile:=thor` |
+| 3 | Thor | `hitl_dagger.launch.py robot_profile:=thor` |
+| 4 | Thor | `client_thor/ensure_cameras.sh`（`ROS_DOMAIN_ID` 与上面一致，Thor 常用 **20**） |
+| 5 | 5090 | `server5090/serve_unijepa_dagger.sh` |
+| 6 | Thor | DAgger 版 client（拿到源码后改：pub chunk，不写控制器） |
+| 7 | 任意 | `intervention_cmd`: takeover → enter_teleop → return |
+
+Domain / RMW 全链路一致；相机脚本默认曾是 `21`，接 Thor HITL 时请改成与 arbiter 相同。
+
+## 口 A 契约（策略 → arbiter）
+
+- Topic：`/skye/policy_action`
+- Type：`skye_hitl_dagger/msg/PolicyActionChunk`
+- 关节：**follower / `/gento/joint_states` 空间绝对 rad**，左右各 7，展平 `chunk_size * 7`
+- 仅 `AUTONOMOUS` 执行；HUMAN / HANDOVER 时 arbiter 忽略轨迹
+
+参考实现：`skye_hitl_dagger/.../pub_dummy_policy_chunk_node.py`。
+
+## 相对现网脚本的改法（原则）
+
+| 现网 | DAgger |
+|------|--------|
+| `CONTROLLER_IP=6.6.7.191` + `ARM_COMMAND_STYLE=stream` | **关掉写臂**；改为 pub `PolicyActionChunk` |
+| 5090 `serve_b_levjepa.sh` | 可先原样；协议不变则只改 Thor 执行端 |
+| 动作若为相对/增量 | 在 client 转成绝对角再组 chunk（需确认语义） |
+
+## 未决（补源码后定）
+
+1. 5568 返回动作是**绝对角**还是**相对/增量**？  
+2. chunk 长度 / `dt` 与模型 `ACTION_HZ=30` 如何对齐（例如 N=16、dt=1/30）？  
+3. Domain：Thor HITL 用 20 还是继续 21？
