@@ -1,28 +1,32 @@
-# Thor 侧还缺什么
+# Thor 侧状态（DAgger 已接入）
 
-本目录目前有：**相机 ensure 脚本（自终端恢复）**、**unijepa 包装 env**、**DAgger 桥接骨架**。  
-**没有**完整 `remote_inference_async` 源码。
+**已解压：** `vendor/remote_inference_async/`（来自 `async.tar.gz`）。
 
-## 已从终端看到的
+结论（动作语义）：**绝对关节角**（policy 侧 rad → client 转 degree 仅用于观测/限幅；发往 arbiter 的 chunk **保持 rad**）。
 
-| 路径 / 文件 | 状态 |
-|-------------|------|
-| `~/Desktop/wzh/runtime-left/remote_inference_async/ensure_cameras.sh` | **全文已有**（已落入本目录） |
-| `~/zph/run_robot_unijepa.sh` | **仅包装 env**（已落入）；真正逻辑在下面的 `run_robot.sh` |
-| `runtime-left/remote_inference_async/run_robot.sh` | **未提供** |
-| `remote_inference_async/` 其余 Python（观测、ZMQ/TCP、下发控制器） | **未提供** |
-| `~/zph/PYTHON_SDK`、`test_loopback.py` | **未提供** |
+## 已完成的 DAgger 改写
 
-## 请优先打包给我（或拷进本目录 `vendor/`）
+| 文件 | 作用 |
+|------|------|
+| `vendor/.../dagger_chunk.py` | `[T,16]` 绝对 rad → PolicyActionChunk 字段（pad/truncate 到 16） |
+| `vendor/.../dagger_publisher.py` | pub `/skye/policy_action` |
+| `vendor/.../dagger_ros_facade.py` | 读 `/gento/joint_states`，不链 Gento SDK |
+| `vendor/.../async_robot_client.py` | `--dagger-mode`：强制 dry_run，收 chunk 后 pub |
+| `vendor/.../run_robot_dagger.sh` | 入口：跳过 UDP 3720 检查，传 `--dagger-mode` |
+| `run_client_dagger.sh` | 包装：`DAGGER_MODE=1`、`DOMAIN=20`、source skye ws |
 
-1. **整目录** `remote_inference_async/`（至少含 `run_robot.sh` + 其 `source`/`python -m` 入口）
-2. 写臂路径相关文件（搜 `CONTROLLER_IP` / `6.6.7.191` / `stream` / `joint_control`）
-3. 与 5090 通信编解码（端口 `5568`、请求/响应字段）
-4. （可选）`test_loopback.py`、`PYTHON_SDK` 里被 client 引用的部分
+## 联调命令
 
-## 有了之后怎么改（给你 / 现场 AI 的指令）
+```bash
+# 已起：driver + hitl teleop + hitl_dagger；5090 已 serve:5568
+export ROS_DOMAIN_ID=20
+cd docs/dagger_dev/client_thor
+bash ensure_cameras.sh   # 或 SKIP_CAMERAS=1 若相机已起
+bash run_client_dagger.sh
+```
 
-1. **禁用**对 `CONTROLLER_IP` 的任何写臂 / SDK 调用。  
-2. 在拿到一段 action trajectory 后，转成绝对关节角（若已是绝对则直接用），填 `PolicyActionChunk`，pub `/skye/policy_action`。  
-3. 与 HITL 同 `ROS_DOMAIN_ID`（Thor 建议 **20**）；不要再起第二路 `skye_robot_driver`。  
-4. 对照 `policy_chunk_bridge.py` 与仓内 `pub_dummy_policy_chunk_node.py`。
+## 仍可能现场要对齐的
+
+1. 相机 ROS setup 路径：`CAMERA_ROS_SETUP`（默认 `/home/user/tianji_capture_camera_ws/...`）
+2. Skye ws：`SKYE_WS` / `SKYE_WS_SETUP`（要有 `PolicyActionChunk`）
+3. 5090：`INFERENCE_HOST` / `INFERENCE_PORT`（默认 `192.168.201.253:5568`）

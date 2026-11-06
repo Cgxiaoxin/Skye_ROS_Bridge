@@ -1,7 +1,8 @@
 # UniJEPA → HITL DAgger 接入说明
 
 > 部署树：`server5090/`（5090 推理机）、`client_thor/`（Thor 机器人侧）。  
-> **本仓目前没有完整 UniJEPA / `remote_inference_async` 源码**，只有现场 `cat` 到的片段；缺件清单见各目录 `NEED_FROM_YOU.md`。
+> Thor client 源码已落入 `client_thor/vendor/remote_inference_async/`，并完成 `--dagger-mode` 接入（pub `/skye/policy_action`，不写控制器）。  
+> **实机验收清单：** [`unijepa_dagger_实机验证流程.md`](unijepa_dagger_实机验证流程.md)。
 
 ## 目标拓扑（HITL on）
 
@@ -28,7 +29,7 @@
 | 3 | Thor | `hitl_dagger.launch.py robot_profile:=thor` |
 | 4 | Thor | `client_thor/ensure_cameras.sh`（`ROS_DOMAIN_ID` 与上面一致，Thor 常用 **20**） |
 | 5 | 5090 | `server5090/serve_unijepa_dagger.sh` |
-| 6 | Thor | DAgger 版 client（拿到源码后改：pub chunk，不写控制器） |
+| 6 | Thor | `client_thor/run_client_dagger.sh`（`--dagger-mode` → `/skye/policy_action`） |
 | 7 | 任意 | `intervention_cmd`: takeover → enter_teleop → return |
 
 Domain / RMW 全链路一致；相机脚本默认曾是 `21`，接 Thor HITL 时请改成与 arbiter 相同。
@@ -50,8 +51,8 @@ Domain / RMW 全链路一致；相机脚本默认曾是 `21`，接 Thor HITL 时
 | 5090 `serve_b_levjepa.sh` | 可先原样；协议不变则只改 Thor 执行端 |
 | 动作若为相对/增量 | 在 client 转成绝对角再组 chunk（需确认语义） |
 
-## 未决（补源码后定）
+## 已核实（源码）
 
-1. 5568 返回动作是**绝对角**还是**相对/增量**？  
-2. chunk 长度 / `dt` 与模型 `ACTION_HZ=30` 如何对齐（例如 N=16、dt=1/30）？  
-3. Domain：Thor HITL 用 20 还是继续 21？
+1. **5568 动作为绝对关节角**（policy rad；client 下发前转 degree）。非相对增量。  
+2. 向量 16 维：`[left_j0..6, right_j0..6, left_grip, right_grip]`（见 `PROTOCOL.md`）。  
+3. 仍待现场对齐：chunk 帧数（基础约 16 / action-history 50）与 `dt`（`ACTION_HZ=30` → dt≈1/30）；Domain Thor HITL 建议 **20**。

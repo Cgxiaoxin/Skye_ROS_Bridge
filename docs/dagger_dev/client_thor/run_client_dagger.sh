@@ -40,15 +40,11 @@ else
 fi
 
 echo "[INFO] DOMAIN=${ROS_DOMAIN_ID} INFERENCE=${INFERENCE_HOST}:${INFERENCE_PORT} DAGGER_MODE=1"
-echo "[INFO] Next: patch vendor client to call policy_chunk_bridge (no CONTROLLER write)."
+echo "[INFO] Publishes PolicyActionChunk to /skye/policy_action (no CONTROLLER write)."
 
 if [[ -x "${VENDOR}/run_robot_dagger.sh" ]]; then
   exec bash "${VENDOR}/run_robot_dagger.sh"
 fi
-if [[ -f "${VENDOR}/run_robot.sh" ]]; then
-  echo "[WARN] Only legacy run_robot.sh present — will still try to write controller unless patched." >&2
-  exec bash "${VENDOR}/run_robot.sh"
-fi
 
-echo "[ERROR] No run_robot_dagger.sh / run_robot.sh under vendor. See NEED_FROM_YOU.md" >&2
+echo "[ERROR] Missing ${VENDOR}/run_robot_dagger.sh" >&2
 exit 2
