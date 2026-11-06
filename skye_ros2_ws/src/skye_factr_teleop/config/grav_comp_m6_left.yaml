@@ -49,12 +49,14 @@ controller:
     kp: 0.1
     kd: 0.01
 
+  # 软限位
   limit_barrier_control:
     enable: true
     joint:
       limit_max: [3.0, 2.0, 3.0, 1.0, 3.0, 0.9, 0.8]
       limit_min: [-3.0, -2.0, -3.0, -2.4, -3.0, -0.9, -0.8]
-      safety_margin: 0.1
+      # （有效界 = limit ± margin，J1 常是 ±2.9）
+      safety_margin: 0.05
       kp: 0.603561658022
       kd: 0.04315069084
     gripper:
