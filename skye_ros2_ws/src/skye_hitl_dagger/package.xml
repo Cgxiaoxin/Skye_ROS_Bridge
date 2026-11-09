@@ -18,6 +18,9 @@
   <exec_depend>rosbag2_py</exec_depend>
   <exec_depend>rosbag2_storage_mcap</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <!-- Fast DDS profile path via get_package_share_directory (same xml as teleop). -->
+  <exec_depend>skye_robot_driver</exec_depend>
+  <exec_depend>skye_factr_teleop</exec_depend>
 
   <member_of_group>rosidl_interface_packages</member_of_group>
 

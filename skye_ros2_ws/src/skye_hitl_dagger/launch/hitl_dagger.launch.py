@@ -7,9 +7,9 @@ leader HITL launch (``start_teleop_m6_dual_hitl.launch.py``).
 
 import os
 
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, SetEnvironmentVariable
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -21,6 +21,28 @@ def _default_robot_profile() -> str:
     if env in ("thor", "orin"):
         return env
     return "thor"
+
+
+def _dds_profile_actions():
+    """Load the same Fast DDS profile as driver / FACTR teleop.
+
+    ``fastrtps_teleop.xml`` (SHM + 4 MB UDP) must match across participants;
+    otherwise data falls back to builtin UDP and overflows under ~250 Hz
+    joint-state load (``sequence size exceeds remaining buffer``).
+    Prefer ``skye_robot_driver`` then ``skye_factr_teleop`` share copies.
+    """
+    if os.environ.get("FASTRTPS_DEFAULT_PROFILES_FILE"):
+        return []
+    for pkg in ("skye_robot_driver", "skye_factr_teleop"):
+        try:
+            path = os.path.join(
+                get_package_share_directory(pkg), "config", "fastrtps_teleop.xml"
+            )
+        except PackageNotFoundError:
+            continue
+        if os.path.isfile(path):
+            return [SetEnvironmentVariable("FASTRTPS_DEFAULT_PROFILES_FILE", path)]
+    return []
 
 
 def _launch_setup(context, *args, **kwargs):
@@ -76,7 +98,8 @@ def _launch_setup(context, *args, **kwargs):
 
 def generate_launch_description():
     return LaunchDescription(
-        [
+        _dds_profile_actions()
+        + [
             DeclareLaunchArgument(
                 "robot_profile",
                 default_value=_default_robot_profile(),
