@@ -40,8 +40,25 @@ skye_source_ros() {
   fi
   set +u
   export PATH="/usr/bin:${PATH}"
-  # shellcheck disable=SC1091
-  source /opt/ros/humble/setup.bash
+  local ros_setup=""
+  local candidate
+  for candidate in \
+    "${ROS_SETUP:-}" \
+    /opt/kernelmind/apex/install/setup.bash \
+    /opt/ros/jazzy/setup.bash \
+    /opt/ros/humble/setup.bash
+  do
+    if [[ -n "${candidate}" && -f "${candidate}" ]]; then
+      ros_setup="${candidate}"
+      break
+    fi
+  done
+  if [[ -z "${ros_setup}" ]]; then
+    echo "ERROR: no ROS setup.bash found (tried apex/jazzy/humble; set ROS_SETUP=...)" >&2
+    return 1
+  fi
+  # shellcheck disable=SC1090
+  source "${ros_setup}"
   # shellcheck disable=SC1091
   source "${ws}/install/setup.bash"
   set -u

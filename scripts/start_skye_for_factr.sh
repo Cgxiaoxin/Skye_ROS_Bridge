@@ -57,9 +57,27 @@ if [[ ! -f install/setup.bash ]]; then
 fi
 
 set +u
-# Prefer system python for ament
+# Prefer system python for ament. Thor apex/jazzy first; humble kept as fallback.
 export PATH="/usr/bin:${PATH}"
-source /opt/ros/humble/setup.bash
+_ros_setup=""
+for _candidate in \
+  "${ROS_SETUP:-}" \
+  /opt/kernelmind/apex/install/setup.bash \
+  /opt/ros/jazzy/setup.bash \
+  /opt/ros/humble/setup.bash
+do
+  if [[ -n "${_candidate}" && -f "${_candidate}" ]]; then
+    _ros_setup="${_candidate}"
+    break
+  fi
+done
+if [[ -z "${_ros_setup}" ]]; then
+  echo "ERROR: no ROS setup.bash found (tried apex/jazzy/humble; set ROS_SETUP=...)" >&2
+  exit 1
+fi
+echo "== sourcing ${_ros_setup} =="
+# shellcheck disable=SC1090
+source "${_ros_setup}"
 source install/setup.bash
 set -u
 

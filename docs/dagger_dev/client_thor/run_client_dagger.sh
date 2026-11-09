@@ -4,13 +4,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENDOR="${ROOT}/vendor/remote_inference_async"
-SKYE_WS="${SKYE_WS:-/data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws}"
+SKYE_WS="${SKYE_WS:-/data/Skye_ROS_Bridge/skye_ros2_ws}"
 
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-20}"
 export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
 unset ROS_LOCALHOST_ONLY
 
-export INFERENCE_PORT="${INFERENCE_PORT:-5568}"
+# Live 5090 serve is currently on 5569 (docs historically said 5568).
+export INFERENCE_PORT="${INFERENCE_PORT:-5569}"
 export INFERENCE_HOST="${INFERENCE_HOST:-192.168.201.253}"
 # CRITICAL: do not stream to Gento when HITL arbiter owns the arm.
 export DAGGER_MODE=1
