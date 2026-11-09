@@ -49,16 +49,14 @@ __pycache__/
 *.tar.gz
 *.zip
 
-# UniJEPA 现场 vendor / 5090 deploy（本地解压，勿 push）
-docs/dagger_dev/client_thor/vendor/**
-!docs/dagger_dev/client_thor/vendor/.gitkeep
-# Track DAgger overlay modules only (not the full UniJEPA client tree).
-!docs/dagger_dev/client_thor/vendor/remote_inference_async/
-!docs/dagger_dev/client_thor/vendor/remote_inference_async/dagger_*.py
-!docs/dagger_dev/client_thor/vendor/remote_inference_async/test_dagger_*.py
-!docs/dagger_dev/client_thor/vendor/remote_inference_async/run_robot_dagger.sh
-# Wiring for DAgger publish modes (rest of UniJEPA client stays local).
-!docs/dagger_dev/client_thor/vendor/remote_inference_async/async_robot_client.py
+# Thor DAgger vendor：追踪源码；忽略备份/字节码/缓存
+# （*.bak* 是手工备份副本，不是编译产物；__pycache__ 才是）
+docs/dagger_dev/client_thor/vendor/**/__pycache__/
+docs/dagger_dev/client_thor/vendor/**/*.py[cod]
+docs/dagger_dev/client_thor/vendor/**/*.bak*
+docs/dagger_dev/client_thor/vendor/**/.pytest_cache/
+
+# 5090 deploy 权重/现场树仍本地解压，勿 push
 docs/dagger_dev/server5090/deploy/
 
 # 本机主臂 FTDI 绑定（bind_leader_arms.py）
