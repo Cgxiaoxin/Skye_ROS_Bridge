@@ -58,7 +58,8 @@ skye_robot_driver:
     still_time_s: 0.5
     tracking_error_freeze_rad: 0.14     # ~8° follower lag freezes offset updates
     # 关节阻抗 K/D（imp_joint）。对齐旧 Marvin left_pd/right_pd，原样进 SDK。
-    impedance_stiffness: [25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0]
+    # 测试hint dagger 调低阻抗参数
+    impedance_stiffness: [15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0]
     impedance_damping: [6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0]
     # 笛卡尔空间阻抗k,d, 用于阻尼控制
     cartesian_stiffness: [2000.0, 2000.0, 2000.0, 100.0, 100.0, 100.0, 50.0]
