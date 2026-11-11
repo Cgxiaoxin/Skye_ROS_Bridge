@@ -5,11 +5,17 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().parents[1] / "leader_arm_gate.sh"
 
 
-def test_off_branch_exports_robot_profile_before_disable():
+def test_gate_script_soft_mutes_without_pkill_or_nohup():
     text = SCRIPT.read_text()
-    off_idx = text.index('if [[ "$ACTION" == "off" ]]; then')
-    off_block = text[off_idx : text.index("fi", off_idx) + 2]
-    assert 'export ROBOT_PROFILE="$PROFILE"' in off_block
-    export_pos = off_block.index('export ROBOT_PROFILE="$PROFILE"')
-    disable_pos = off_block.index("disable_leader_dynamixel.py")
-    assert export_pos < disable_pos
+    assert "pkill" not in text
+    assert "nohup" not in text
+    assert "disable_leader_dynamixel.py" not in text
+    assert "start_teleop_m6_" not in text
+    assert "/mode/${SIDE}/leader_gate" in text
+    assert "ros2 topic pub" in text
+    assert "_source_ros" in text
+
+
+def test_gate_script_is_executable():
+    assert SCRIPT.is_file()
+    assert SCRIPT.stat().st_mode & 0o111
