@@ -49,6 +49,11 @@ __pycache__/
 *.tar.gz
 *.zip
 
+# UniJEPA 现场 vendor / 5090 deploy（本地解压，勿 push）
+docs/dagger_dev/client_thor/vendor/**
+!docs/dagger_dev/client_thor/vendor/.gitkeep
+docs/dagger_dev/server5090/deploy/
+
 # 本机主臂 FTDI 绑定（bind_leader_arms.py）
 marvin_ws/.skye/
 
