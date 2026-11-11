@@ -139,6 +139,7 @@ class SkyeFactrTeleopNode(Node):
         self._monotonic = monotonic
         self._hardware = self.core = self._timer = None
         self._closed = False
+        self._leader_gated_off = False
         self._follower = None
         # True from follower synchronization through teleop; joint_move does not set it.
         self._follower_session_active = False
@@ -322,6 +323,11 @@ class SkyeFactrTeleopNode(Node):
                 state_qos(),
             )
         self.create_subscription(String, "/mode/switch_stop", self._on_stop, event_qos())
+        if not self._test_only:
+            self.create_subscription(
+                String, f"/mode/{self.side}/leader_gate",
+                self._on_leader_gate, event_qos(),
+            )
         if self._gravity_test_only:
             self.create_subscription(
                 String, f"/mode/{self.side}/switch_gravity_test",
@@ -430,8 +436,33 @@ class SkyeFactrTeleopNode(Node):
             if self._follower_session_active:
                 self._on_stop(None)
 
+    def _on_leader_gate(self, message):
+        """Soft mute one side without killing the dual-launch process tree."""
+        if self._closed or message.data not in ("off", "on"):
+            return
+        try:
+            if message.data == "off":
+                if not self._leader_gated_off:
+                    self._follower_session_active = False
+                    self.core.stop()
+                    self._leader_gated_off = True
+                    self.get_logger().info(
+                        f"[{self.side}] leader gate OFF：忽略 sync/teleop，力矩已关闭")
+                self._publish_state()
+                return
+            if self._leader_gated_off:
+                self._leader_gated_off = False
+                self.get_logger().info(
+                    f"[{self.side}] leader gate ON：可再次接收 sync/teleop")
+            self._publish_state()
+        except Exception as exc:
+            self._fault(exc)
+
     def _on_sync(self, message):
         if self._closed or message.data != "switch_sync":
+            return
+        if self._leader_gated_off:
+            self.get_logger().info(f"[{self.side}] sync ignored：leader gate OFF")
             return
         if self.core.mode != ControlMode.IDLE:
             if self.core.mode == ControlMode.SYNCED:
@@ -521,6 +552,9 @@ class SkyeFactrTeleopNode(Node):
     def _on_joint_move(self, message):
         if self._closed:
             return
+        if self._leader_gated_off:
+            self.get_logger().info(f"[{self.side}] joint_move ignored：leader gate OFF")
+            return
         try:
             target = self._validate(message)
         except (TypeError, ValueError) as exc:
@@ -545,6 +579,9 @@ class SkyeFactrTeleopNode(Node):
 
     def _on_teleop(self, message):
         if self._closed or message.data != "switch_teleop":
+            return
+        if self._leader_gated_off:
+            self.get_logger().info(f"[{self.side}] teleop ignored：leader gate OFF")
             return
         if self.core.mode != ControlMode.SYNCED or not self._follower_session_active:
             self.get_logger().warning("Teleoperation requires successful follower synchronization")

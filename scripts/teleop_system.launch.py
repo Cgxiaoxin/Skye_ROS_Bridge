@@ -5,11 +5,8 @@ from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
-    DeclareLaunchArgument, EmitEvent, IncludeLaunchDescription, OpaqueFunction,
-    RegisterEventHandler,
+    DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction,
 )
-from launch.event_handlers import OnProcessExit
-from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
@@ -27,9 +24,10 @@ def setup(context):
         load_config(path, require_runtime=True)
     driver = Path(get_package_share_directory("skye_robot_driver"))
     leader = Path(get_package_share_directory("skye_factr_teleop"))
+    # Soft gate: do NOT register OnProcessExit→Shutdown. Killing one leader
+    # (or a soft-mute path) must not tear down the sibling arm + robot driver.
+    # Session stop is owned by the operator UI process-group terminate.
     return [
-        RegisterEventHandler(OnProcessExit(on_exit=[EmitEvent(event=Shutdown(
-            reason="A teleop driver exited"))])),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(str(driver / "launch/skye_robot_driver.launch.py")),
             launch_arguments={"robot_profile": profile, "params_file": value("driver_config")}.items()),

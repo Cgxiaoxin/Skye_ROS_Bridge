@@ -75,7 +75,7 @@ google-chrome --app=http://127.0.0.1:8765
 
 ## 同步前关单侧小臂（遥操数采）
 
-仅 **遥操数采** 面板、会话 **READY/RUNNING** 且向导允许操作时出现。DAgger 面板无此控件。会话启动仍按 playbook **双臂上电**（经 `teleop.sh start`）；关臂只停该侧 leader 并对该侧 Dynamixel 去使能（`scripts/leader_arm_gate.sh`），不改编排。
+仅 **遥操数采** 面板、会话 **READY/RUNNING** 且向导允许操作时出现。DAgger 面板无此控件。会话启动仍按 playbook **双臂上电**（经 `teleop.sh start`）；关臂为**软门控**：进程保持存活，向 `/mode/<side>/leader_gate` 发 `off`，该侧忽略全局 sync/teleop 并关闭力矩（`scripts/leader_arm_gate.sh`），不改编排、不杀 sibling。
 
 在 **「同步」** 按钮正下方：
 

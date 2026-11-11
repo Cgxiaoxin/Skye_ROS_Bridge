@@ -286,9 +286,10 @@ def test_system_launch_passes_explicit_crossed_configs(usb, monkeypatch, tmp_pat
     context.launch_configurations.update(robot_profile="thor", side="dual",
                                          driver_config="/test/driver.yaml", **configs)
     actions = namespace["setup"](context)
-    assert isinstance(actions[0], RegisterEventHandler)
-    assert all(isinstance(action, IncludeLaunchDescription) for action in actions[1:])
-    driver, leader = (dict(action.launch_arguments) for action in actions[1:])
+    # Soft gate: do not Shutdown the whole dual pack when one child exits.
+    assert not any(isinstance(action, RegisterEventHandler) for action in actions)
+    assert all(isinstance(action, IncludeLaunchDescription) for action in actions)
+    driver, leader = (dict(action.launch_arguments) for action in actions)
     assert driver["robot_profile"] == "thor"
     assert leader == {"robot_profile": "thor", "sync_diagnostics": "true", **configs}
     context.launch_configurations["right_config"] = "/missing/right.yaml"

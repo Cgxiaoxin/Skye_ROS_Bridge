@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Usage: leader_arm_gate.sh <left|right> <off|on>
-# Host-side gate for skye_factr_teleop leader nodes (no Marvin docker exec).
+# Soft gate for skye_factr_teleop leader nodes inside a dual launch:
+# publish /mode/<side>/leader_gate so the live node mutes itself.
+# Do not kill processes or relaunch outside the UI session process group.
 set -euo pipefail
 
 SIDE="${1:?left|right}"
@@ -11,6 +13,7 @@ PROFILE="${ROBOT_PROFILE:-thor}"
 NODE="skye_factr_teleop_${SIDE}"
 WS_SETUP="${REPO_ROOT}/skye_ros2_ws/install/setup.bash"
 TELEOP_ENV="${REPO_ROOT}/skye_ros2_ws/scripts/setup_factr_teleop_env.sh"
+GATE_TOPIC="/mode/${SIDE}/leader_gate"
 
 case "$SIDE" in left|right) ;; *)
   echo "bad side: ${SIDE}" >&2
@@ -48,30 +51,20 @@ _source_ros() {
   return 0
 }
 
-if [[ "$ACTION" == "off" ]]; then
-  pkill -f "$NODE" || true
-  sleep 1
-  export ROBOT_PROFILE="$PROFILE"
-  exec python3 "${SCRIPT_DIR}/disable_leader_dynamixel.py" --side "$SIDE"
-fi
-
 if ! _source_ros; then
   exit 1
 fi
 
-if ros2 node list 2>/dev/null | grep -qx "/${NODE}"; then
-  exit 0
+if ! ros2 node list 2>/dev/null | grep -qx "/${NODE}"; then
+  if [[ "$ACTION" == "off" ]]; then
+    # Already absent — treat as gated off for UI bookkeeping.
+    exit 0
+  fi
+  echo "missing /${NODE}; cannot enable soft gate (start dual teleop session first)" >&2
+  exit 1
 fi
 
-nohup ros2 launch skye_factr_teleop "start_teleop_m6_${SIDE}.launch.py" \
-  "robot_profile:=${PROFILE}" sync_diagnostics:=true \
-  >"/tmp/${NODE}.log" 2>&1 &
-
-deadline=$((SECONDS + 15))
-until ros2 node list 2>/dev/null | grep -qx "/${NODE}"; do
-  if (( SECONDS >= deadline )); then
-    echo "failed to start /${NODE}; check /tmp/${NODE}.log" >&2
-    exit 1
-  fi
-  sleep 0.2
+# VOLATILE event QoS: repeat so the live node is likely to see at least one.
+for _ in 1 2 3 4 5; do
+  ros2 topic pub --once "${GATE_TOPIC}" std_msgs/msg/String "{data: ${ACTION}}" >/dev/null
 done

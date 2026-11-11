@@ -202,9 +202,34 @@ def test_interfaces_qos_and_disabled_startup(make_node, side):
         assert pubs[topic].qos_profile.durability == DurabilityPolicy.VOLATILE
     subs = {sub.topic_name: sub for sub in node.subscriptions}
     assert {"/joint_state", "/joint_move", "/mode/switch_sync",
-            "/mode/switch_teleop", "/mode/switch_stop"} <= set(subs)
+            "/mode/switch_teleop", "/mode/switch_stop",
+            f"/mode/{side}/leader_gate"} <= set(subs)
     assert subs["/joint_state"].qos_profile.reliability == ReliabilityPolicy.RELIABLE
     assert subs["/joint_state"].qos_profile.depth == 1
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_leader_gate_off_mutes_sync_and_keeps_process_alive(make_node, side):
+    """Soft mute: gated arm ignores global switch_sync; node stays open."""
+    rig = make_node(side)
+    node = rig.node
+    node._on_follower(packet(side))
+    node._on_leader_gate(String(data="off"))
+    assert node.core.mode == ControlMode.IDLE
+    assert not rig.hardware.torque_enabled
+    assert node._leader_gated_off
+    assert not node._closed
+
+    node._on_sync(String(data="switch_sync"))
+    assert node.core.mode == ControlMode.IDLE
+    assert not rig.hardware.torque_enabled
+    assert rig.trajectories == []
+
+    node._on_leader_gate(String(data="on"))
+    assert not node._leader_gated_off
+    node._on_sync(String(data="switch_sync"))
+    assert node.core.mode == ControlMode.TELEOP_SYNCING
+    assert rig.hardware.torque_enabled
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
