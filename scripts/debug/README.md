@@ -5,6 +5,7 @@
 | 脚本 | 用途 |
 |---|---|
 | `record_leader_health.py` | 双臂：小臂 `current_state` 频率/掉帧 + 大臂 `joint_states` stamp stale + diagnostics |
+| `teleop_motor_diag.py` | 遥操中逐帧录频率/断流/关节跳变 + 每帧 8 路舵机电流，落盘可溯源，结束时给“哪条流断 + 当时哪个电机电流最高” |
 | `watch_arm_joints.py` | 1 Hz 对照小臂角 / 大臂角 / `joint_control` 指令角 |
 | `move_small_arm_zero.py` | 小臂回零 / sync / telepose 辅助动作 |
 
@@ -24,4 +25,10 @@ unset FASTRTPS_DEFAULT_PROFILES_FILE
 /usr/bin/python3 scripts/debug/watch_arm_joints.py
 ```
 
-终端只打 1 Hz 摘要；细节在 `logs/leader_health_*.jsonl` / `logs/watch_arm_joints_*.log`。
+```bash
+# 遥操故障复盘：跑完（或 Ctrl+C）生成 logs/teleop_diag_<时间戳>/ 整套文件
+/usr/bin/python3 scripts/debug/teleop_motor_diag.py --seconds 300
+```
+
+终端只打 1 Hz 摘要；细节在 `logs/leader_health_*.jsonl` / `logs/watch_arm_joints_*.log` /
+`logs/teleop_diag_*/`。

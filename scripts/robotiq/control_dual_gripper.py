@@ -67,11 +67,11 @@ ROBOT_IP = "6.6.7.190"
 # --- 左臂目标开度 (mm) ---
 # 实机遥操：左闭 2 mm / 右闭 13 mm
 LEFT_OPEN_MM = 50.0   # 张开：改这里
-LEFT_CLOSE_MM = 2.0   # 闭合：改这里
+LEFT_CLOSE_MM = 5.0   # 闭合：改这里
 
 # --- 右臂目标开度 (mm) ---
 RIGHT_OPEN_MM = 50.0  # 张开：改这里
-RIGHT_CLOSE_MM = 8.0  # 闭合：改这里
+RIGHT_CLOSE_MM = 6.5  # 闭合：改这里
 
 # 运动参数
 SPEED = 0x88   # 0~255
