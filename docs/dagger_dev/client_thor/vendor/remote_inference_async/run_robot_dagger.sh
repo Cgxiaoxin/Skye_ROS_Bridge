@@ -7,18 +7,18 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd "${script_dir}/.." && pwd)"
 
 inference_server_ip="${INFERENCE_HOST:-192.168.201.253}"
-inference_server_port="${INFERENCE_PORT:-5568}"
+# Align with 5090 pi05_history serve (was UniJEPA 5568).
+inference_server_port="${INFERENCE_PORT:-5569}"
 server_endpoint="tcp://${inference_server_ip}:${inference_server_port}"
 joint_states_topic="${JOINT_STATES_TOPIC:-/gento/joint_states}"
-dagger_policy_version="${DAGGER_POLICY_VERSION:-unijepa}"
-dagger_publish_mode="${DAGGER_PUBLISH_MODE:-setpoint}"
-dagger_err_max_rad="${DAGGER_ERR_MAX_RAD:-0.15}"
-dagger_err_max_sustained_s="${DAGGER_ERR_MAX_SUSTAINED_S:-0.5}"
+dagger_policy_version="${DAGGER_POLICY_VERSION:-pi05_history}"
 controller_ip="${CONTROLLER_IP:-0.0.0.0}"
 
 ros_setup="${ROS_SETUP:-/opt/kernelmind/apex/install/setup.bash}"
 camera_ros_setup="${CAMERA_ROS_SETUP:-/home/user/tianji_capture_camera_ws/install/setup.bash}"
-skye_ws_setup="${SKYE_WS_SETUP:-${SKYE_WS:-/data/coding/tianji/Skye_ROS_Bridge/skye_ros2_ws}/install/setup.bash}"
+skye_ws_setup="${SKYE_WS_SETUP:-${SKYE_WS:-/data/Skye_ROS_Bridge/skye_ros2_ws}/install/setup.bash}"
+# Ensure robot_control skips PYTHON_SDK import (driver already owns the arm).
+export DAGGER_MODE="${DAGGER_MODE:-1}"
 head_topic="${HEAD_COLOR_TOPIC:-/head_d435/camera/color/image_raw}"
 left_wrist_topic="${WRIST_LEFT_TOPIC:-/left_wrist_d405/camera/color/image_raw}"
 right_wrist_topic="${WRIST_RIGHT_TOPIC:-/right_wrist_d405/camera/color/image_raw}"
@@ -31,7 +31,8 @@ model_action_hz="${MODEL_ACTION_HZ:-30}"
 action_hz="${ACTION_HZ:-30}"
 observation_hz="${POLICY_OBSERVATION_HZ:-30}"
 max_pending_policy_requests="${MAX_PENDING_POLICY_REQUESTS:-2}"
-action_history_horizon="${ACTION_HISTORY_HORIZON:-30}"
+# pi05 history8 (UniJEPA used 30)
+action_history_horizon="${ACTION_HISTORY_HORIZON:-8}"
 rtc_action_horizon="${RTC_ACTION_HORIZON:-50}"
 rtc_max_prefix="${RTC_MAX_PREFIX:-0}"
 runtime_control_socket="${RUNTIME_CONTROL_SOCKET:-/tmp/gento_robot_runtime_dagger.sock}"
@@ -39,17 +40,20 @@ action_aggregate="${ACTION_AGGREGATE:-weighted_average}"
 action_ema_weight="${ACTION_EMA_WEIGHT:-0.75}"
 chunk_size_threshold="${CHUNK_SIZE_THRESHOLD:-1.0}"
 
+# Quintic home before policy (absolute radian via arbiter). Defaults align with
+# legacy run_robot initial move: 0.5deg @ 20Hz + max feedback lead.
+# Set DAGGER_SLOW_HOME=0 to skip.
+export DAGGER_SLOW_HOME="${DAGGER_SLOW_HOME:-1}"
+export DAGGER_HOME_STEP_DEG="${DAGGER_HOME_STEP_DEG:-0.5}"
+export DAGGER_HOME_HZ="${DAGGER_HOME_HZ:-20.0}"
+export DAGGER_HOME_MAX_LEAD_DEG="${DAGGER_HOME_MAX_LEAD_DEG:-${INITIAL_MOVE_MAX_LEAD_DEG:-5.0}}"
+export DAGGER_HOME_TOL_DEG="${DAGGER_HOME_TOL_DEG:-2.0}"
+export JOINT_STATES_STALE_S="${JOINT_STATES_STALE_S:-2.0}"   # was 0.5; avoid false trips
+
 case "${action_aggregate}" in
     weighted_average|latest|average|conservative) ;;
     *)
         echo "[ERROR] ACTION_AGGREGATE invalid: ${action_aggregate}" >&2
-        exit 2
-        ;;
-esac
-case "${dagger_publish_mode}" in
-    raw|setpoint) ;;
-    *)
-        echo "[ERROR] DAGGER_PUBLISH_MODE must be raw|setpoint, got: ${dagger_publish_mode}" >&2
         exit 2
         ;;
 esac
@@ -92,7 +96,7 @@ cd "${repo_dir}"
 if [[ "${SKIP_CAMERAS:-0}" == "1" ]]; then
     echo "[INFO] SKIP_CAMERAS=1; cameras owned elsewhere"
 else
-    "${script_dir}/ensure_cameras.sh"
+    "${script_dir}/tools/ensure_cameras.sh"
 fi
 
 # Intentionally skip UDP 3720-3724 occupancy check: skye_robot_driver owns
@@ -104,9 +108,6 @@ client_args=(
     --dagger-mode
     --joint-states-topic "${joint_states_topic}"
     --dagger-policy-version "${dagger_policy_version}"
-    --dagger-publish-mode "${dagger_publish_mode}"
-    --dagger-err-max-rad "${dagger_err_max_rad}"
-    --dagger-err-max-sustained-s "${dagger_err_max_sustained_s}"
     --camera-source ros2
     --ros-camera "head_color=${head_topic}"
     --ros-camera "wrist_left=${left_wrist_topic}"
@@ -158,9 +159,10 @@ if [[ -n "${TASK:-}" ]]; then
     client_args+=(--task "${TASK}")
 fi
 
-echo "[INFO] DAGGER mode: DOMAIN=${ROS_DOMAIN_ID} server=${server_endpoint}"
+echo "[INFO] DAGGER mode: DOMAIN=${ROS_DOMAIN_ID} server=${server_endpoint} policy=${dagger_policy_version}"
 echo "[INFO] joint_states=${joint_states_topic} → /skye/policy_action (no Gento SDK)"
-echo "[INFO] publish_mode=${dagger_publish_mode} err_max_rad=${dagger_err_max_rad}"
-echo "[INFO] model=${model_action_hz}Hz execution=${action_hz}Hz obs<=${observation_hz}Hz"
+echo "[INFO] model=${model_action_hz}Hz execution=${action_hz}Hz obs<=${observation_hz}Hz history=${action_history_horizon} rtc_prefix=${rtc_max_prefix}"
+echo "[INFO] slow_home=${DAGGER_SLOW_HOME} quintic step_deg=${DAGGER_HOME_STEP_DEG} hz=${DAGGER_HOME_HZ} lead=${DAGGER_HOME_MAX_LEAD_DEG} stale_s=${JOINT_STATES_STALE_S}"
+echo "[INFO] UNIT: policy/server arm=radian → smoothed PolicyActionChunk radian (dry-run log=degree)"
 
 exec "${python_bin}" -m remote_inference_async.async_robot_client "${client_args[@]}"

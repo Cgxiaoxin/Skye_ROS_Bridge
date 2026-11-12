@@ -8,6 +8,8 @@ import pytest
 from remote_inference_async.dagger_chunk import (
     ARBITER_CHUNK_SIZE,
     policy_chunk_to_arbiter_fields,
+    robot_command_deg_to_hold_chunk_rad,
+    robot_command_deg_to_stream_chunk_rad,
 )
 
 
@@ -57,3 +59,34 @@ def test_rejects_bad_shapes():
         policy_chunk_to_arbiter_fields(np.zeros((0, 16)), dt=0.05)
     with pytest.raises(ValueError):
         policy_chunk_to_arbiter_fields(np.zeros((16, 16)), dt=0.0)
+
+
+def _bimanual_deg(left, right, lg=0.0, rg=0.1):
+    return np.asarray(list(left) + list(right) + [lg, rg], dtype=np.float64)
+
+
+def test_hold_chunk_repeats_target():
+    command = _bimanual_deg(
+        [-155.0, -35.0, 136.0, -126.0, 85.0, -38.0, 39.0],
+        [-149.0, -6.0, 160.0, -118.0, -26.0, -48.0, -17.0],
+    )
+    hold = robot_command_deg_to_hold_chunk_rad(command)
+    assert hold.shape == (16, 16)
+    assert np.allclose(hold, hold[:1])
+    assert hold[0, 0] == pytest.approx(np.deg2rad(-155.0))
+
+
+def test_stream_chunk_interpolates_feedback_to_target():
+    start = _bimanual_deg([0.0] * 7, [0.0] * 7, 0.0, 0.0)
+    target = _bimanual_deg([3.0] + [0.0] * 6, [-1.5] + [0.0] * 6, 0.2, 0.4)
+    stream = robot_command_deg_to_stream_chunk_rad(start, target)
+    assert stream.shape == (16, 16)
+    assert stream[0, 0] == pytest.approx(0.0)
+    assert stream[-1, 0] == pytest.approx(np.deg2rad(3.0))
+    assert stream[-1, 7] == pytest.approx(np.deg2rad(-1.5))
+    assert stream[0, 14] == pytest.approx(0.0)
+    assert stream[-1, 15] == pytest.approx(0.4)
+    # linspace endpoint-inclusive: index k uses alpha=k/(steps-1).
+    assert stream[8, 0] == pytest.approx(np.deg2rad(3.0 * 8.0 / 15.0))
+    # Monotonic toward target.
+    assert np.all(np.diff(stream[:, 0]) > 0.0)

@@ -765,29 +765,54 @@ def build_parser() -> argparse.ArgumentParser:
         help="policy_version string stamped on PolicyActionChunk",
     )
     parser.add_argument(
-        "--dagger-publish-mode",
-        choices=("raw", "setpoint"),
-        default="setpoint",
+        "--joint-states-stale-s",
+        type=float,
+        default=float(os.environ.get("JOINT_STATES_STALE_S", "2.0")),
+        help="DAgger facade: max age of /gento/joint_states before error (default 2.0)",
+    )
+    parser.add_argument(
+        "--dagger-slow-home",
+        action=argparse.BooleanOptionalAction,
+        default=os.environ.get("DAGGER_SLOW_HOME", "1") not in ("0", "false", "FALSE", "no"),
         help=(
-            "HITL DAgger口 A: raw=publish model chunk on receive; "
-            "setpoint=publish 16-step micro-ramp from last_cmd→slewed command "
-            "each action tick (default)"
+            "Before policy loop, slowly move to INITIAL_* poses via /skye/policy_action "
+            "(absolute radian; requires AUTONOMOUS arbiter). Default on."
         ),
     )
     parser.add_argument(
-        "--dagger-err-max-rad",
+        "--dagger-home-step-deg",
         type=float,
-        default=0.15,
+        default=float(os.environ.get("DAGGER_HOME_STEP_DEG", "0.5")),
         help=(
-            "Setpoint mode: max |last_cmd-fb| on arm joints (rad) before "
-            "freezing advance this tick"
+            "Max joint step (degree) along quintic home path "
+            "(legacy INITIAL_MOVE_STEP_DEG). Default 0.5"
         ),
     )
     parser.add_argument(
-        "--dagger-err-max-sustained-s",
+        "--dagger-home-hz",
         type=float,
-        default=0.5,
-        help="Setpoint mode: escalate ERR_MAX hold after this many seconds",
+        default=float(os.environ.get("DAGGER_HOME_HZ", "20.0")),
+        help="Quintic home command rate (Hz; legacy INITIAL_MOVE_HZ). Default 20",
+    )
+    parser.add_argument(
+        "--dagger-home-max-lead-deg",
+        type=float,
+        default=float(
+            os.environ.get(
+                "DAGGER_HOME_MAX_LEAD_DEG",
+                os.environ.get("INITIAL_MOVE_MAX_LEAD_DEG", "5.0"),
+            )
+        ),
+        help=(
+            "Pause home advance when command leads feedback by more than this "
+            "(legacy INITIAL_MOVE_MAX_LEAD_DEG). Default 5.0"
+        ),
+    )
+    parser.add_argument(
+        "--dagger-home-tol-deg",
+        type=float,
+        default=float(os.environ.get("DAGGER_HOME_TOL_DEG", "2.0")),
+        help="Settle tolerance (degree) after slow-home",
     )
     parser.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING"), default="INFO")
     return parser
@@ -947,16 +972,6 @@ def main() -> int:
         raise ValueError("--action-stride must be positive")
     if args.action_history_horizon <= 0:
         raise ValueError("--action-history-horizon must be positive")
-    if args.dagger_mode:
-        if args.dagger_publish_mode not in ("raw", "setpoint"):
-            raise ValueError("--dagger-publish-mode must be raw or setpoint")
-        if not math.isfinite(args.dagger_err_max_rad) or args.dagger_err_max_rad <= 0:
-            raise ValueError("--dagger-err-max-rad must be finite and positive")
-        if (
-            not math.isfinite(args.dagger_err_max_sustained_s)
-            or args.dagger_err_max_sustained_s <= 0
-        ):
-            raise ValueError("--dagger-err-max-sustained-s must be finite and positive")
     if args.rtc_action_horizon <= 0:
         raise ValueError("--rtc-action-horizon must be positive")
     if not 0 <= args.rtc_max_prefix <= args.rtc_action_horizon:
@@ -1117,12 +1132,7 @@ def main() -> int:
         from remote_inference_async.dagger_publisher import DaggerPolicyPublisher
         from remote_inference_async.dagger_ros_facade import (
             DaggerRosRobotFacade,
-            RosGripperFeedback,
-        )
-        from remote_inference_async.dagger_setpoint import (
-            ErrMaxGuard,
-            micro_ramp_dt,
-            robot_commands_to_setpoint_policy,
+            NullGripper,
         )
         FXLogMask = FXObjMask = FXObjType = FXStateType = None  # noqa: N816
         DualGentoDmGripper = None  # type: ignore
@@ -1144,12 +1154,6 @@ def main() -> int:
     fatal_shutdown = False
     plan_rejected = False
     dagger_pub = None
-    dagger_err_guard = None
-    if args.dagger_mode:
-        dagger_err_guard = ErrMaxGuard(
-            err_max_rad=args.dagger_err_max_rad,
-            sustained_s=args.dagger_err_max_sustained_s,
-        )
 
     def request_stop(signum: int, _frame: object) -> None:
         nonlocal requested_signal
@@ -1160,12 +1164,24 @@ def main() -> int:
     signal.signal(signal.SIGTERM, request_stop)
 
     if args.dagger_mode:
-        robot = DaggerRosRobotFacade(joint_states_topic=args.joint_states_topic)
+        from remote_inference_async.dagger_chunk import (
+            ARBITER_CHUNK_SIZE,
+            assert_policy_chunk_radians,
+            robot_command_deg_to_stream_chunk_rad,
+        )
+        from remote_inference_async.dagger_home import run_dagger_slow_home
+
+        robot = DaggerRosRobotFacade(
+            joint_states_topic=args.joint_states_topic,
+            stale_s=args.joint_states_stale_s,
+        )
         dagger_pub = DaggerPolicyPublisher(policy_version=args.dagger_policy_version)
         dagger_pub.start()
         LOGGER.info(
-            "DAGGER mode: joint_states=%s → /skye/policy_action (no Gento SDK)",
+            "DAGGER mode: joint_states=%s stale<=%.2fs → /skye/policy_action "
+            "(absolute RADIAN only; no Gento SDK)",
             args.joint_states_topic,
+            args.joint_states_stale_s,
         )
     else:
         robot = GentoRobot()
@@ -1402,14 +1418,8 @@ def main() -> int:
                 args.joint_states_topic,
                 robot.get_robot_type(),
             )
-            # Policy loop treats >200ms gripper age as stale (skip infer / hold).
-            args.gripper_feedback_max_age = min(
-                float(args.gripper_feedback_max_age), 0.2
-            )
-            gripper = RosGripperFeedback(warn_age_s=0.05)
-            ready_gripper = gripper.start(
-                timeout_s=max(5.0, float(args.gripper_feedback_timeout))
-            )
+            gripper = NullGripper()
+            ready_gripper = gripper.wait_for_feedback()
         else:
             ret = robot.link(*ip, log_level=FXLogMask.FX_LOG_INFO_FLAG)
             if not robot._connected:
@@ -1513,6 +1523,30 @@ def main() -> int:
                 stop_event=stop_event,
             )
             LOGGER.info("Dry-run direct gripper test ready: %.3f", tested_gripper)
+        if args.dagger_mode and dagger_pub is not None and args.dagger_slow_home:
+            # Safety: slow absolute-radian home through arbiter before policy chunks.
+            # Requires /skye/control_mode == AUTONOMOUS. Does not use Gento SDK.
+            LOGGER.info(
+                "UNIT CONTRACT: server/policy arm=radian → /skye/policy_action radian "
+                "→ arbiter abs → driver. dry-run logs are degree-only for humans."
+            )
+            run_dagger_slow_home(
+                robot=robot,
+                publisher=dagger_pub,
+                left_home_deg=INITIAL_LEFT_ARM_POSE,
+                right_home_deg=INITIAL_RIGHT_ARM_POSE,
+                step_deg=args.dagger_home_step_deg,
+                hz=args.dagger_home_hz,
+                max_lead_deg=args.dagger_home_max_lead_deg,
+                settle_tol_deg=args.dagger_home_tol_deg,
+                policy_version=f"{args.dagger_policy_version}-home",
+                stop_event=stop_event,
+            )
+        elif args.dagger_mode:
+            LOGGER.info(
+                "DAGGER_SLOW_HOME disabled; starting policy from current pose "
+                "(ensure arms are safe)"
+            )
         if not args.dry_run:
             if args.skip_initial_pose:
                 LOGGER.info(
@@ -1751,26 +1785,12 @@ def main() -> int:
             # The resulting snapshot is therefore s(t) with actions ending at
             # a(t-1), matching the training dataset's [idx-K, idx) history.
             if pending_history_command is not None:
-                try:
-                    cycle_rt = robot.get_rt_dict()
-                    cycle_state = state_from_rt(
-                        cycle_rt,
-                        gripper.state(args.gripper_feedback_max_age, enabled_arms),
-                        enabled_arms,
-                    )
-                except RuntimeError as exc:
-                    if args.dagger_mode and "gripper" in str(exc).lower():
-                        # >200ms gripper age: hold last command, skip this tick's
-                        # history advance / new inference.
-                        LOGGER.warning(
-                            "gripper feedback stale; holding last_sent_action "
-                            "and skipping policy request: %s",
-                            exc,
-                        )
-                        pending_history_command = None
-                        must_go = False
-                        continue
-                    raise
+                cycle_rt = robot.get_rt_dict()
+                cycle_state = state_from_rt(
+                    cycle_rt,
+                    gripper.state(args.gripper_feedback_max_age, enabled_arms),
+                    enabled_arms,
+                )
                 action_history.append_robot_command(pending_history_command)
                 pending_history_command = None
                 latest_observation_rt = cycle_rt
@@ -1876,28 +1896,12 @@ def main() -> int:
                     action_meta["shape"],
                     expected_last_dim=ACTION_DIM,
                 )
-                if (
-                    args.dagger_mode
-                    and dagger_pub is not None
-                    and args.dagger_publish_mode == "raw"
-                ):
-                    # Baseline / rollback: publish model chunk on receive.
-                    dt = 1.0 / float(args.model_action_hz)
-                    fields = dagger_pub.publish_policy_actions(
-                        policy_chunk,
-                        dt=dt,
-                        policy_version=args.dagger_policy_version,
-                        mode="raw",
-                        observation_sequence=observation_sequence,
-                    )
-                    LOGGER.info(
-                        "DAGGER raw PolicyActionChunk steps=%d dt=%.4f "
-                        "stamp=%.3f interval_ms=%s obs_seq=%s",
-                        fields["chunk_size"],
-                        fields["dt"],
-                        fields.get("header_stamp_sec", float("nan")),
-                        fields.get("publish_interval_ms"),
-                        observation_sequence,
+                if args.dagger_mode:
+                    # Validate units only; do NOT publish raw server chunks.
+                    # Smoothed commands are published after ActionQueue merge +
+                    # direct_guard / setpoint limiting (below).
+                    assert_policy_chunk_radians(
+                        policy_chunk, context=f"server chunk obs={observation_sequence}"
                     )
                 chunk = policy_actions_to_robot(policy_chunk)
                 accepted, stale = actions.merge(
@@ -2132,16 +2136,18 @@ def main() -> int:
                         acceleration_limited_joints: list[int] = []
                         tracking_error_joints: list[int] = []
                         # Publish exactly one arm setpoint per action period.
-                        # Slew all enabled arm joints proportionally from the
-                        # preceding published setpoint, so the bimanual vector
-                        # stays continuous and no action-boundary feedback
-                        # restart can reverse the command. Grippers retain the
-                        # existing immediate direct/postprocess target semantics.
+                        # Non-DAgger: slew from the preceding published setpoint.
+                        # DAgger: slew from measured joint_states so /skye/policy_action
+                        # step0 stays near follower feedback (arbiter rebase threshold
+                        # is ~0.1 rad). Grippers keep immediate target semantics.
                         command = shaped_action.copy()
+                        slew_reference = (
+                            current if args.dagger_mode else last_sent_action
+                        )
                         command_delta = (
                             np.asarray(shaped_action[enabled_joint_indices], dtype=np.float64)
                             - np.asarray(
-                                last_sent_action[enabled_joint_indices], dtype=np.float64
+                                slew_reference[enabled_joint_indices], dtype=np.float64
                             )
                         )
                         max_setpoint_delta_deg = float(np.max(np.abs(command_delta)))
@@ -2159,13 +2165,13 @@ def main() -> int:
                         )
                         command[enabled_joint_indices] = (
                             np.asarray(
-                                last_sent_action[enabled_joint_indices], dtype=np.float64
+                                slew_reference[enabled_joint_indices], dtype=np.float64
                             )
                             + command_delta * setpoint_step_scale
                         )
                         command_velocity_deg_s = (
                             np.asarray(command[7:14], dtype=np.float64)
-                            - np.asarray(last_sent_action[7:14], dtype=np.float64)
+                            - np.asarray(slew_reference[7:14], dtype=np.float64)
                         ) * args.action_hz
                         trajectory_recorder.record(
                             "action_decision",
@@ -2186,50 +2192,14 @@ def main() -> int:
                             acceleration_limited_joints=acceleration_limited_joints,
                             tracking_error_joints=tracking_error_joints,
                             interpolation_count=1,
-                            interpolation_start="last_sent_action",
+                            interpolation_start=(
+                                "joint_states_feedback"
+                                if args.dagger_mode
+                                else "last_sent_action"
+                            ),
                             max_setpoint_delta_deg=max_setpoint_delta_deg,
                             setpoint_step_scale=setpoint_step_scale,
                         )
-                        if (
-                            args.dagger_mode
-                            and dagger_pub is not None
-                            and args.dagger_publish_mode == "setpoint"
-                            and dagger_err_guard is not None
-                        ):
-                            # Micro-ramp from previous published cmd → this tick's
-                            # slewed command. ERR_MAX freezes advance (start=end).
-                            err_decision = dagger_err_guard.evaluate(
-                                last_sent_action, current
-                            )
-                            publish_end = (
-                                last_sent_action.copy()
-                                if err_decision.hold
-                                else command.copy()
-                            )
-                            if err_decision.hold:
-                                command = publish_end.copy()
-                            start_policy, end_policy = robot_commands_to_setpoint_policy(
-                                last_sent_action, publish_end
-                            )
-                            fields = dagger_pub.publish_setpoint_ramp(
-                                start_policy,
-                                end_policy,
-                                dt=micro_ramp_dt(args.model_action_hz),
-                                policy_version=args.dagger_policy_version,
-                                observation_sequence=latest_observation_timestep,
-                            )
-                            LOGGER.info(
-                                "DAGGER setpoint PolicyActionChunk steps=%d "
-                                "dt=%.5f err_rad=%.4f hold=%s trip=%d "
-                                "stamp=%.3f interval_ms=%s",
-                                fields["chunk_size"],
-                                fields["dt"],
-                                err_decision.err_rad,
-                                err_decision.hold,
-                                err_decision.trip_count,
-                                fields.get("header_stamp_sec", float("nan")),
-                                fields.get("publish_interval_ms"),
-                            )
                         if args.dry_run:
                             LOGGER.info(
                                 "dry-run action[%d]: %s",
@@ -2266,6 +2236,52 @@ def main() -> int:
                                 interpolation_count=1,
                                 command=_right_vector_payload(command),
                                 gripper=gripper.diagnostics(),
+                            )
+                        if args.dagger_mode and dagger_pub is not None:
+                            # Stream feedback→setpoint interp (not a far hold).
+                            # dt packs the 16-step chunk into one action period so
+                            # ChunkPlayer reaches the slew-limited target before
+                            # the next republish. Slow-home still uses hold chunks.
+                            stream = robot_command_deg_to_stream_chunk_rad(
+                                current, command, steps=ARBITER_CHUNK_SIZE
+                            )
+                            pub_dt = 1.0 / (
+                                float(args.action_hz) * float(ARBITER_CHUNK_SIZE)
+                            )
+                            fields = dagger_pub.publish_policy_actions(
+                                stream,
+                                dt=pub_dt,
+                                policy_version=args.dagger_policy_version,
+                            )
+                            peak_rad = float(np.max(np.abs(stream[:, :14])))
+                            step0_jump_deg = float(
+                                np.max(
+                                    np.abs(
+                                        np.rad2deg(stream[0, :14])
+                                        - np.asarray(current[:14], dtype=np.float64)
+                                    )
+                                )
+                            )
+                            LOGGER.info(
+                                "DAGGER published stream PolicyActionChunk "
+                                "steps=%d dt=%.4f timestep=%d peak|q|_rad=%.3f "
+                                "(~%.1f deg) step0_jump=%.2f deg",
+                                fields["chunk_size"],
+                                fields["dt"],
+                                timestep,
+                                peak_rad,
+                                math.degrees(peak_rad),
+                                step0_jump_deg,
+                            )
+                            trajectory_recorder.record(
+                                "dagger_policy_action_published",
+                                policy_timestep=timestep,
+                                dt=pub_dt,
+                                chunk_size=fields["chunk_size"],
+                                command=_right_vector_payload(command),
+                                stream_start=_right_vector_payload(current),
+                                step0_jump_deg=step0_jump_deg,
+                                policy_actions_radian_16d=stream.tolist(),
                             )
                         last_sent_action = command.copy()
                         pending_history_command = last_sent_action.copy()

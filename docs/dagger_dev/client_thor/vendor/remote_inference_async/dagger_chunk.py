@@ -15,30 +15,96 @@ import numpy as np
 ARBITER_CHUNK_SIZE = 16
 ACTION_DIM = 16
 ARM_DOF = 7
-ARM_JOINT_DIM = 14
+# Typical Skye joint limits are well under ~π..±4 rad. Values above this almost
+# always mean someone passed degree payloads into the radian PolicyActionChunk.
+MAX_ABS_JOINT_RAD = 6.5
 
 
-def setpoint_dt(model_action_hz: float) -> float:
-    """Micro-ramp step dt so 16 steps span exactly one model action period."""
-    hz = float(model_action_hz)
-    if not np.isfinite(hz) or hz <= 0.0:
-        raise ValueError(f"model_action_hz must be finite and > 0, got {model_action_hz}")
-    return 1.0 / (hz * ARBITER_CHUNK_SIZE)
+def assert_policy_chunk_radians(
+    policy_actions: np.ndarray,
+    *,
+    context: str,
+    max_abs_rad: float = MAX_ABS_JOINT_RAD,
+) -> None:
+    """Fail closed if arm joints look like degrees (would slam the robot)."""
+    actions = np.asarray(policy_actions, dtype=np.float64)
+    if actions.ndim != 2 or actions.shape[1] != ACTION_DIM or actions.shape[0] == 0:
+        raise ValueError(
+            f"{context}: policy actions must be non-empty [T,{ACTION_DIM}], "
+            f"got {actions.shape}"
+        )
+    if not np.isfinite(actions).all():
+        raise ValueError(f"{context}: policy actions contain NaN or infinity")
+    joints = actions[:, : 2 * ARM_DOF]
+    peak = float(np.max(np.abs(joints)))
+    if peak > max_abs_rad:
+        sample_deg = np.rad2deg(joints[0])
+        raise ValueError(
+            f"{context}: arm joints look like DEGREES mislabeled as radians "
+            f"(max|q|={peak:.2f} > {max_abs_rad}). Refusing publish. "
+            f"first_row_as_if_rad_to_deg={np.round(sample_deg, 1).tolist()}"
+        )
 
 
-def _actions_to_fields(actions: np.ndarray, dt: float) -> dict[str, Any]:
-    left_steps = actions[:, 0:ARM_DOF]
-    right_steps = actions[:, ARM_DOF : 2 * ARM_DOF]
-    left_grip = actions[:, 14].tolist()
-    right_grip = actions[:, 15].tolist()
-    return {
-        "chunk_size": ARBITER_CHUNK_SIZE,
-        "dt": float(dt),
-        "left_joints": left_steps.reshape(-1).tolist(),
-        "right_joints": right_steps.reshape(-1).tolist(),
-        "left_gripper": left_grip,
-        "right_gripper": right_grip,
-    }
+def _command_deg_to_rad_row(command_deg_16d: np.ndarray) -> np.ndarray:
+    command = np.asarray(command_deg_16d, dtype=np.float64).reshape(ACTION_DIM)
+    if not np.isfinite(command).all():
+        raise ValueError("robot command must be finite")
+    return np.concatenate(
+        [
+            np.deg2rad(command[0:ARM_DOF]),
+            np.deg2rad(command[ARM_DOF : 2 * ARM_DOF]),
+            command[14:16],
+        ]
+    )
+
+
+def robot_command_deg_to_hold_chunk_rad(
+    command_deg_16d: np.ndarray,
+    *,
+    steps: int = ARBITER_CHUNK_SIZE,
+) -> np.ndarray:
+    """Convert one robot-space command (deg arms + gripper) to abs-rad hold chunk.
+
+    Layout matches async client state/action vectors:
+    [L7_deg, R7_deg, left_gripper, right_gripper].
+
+    Used by slow-home (tiny quintic steps). Policy streaming should prefer
+    robot_command_deg_to_stream_chunk_rad so step0 stays near feedback.
+    """
+    if steps <= 0:
+        raise ValueError(f"steps must be positive, got {steps}")
+    row = _command_deg_to_rad_row(command_deg_16d)
+    out = np.repeat(row[None, :], steps, axis=0)
+    assert_policy_chunk_radians(out, context="robot_command_deg_to_hold_chunk_rad")
+    return out
+
+
+def robot_command_deg_to_stream_chunk_rad(
+    start_deg_16d: np.ndarray,
+    target_deg_16d: np.ndarray,
+    *,
+    steps: int = ARBITER_CHUNK_SIZE,
+) -> np.ndarray:
+    """Linear abs-rad chunk from feedback/start → slew-limited target.
+
+    step0 matches start (keeps arbiter chunk_start_max_jump happy). Later steps
+    walk to target so ChunkPlayer actually moves within one republish period
+    when dt ≈ 1/(action_hz * steps).
+
+    Layout: [L7_deg, R7_deg, left_gripper, right_gripper] in / out as rad arms.
+    """
+    if steps <= 0:
+        raise ValueError(f"steps must be positive, got {steps}")
+    start = _command_deg_to_rad_row(start_deg_16d)
+    target = _command_deg_to_rad_row(target_deg_16d)
+    if steps == 1:
+        out = target[None, :].copy()
+    else:
+        alphas = np.linspace(0.0, 1.0, steps, dtype=np.float64)[:, None]
+        out = start[None, :] + (target[None, :] - start[None, :]) * alphas
+    assert_policy_chunk_radians(out, context="robot_command_deg_to_stream_chunk_rad")
+    return out
 
 
 def policy_chunk_to_arbiter_fields(
@@ -56,6 +122,7 @@ def policy_chunk_to_arbiter_fields(
         raise ValueError("policy actions contain NaN or infinity")
     if not np.isfinite(dt) or dt <= 0.0:
         raise ValueError(f"dt must be finite and > 0, got {dt}")
+    assert_policy_chunk_radians(actions, context="policy_chunk_to_arbiter_fields")
 
     if actions.shape[0] > ARBITER_CHUNK_SIZE:
         actions = actions[:ARBITER_CHUNK_SIZE]
@@ -64,31 +131,15 @@ def policy_chunk_to_arbiter_fields(
         pad = np.repeat(actions[-1:], ARBITER_CHUNK_SIZE - actions.shape[0], axis=0)
         actions = np.concatenate([actions, pad], axis=0)
 
-    return _actions_to_fields(actions, dt)
-
-
-def setpoint_ramp_to_arbiter_fields(
-    start_action: np.ndarray,
-    end_action: np.ndarray,
-    *,
-    dt: float,
-) -> dict[str, Any]:
-    """Build a 16-step linear ramp in absolute radian action space.
-
-    ``start_action`` / ``end_action`` are policy-unit vectors [16]:
-    arms in radian, grippers normalized.
-    """
-    start = np.asarray(start_action, dtype=np.float64).reshape(-1)
-    end = np.asarray(end_action, dtype=np.float64).reshape(-1)
-    if start.shape != (ACTION_DIM,) or end.shape != (ACTION_DIM,):
-        raise ValueError(
-            f"start/end must be shape ({ACTION_DIM},), got {start.shape} / {end.shape}"
-        )
-    if not np.isfinite(start).all() or not np.isfinite(end).all():
-        raise ValueError("start/end actions contain NaN or infinity")
-    if not np.isfinite(dt) or dt <= 0.0:
-        raise ValueError(f"dt must be finite and > 0, got {dt}")
-
-    alphas = np.linspace(0.0, 1.0, ARBITER_CHUNK_SIZE, dtype=np.float64)
-    actions = start[None, :] + alphas[:, None] * (end - start)[None, :]
-    return _actions_to_fields(actions, dt)
+    left_steps = actions[:, 0:ARM_DOF]
+    right_steps = actions[:, ARM_DOF : 2 * ARM_DOF]
+    left_grip = actions[:, 14].tolist()
+    right_grip = actions[:, 15].tolist()
+    return {
+        "chunk_size": ARBITER_CHUNK_SIZE,
+        "dt": float(dt),
+        "left_joints": left_steps.reshape(-1).tolist(),
+        "right_joints": right_steps.reshape(-1).tolist(),
+        "left_gripper": left_grip,
+        "right_gripper": right_grip,
+    }

@@ -13,9 +13,6 @@ control_arbiter:
     left_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     right_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     gripper_invert_on_driver: true
-    # Setpoint micro-ramp may lead feedback by up to ERR_MAX (0.15 rad).
-    # Keep this clearly above ERR_MAX so rebase does not erase intentional lead.
-    chunk_start_max_jump_rad: 0.3
     # takeover → one switch_sync; re-sync by sending takeover again.
     sync_auto_republish: false
     min_sync_hold_s: 2.0

@@ -2,18 +2,11 @@
 
 from __future__ import annotations
 
-import logging
-import time
 from typing import Any, Optional
 
 import numpy as np
 
-from remote_inference_async.dagger_chunk import (
-    policy_chunk_to_arbiter_fields,
-    setpoint_ramp_to_arbiter_fields,
-)
-
-LOGGER = logging.getLogger("tianji_dagger_publisher")
+from remote_inference_async.dagger_chunk import policy_chunk_to_arbiter_fields
 
 
 class DaggerPolicyPublisher:
@@ -31,10 +24,6 @@ class DaggerPolicyPublisher:
         self.node_name = node_name
         self._node = None
         self._pub = None
-        self._msg_cls = None
-        self._publish_count = 0
-        self._last_publish_mono: Optional[float] = None
-        self._last_stamp_sec: Optional[float] = None
 
     def start(self) -> None:
         import rclpy
@@ -52,19 +41,18 @@ class DaggerPolicyPublisher:
         self._pub = self._node.create_publisher(PolicyActionChunk, self.topic, qos)
         self._msg_cls = PolicyActionChunk
 
-    def _publish_fields(
+    def publish_policy_actions(
         self,
-        fields: dict[str, Any],
+        policy_actions: np.ndarray,
         *,
-        mode: str,
+        dt: float,
         policy_version: Optional[str] = None,
-        observation_sequence: Optional[int] = None,
     ) -> dict[str, Any]:
-        if self._pub is None or self._node is None or self._msg_cls is None:
+        if self._pub is None or self._node is None:
             raise RuntimeError("DaggerPolicyPublisher.start() was not called")
+        fields = policy_chunk_to_arbiter_fields(policy_actions, dt=dt)
         msg = self._msg_cls()
-        stamp = self._node.get_clock().now()
-        msg.header.stamp = stamp.to_msg()
+        msg.header.stamp = self._node.get_clock().now().to_msg()
         msg.policy_version = policy_version or self.policy_version
         msg.chunk_size = int(fields["chunk_size"])
         msg.dt = float(fields["dt"])
@@ -73,71 +61,7 @@ class DaggerPolicyPublisher:
         msg.left_gripper = fields["left_gripper"]
         msg.right_gripper = fields["right_gripper"]
         self._pub.publish(msg)
-
-        now_mono = time.monotonic()
-        stamp_sec = float(stamp.nanoseconds) * 1e-9
-        interval_ms = (
-            None
-            if self._last_publish_mono is None
-            else (now_mono - self._last_publish_mono) * 1000.0
-        )
-        self._publish_count += 1
-        self._last_publish_mono = now_mono
-        self._last_stamp_sec = stamp_sec
-        out = {
-            **fields,
-            "publish_mode": mode,
-            "header_stamp_sec": stamp_sec,
-            "publish_interval_ms": interval_ms,
-            "publish_count": self._publish_count,
-            "observation_sequence": observation_sequence,
-        }
-        LOGGER.info(
-            "policy_action mode=%s count=%d steps=%d dt=%.5f stamp=%.3f "
-            "interval_ms=%s obs_seq=%s",
-            mode,
-            self._publish_count,
-            out["chunk_size"],
-            out["dt"],
-            stamp_sec,
-            f"{interval_ms:.1f}" if interval_ms is not None else "n/a",
-            observation_sequence if observation_sequence is not None else "n/a",
-        )
-        return out
-
-    def publish_policy_actions(
-        self,
-        policy_actions: np.ndarray,
-        *,
-        dt: float,
-        policy_version: Optional[str] = None,
-        mode: str = "raw",
-        observation_sequence: Optional[int] = None,
-    ) -> dict[str, Any]:
-        fields = policy_chunk_to_arbiter_fields(policy_actions, dt=dt)
-        return self._publish_fields(
-            fields,
-            mode=mode,
-            policy_version=policy_version,
-            observation_sequence=observation_sequence,
-        )
-
-    def publish_setpoint_ramp(
-        self,
-        start_action: np.ndarray,
-        end_action: np.ndarray,
-        *,
-        dt: float,
-        policy_version: Optional[str] = None,
-        observation_sequence: Optional[int] = None,
-    ) -> dict[str, Any]:
-        fields = setpoint_ramp_to_arbiter_fields(start_action, end_action, dt=dt)
-        return self._publish_fields(
-            fields,
-            mode="setpoint",
-            policy_version=policy_version,
-            observation_sequence=observation_sequence,
-        )
+        return fields
 
     def spin_once(self, timeout_sec: float = 0.0) -> None:
         if self._node is None:

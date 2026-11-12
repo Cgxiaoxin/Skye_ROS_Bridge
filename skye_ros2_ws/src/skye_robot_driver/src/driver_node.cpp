@@ -131,10 +131,6 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       declare_parameter<std::string>("control_mode", "imp_joint");
   const auto cmd_cycle_time_ms = declare_parameter<int>("cmd_cycle_time_ms", 4);
   max_delta_per_cycle_ = declare_parameter<double>("max_delta_per_cycle", 0.25);
-  // Abs/policy path: default to the teleop value for backward compatibility
-  // when the new key is omitted from yaml.
-  max_delta_abs_per_cycle_ = declare_parameter<double>(
-      "max_delta_abs_per_cycle", max_delta_per_cycle_);
   command_timeout_s_ = declare_parameter<double>("command_timeout_s", 0.50);
   teleop_seed_ramp_frames_ =
       declare_parameter<int>("teleop_seed_ramp_frames", 8);
@@ -278,11 +274,6 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   if (!std::isfinite(max_delta_per_cycle_) || max_delta_per_cycle_ <= 0.0) {
     throw std::invalid_argument(
         "max_delta_per_cycle must be finite and greater than zero");
-  }
-  if (!std::isfinite(max_delta_abs_per_cycle_) ||
-      max_delta_abs_per_cycle_ <= 0.0) {
-    throw std::invalid_argument(
-        "max_delta_abs_per_cycle must be finite and greater than zero");
   }
   if (!std::isfinite(command_timeout_s_) || command_timeout_s_ <= 0.0) {
     throw std::invalid_argument(
@@ -1048,8 +1039,7 @@ void DriverNode::handle_absolute_command(
         get_logger(), *get_clock(), 1000,
         "%s absolute command clamped to joint limits", arm_name);
   }
-  mapped = DriverCore::limit_delta(
-      mapped, *last_command, max_delta_abs_per_cycle_);
+  mapped = DriverCore::limit_delta(mapped, *last_command, max_delta_per_cycle_);
   mapped = DriverCore::clamp_to_limits(mapped, minimum, maximum);
 
   if (!core_.send_position(arm, mapped)) {

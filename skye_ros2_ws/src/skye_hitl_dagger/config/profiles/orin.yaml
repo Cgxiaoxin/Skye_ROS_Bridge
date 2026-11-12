@@ -12,7 +12,5 @@ control_arbiter:
     left_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     right_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     gripper_invert_on_driver: true
-    # See thor.yaml: above client ERR_MAX (0.15 rad) so setpoint lead is kept.
-    chunk_start_max_jump_rad: 0.3
     sync_auto_republish: false
     min_sync_hold_s: 2.0
