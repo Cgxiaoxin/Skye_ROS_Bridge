@@ -8,7 +8,10 @@ from typing import Any, Optional
 
 import numpy as np
 
-from remote_inference_async.dagger_chunk import policy_chunk_to_arbiter_fields
+from remote_inference_async.dagger_chunk import (
+    policy_chunk_to_arbiter_fields,
+    setpoint_ramp_to_arbiter_fields,
+)
 
 LOGGER = logging.getLogger("tianji_dagger_publisher")
 
@@ -49,18 +52,16 @@ class DaggerPolicyPublisher:
         self._pub = self._node.create_publisher(PolicyActionChunk, self.topic, qos)
         self._msg_cls = PolicyActionChunk
 
-    def publish_policy_actions(
+    def _publish_fields(
         self,
-        policy_actions: np.ndarray,
+        fields: dict[str, Any],
         *,
-        dt: float,
+        mode: str,
         policy_version: Optional[str] = None,
-        mode: str = "raw",
         observation_sequence: Optional[int] = None,
     ) -> dict[str, Any]:
         if self._pub is None or self._node is None or self._msg_cls is None:
             raise RuntimeError("DaggerPolicyPublisher.start() was not called")
-        fields = policy_chunk_to_arbiter_fields(policy_actions, dt=dt)
         msg = self._msg_cls()
         stamp = self._node.get_clock().now()
         msg.header.stamp = stamp.to_msg()
@@ -83,7 +84,7 @@ class DaggerPolicyPublisher:
         self._publish_count += 1
         self._last_publish_mono = now_mono
         self._last_stamp_sec = stamp_sec
-        fields = {
+        out = {
             **fields,
             "publish_mode": mode,
             "header_stamp_sec": stamp_sec,
@@ -96,13 +97,47 @@ class DaggerPolicyPublisher:
             "interval_ms=%s obs_seq=%s",
             mode,
             self._publish_count,
-            fields["chunk_size"],
-            fields["dt"],
+            out["chunk_size"],
+            out["dt"],
             stamp_sec,
             f"{interval_ms:.1f}" if interval_ms is not None else "n/a",
             observation_sequence if observation_sequence is not None else "n/a",
         )
-        return fields
+        return out
+
+    def publish_policy_actions(
+        self,
+        policy_actions: np.ndarray,
+        *,
+        dt: float,
+        policy_version: Optional[str] = None,
+        mode: str = "raw",
+        observation_sequence: Optional[int] = None,
+    ) -> dict[str, Any]:
+        fields = policy_chunk_to_arbiter_fields(policy_actions, dt=dt)
+        return self._publish_fields(
+            fields,
+            mode=mode,
+            policy_version=policy_version,
+            observation_sequence=observation_sequence,
+        )
+
+    def publish_setpoint_ramp(
+        self,
+        start_action: np.ndarray,
+        end_action: np.ndarray,
+        *,
+        dt: float,
+        policy_version: Optional[str] = None,
+        observation_sequence: Optional[int] = None,
+    ) -> dict[str, Any]:
+        fields = setpoint_ramp_to_arbiter_fields(start_action, end_action, dt=dt)
+        return self._publish_fields(
+            fields,
+            mode="setpoint",
+            policy_version=policy_version,
+            observation_sequence=observation_sequence,
+        )
 
     def spin_once(self, timeout_sec: float = 0.0) -> None:
         if self._node is None:

@@ -8,7 +8,11 @@ import pytest
 from remote_inference_async.dagger_chunk import (
     ARBITER_CHUNK_SIZE,
     policy_chunk_to_arbiter_fields,
+    setpoint_dt,
+    setpoint_ramp_to_arbiter_fields,
 )
+from remote_inference_async.dagger_setpoint import ErrMaxGuard
+
 
 
 def test_policy_chunk_to_arbiter_fields_layout():
@@ -57,3 +61,40 @@ def test_rejects_bad_shapes():
         policy_chunk_to_arbiter_fields(np.zeros((0, 16)), dt=0.05)
     with pytest.raises(ValueError):
         policy_chunk_to_arbiter_fields(np.zeros((16, 16)), dt=0.0)
+
+
+def test_setpoint_dt_spans_one_action_period():
+    dt = setpoint_dt(30.0)
+    assert dt == pytest.approx(1.0 / (30.0 * 16))
+    assert dt * ARBITER_CHUNK_SIZE == pytest.approx(1.0 / 30.0)
+
+
+def test_setpoint_ramp_linear_in_joint_and_gripper():
+    start = np.zeros(16, dtype=np.float64)
+    end = np.zeros(16, dtype=np.float64)
+    end[0] = 0.16  # left J1
+    end[14] = 0.8  # left gripper
+    dt = setpoint_dt(30.0)
+    fields = setpoint_ramp_to_arbiter_fields(start, end, dt=dt)
+    assert fields["chunk_size"] == 16
+    assert fields["dt"] == pytest.approx(dt)
+    assert fields["left_joints"][0] == pytest.approx(0.0)
+    assert fields["left_joints"][15 * 7] == pytest.approx(0.16)
+    assert fields["left_joints"][8 * 7] == pytest.approx(0.16 * 8 / 15)
+    assert fields["left_gripper"][0] == pytest.approx(0.0)
+    assert fields["left_gripper"][-1] == pytest.approx(0.8)
+
+
+def test_err_max_guard_holds_when_command_leads_feedback():
+    guard = ErrMaxGuard(err_max_rad=0.15, sustained_s=0.5)
+    last_cmd = np.zeros(16, dtype=np.float64)
+    feedback = np.zeros(16, dtype=np.float64)
+    # 10 deg ≈ 0.1745 rad > 0.15
+    last_cmd[0] = 10.0
+    decision = guard.evaluate(last_cmd, feedback, now=1000.0)
+    assert decision.hold is True
+    assert decision.err_rad == pytest.approx(np.deg2rad(10.0))
+    assert decision.trip_count == 1
+    sustained = guard.evaluate(last_cmd, feedback, now=1000.6)
+    assert sustained.hold is True
+    assert sustained.sustained is True

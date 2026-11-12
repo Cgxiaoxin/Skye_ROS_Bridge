@@ -11,6 +11,9 @@ inference_server_port="${INFERENCE_PORT:-5568}"
 server_endpoint="tcp://${inference_server_ip}:${inference_server_port}"
 joint_states_topic="${JOINT_STATES_TOPIC:-/gento/joint_states}"
 dagger_policy_version="${DAGGER_POLICY_VERSION:-unijepa}"
+dagger_publish_mode="${DAGGER_PUBLISH_MODE:-setpoint}"
+dagger_err_max_rad="${DAGGER_ERR_MAX_RAD:-0.15}"
+dagger_err_max_sustained_s="${DAGGER_ERR_MAX_SUSTAINED_S:-0.5}"
 controller_ip="${CONTROLLER_IP:-0.0.0.0}"
 
 ros_setup="${ROS_SETUP:-/opt/kernelmind/apex/install/setup.bash}"
@@ -40,6 +43,13 @@ case "${action_aggregate}" in
     weighted_average|latest|average|conservative) ;;
     *)
         echo "[ERROR] ACTION_AGGREGATE invalid: ${action_aggregate}" >&2
+        exit 2
+        ;;
+esac
+case "${dagger_publish_mode}" in
+    raw|setpoint) ;;
+    *)
+        echo "[ERROR] DAGGER_PUBLISH_MODE must be raw|setpoint, got: ${dagger_publish_mode}" >&2
         exit 2
         ;;
 esac
@@ -94,6 +104,9 @@ client_args=(
     --dagger-mode
     --joint-states-topic "${joint_states_topic}"
     --dagger-policy-version "${dagger_policy_version}"
+    --dagger-publish-mode "${dagger_publish_mode}"
+    --dagger-err-max-rad "${dagger_err_max_rad}"
+    --dagger-err-max-sustained-s "${dagger_err_max_sustained_s}"
     --camera-source ros2
     --ros-camera "head_color=${head_topic}"
     --ros-camera "wrist_left=${left_wrist_topic}"
@@ -147,6 +160,7 @@ fi
 
 echo "[INFO] DAGGER mode: DOMAIN=${ROS_DOMAIN_ID} server=${server_endpoint}"
 echo "[INFO] joint_states=${joint_states_topic} → /skye/policy_action (no Gento SDK)"
+echo "[INFO] publish_mode=${dagger_publish_mode} err_max_rad=${dagger_err_max_rad}"
 echo "[INFO] model=${model_action_hz}Hz execution=${action_hz}Hz obs<=${observation_hz}Hz"
 
 exec "${python_bin}" -m remote_inference_async.async_robot_client "${client_args[@]}"

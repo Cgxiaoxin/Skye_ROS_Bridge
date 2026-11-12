@@ -15,6 +15,9 @@ export INFERENCE_HOST="${INFERENCE_HOST:-192.168.201.253}"
 # CRITICAL: do not stream to Gento when HITL arbiter owns the arm.
 export DAGGER_MODE=1
 export DISABLE_CONTROLLER_STREAM=1
+# raw = baseline / rollback; setpoint = last_cmd→slewed micro-ramp (default).
+export DAGGER_PUBLISH_MODE="${DAGGER_PUBLISH_MODE:-setpoint}"
+export DAGGER_ERR_MAX_RAD="${DAGGER_ERR_MAX_RAD:-0.15}"
 unset CONTROLLER_IP
 
 export ACTION_HISTORY_HORIZON="${ACTION_HISTORY_HORIZON:-30}"

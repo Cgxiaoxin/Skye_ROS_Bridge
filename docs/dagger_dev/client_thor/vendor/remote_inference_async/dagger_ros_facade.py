@@ -10,7 +10,12 @@ import numpy as np
 
 
 class NullGripper:
-    """Satisfies gripper calls used by async_robot_client in dagger mode."""
+    """Satisfies gripper calls used by async_robot_client in dagger mode.
+
+    Observations are zeros (OOD for the policy). ``diagnostics`` matches the
+    DualGentoDmGripper key shape so the control loop does not KeyError; real
+    feedback arrives in P0-c via RosGripperFeedback.
+    """
 
     def wait_for_feedback(self, *_args, **_kwargs) -> dict[int, float]:
         return {0: 0.0, 1: 0.0}
@@ -19,7 +24,16 @@ class NullGripper:
         return np.zeros(2, dtype=np.float32)
 
     def diagnostics(self) -> dict:
-        return {"backend": "dagger_null_gripper"}
+        empty = {
+            "contact_latched": False,
+            "feedback_normalized": 0.0,
+            "command_normalized": 0.0,
+        }
+        return {
+            "backend": "dagger_null_gripper",
+            "left": dict(empty),
+            "right": dict(empty),
+        }
 
     def command(self, *_args, **_kwargs) -> None:
         return None

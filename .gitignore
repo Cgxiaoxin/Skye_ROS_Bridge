@@ -57,6 +57,8 @@ docs/dagger_dev/client_thor/vendor/**
 !docs/dagger_dev/client_thor/vendor/remote_inference_async/dagger_*.py
 !docs/dagger_dev/client_thor/vendor/remote_inference_async/test_dagger_*.py
 !docs/dagger_dev/client_thor/vendor/remote_inference_async/run_robot_dagger.sh
+# Wiring for DAgger publish modes (rest of UniJEPA client stays local).
+!docs/dagger_dev/client_thor/vendor/remote_inference_async/async_robot_client.py
 docs/dagger_dev/server5090/deploy/
 
 # 本机主臂 FTDI 绑定（bind_leader_arms.py）
