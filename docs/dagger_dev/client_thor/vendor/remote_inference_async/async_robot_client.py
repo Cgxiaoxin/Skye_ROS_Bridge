@@ -1117,7 +1117,7 @@ def main() -> int:
         from remote_inference_async.dagger_publisher import DaggerPolicyPublisher
         from remote_inference_async.dagger_ros_facade import (
             DaggerRosRobotFacade,
-            NullGripper,
+            RosGripperFeedback,
         )
         from remote_inference_async.dagger_setpoint import (
             ErrMaxGuard,
@@ -1402,8 +1402,14 @@ def main() -> int:
                 args.joint_states_topic,
                 robot.get_robot_type(),
             )
-            gripper = NullGripper()
-            ready_gripper = gripper.wait_for_feedback()
+            # Policy loop treats >200ms gripper age as stale (skip infer / hold).
+            args.gripper_feedback_max_age = min(
+                float(args.gripper_feedback_max_age), 0.2
+            )
+            gripper = RosGripperFeedback(warn_age_s=0.05)
+            ready_gripper = gripper.start(
+                timeout_s=max(5.0, float(args.gripper_feedback_timeout))
+            )
         else:
             ret = robot.link(*ip, log_level=FXLogMask.FX_LOG_INFO_FLAG)
             if not robot._connected:
@@ -1745,12 +1751,26 @@ def main() -> int:
             # The resulting snapshot is therefore s(t) with actions ending at
             # a(t-1), matching the training dataset's [idx-K, idx) history.
             if pending_history_command is not None:
-                cycle_rt = robot.get_rt_dict()
-                cycle_state = state_from_rt(
-                    cycle_rt,
-                    gripper.state(args.gripper_feedback_max_age, enabled_arms),
-                    enabled_arms,
-                )
+                try:
+                    cycle_rt = robot.get_rt_dict()
+                    cycle_state = state_from_rt(
+                        cycle_rt,
+                        gripper.state(args.gripper_feedback_max_age, enabled_arms),
+                        enabled_arms,
+                    )
+                except RuntimeError as exc:
+                    if args.dagger_mode and "gripper" in str(exc).lower():
+                        # >200ms gripper age: hold last command, skip this tick's
+                        # history advance / new inference.
+                        LOGGER.warning(
+                            "gripper feedback stale; holding last_sent_action "
+                            "and skipping policy request: %s",
+                            exc,
+                        )
+                        pending_history_command = None
+                        must_go = False
+                        continue
+                    raise
                 action_history.append_robot_command(pending_history_command)
                 pending_history_command = None
                 latest_observation_rt = cycle_rt
