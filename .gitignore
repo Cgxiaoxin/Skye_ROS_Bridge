@@ -52,6 +52,11 @@ __pycache__/
 # UniJEPA 现场 vendor / 5090 deploy（本地解压，勿 push）
 docs/dagger_dev/client_thor/vendor/**
 !docs/dagger_dev/client_thor/vendor/.gitkeep
+# Track DAgger overlay modules only (not the full UniJEPA client tree).
+!docs/dagger_dev/client_thor/vendor/remote_inference_async/
+!docs/dagger_dev/client_thor/vendor/remote_inference_async/dagger_*.py
+!docs/dagger_dev/client_thor/vendor/remote_inference_async/test_dagger_*.py
+!docs/dagger_dev/client_thor/vendor/remote_inference_async/run_robot_dagger.sh
 docs/dagger_dev/server5090/deploy/
 
 # 本机主臂 FTDI 绑定（bind_leader_arms.py）

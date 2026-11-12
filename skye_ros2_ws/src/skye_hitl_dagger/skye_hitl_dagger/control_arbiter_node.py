@@ -134,6 +134,14 @@ class ControlArbiterNode(Node):
         self._chunk_fallback_warned = False
         self._hold_tail_warned = False
         self._joint_feedback: Optional[dict] = None
+        # Baseline diagnostics for DAgger motion (raw vs setpoint).
+        self._chunk_receive_count = 0
+        self._rebase_count = 0
+        self._last_chunk_receive_mono: Optional[float] = None
+        self._hold_tail_active = False
+        self._hold_tail_started_mono: Optional[float] = None
+        self._hold_tail_total_s = 0.0
+        self._stats_last_log_mono = time.monotonic()
         self._feedback_received_at: Optional[float] = None
         self._abs_hold_after_teleop_request = False
         self._hold_ack_pending = False
@@ -251,6 +259,8 @@ class ControlArbiterNode(Node):
         t0 = stamp if fresh_by_stamp else self._now_seconds()
         left_joints = list(msg.left_joints)
         right_joints = list(msg.right_joints)
+        rebased = False
+        jump = 0.0
         if self._feedback_is_recent() and self._joint_feedback is not None:
             jump = max_step0_jump_rad(
                 left_joints, right_joints,
@@ -260,21 +270,44 @@ class ControlArbiterNode(Node):
                     left_joints, self._joint_feedback["left"], msg.chunk_size)
                 right_joints = rebase_arm_joints_to_pose(
                     right_joints, self._joint_feedback["right"], msg.chunk_size)
+                rebased = True
+                self._rebase_count += 1
                 self.get_logger().warning(
                     f"policy chunk step0 jump {jump:.3f} rad > "
                     f"{self._chunk_start_max_jump:.3f}; rebased to current "
-                    "follower pose to avoid discontinuity")
+                    f"follower pose (rebase_count={self._rebase_count})")
         if not self._player.load(
                 msg.chunk_size, msg.dt, t0, left_joints, right_joints,
                 msg.left_gripper, msg.right_gripper):
             self.get_logger().error("rejecting invalid policy action chunk")
             return
+        now_wall = self._now_seconds()
+        interval_ms = (
+            None
+            if self._last_chunk_receive_mono is None
+            else (received_at - self._last_chunk_receive_mono) * 1000.0)
+        self._last_chunk_receive_mono = received_at
+        self._chunk_receive_count += 1
+        self.get_logger().info(
+            f"policy_chunk recv#{self._chunk_receive_count} "
+            f"stamp={stamp:.3f} t0={t0:.3f} now={now_wall:.3f} "
+            f"stamp_age_ms={(now_wall - stamp) * 1000.0:.1f} "
+            f"dt={float(msg.dt):.5f} steps={int(msg.chunk_size)} "
+            f"interval_ms="
+            f"{'n/a' if interval_ms is None else f'{interval_ms:.1f}'} "
+            f"step0_jump={jump:.3f} rebased={int(rebased)}")
         self._return_time = None
         self._return_wall_time = None
         self._chunk_fallback_warned = False
         self._hold_tail_warned = False
         self._hold_target = None
         self._policy_version = msg.policy_version
+        # Fresh chunk resumes motion; close any open hold-tail interval.
+        if self._hold_tail_active and self._hold_tail_started_mono is not None:
+            self._hold_tail_total_s += (
+                received_at - self._hold_tail_started_mono)
+            self._hold_tail_active = False
+            self._hold_tail_started_mono = None
 
     def _intervention_callback(self, msg: String) -> None:
         if msg.data == "takeover" and self._logic.request_takeover():
@@ -572,16 +605,39 @@ class ControlArbiterNode(Node):
         if sampled is not None:
             self._last_target = sampled
             self._publish_policy_abs(sampled["left"], sampled["right"])
+            now_mono = time.monotonic()
             if sampled["holding_tail"]:
+                if not self._hold_tail_active:
+                    self._hold_tail_active = True
+                    self._hold_tail_started_mono = now_mono
                 if not self._hold_tail_warned:
                     self.get_logger().warning(
                         "policy chunk ended; holding final joint target")
                     self._hold_tail_warned = True
             else:
+                if self._hold_tail_active and self._hold_tail_started_mono is not None:
+                    self._hold_tail_total_s += (
+                        now_mono - self._hold_tail_started_mono)
+                    self._hold_tail_active = False
+                    self._hold_tail_started_mono = None
                 self._hold_tail_warned = False
         elif self._last_target is not None:
             self._publish_policy_abs(
                 self._last_target["left"], self._last_target["right"])
+        self._maybe_log_motion_stats()
+
+    def _maybe_log_motion_stats(self) -> None:
+        now_mono = time.monotonic()
+        if now_mono - self._stats_last_log_mono < 2.0:
+            return
+        hold_s = self._hold_tail_total_s
+        if self._hold_tail_active and self._hold_tail_started_mono is not None:
+            hold_s += now_mono - self._hold_tail_started_mono
+        self.get_logger().info(
+            f"dagger_stats chunks={self._chunk_receive_count} "
+            f"rebase={self._rebase_count} hold_tail_s={hold_s:.3f} "
+            f"mode={self._logic.mode().name}")
+        self._stats_last_log_mono = now_mono
 
     def _gripper_timer_callback(self) -> None:
         if not self._logic.should_publish_policy_abs():
