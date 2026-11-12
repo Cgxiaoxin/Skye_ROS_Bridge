@@ -92,7 +92,8 @@ class DriverNode : public rclcpp::Node {
   JointArray left_maximum_{};
   JointArray right_minimum_{};
   JointArray right_maximum_{};
-  double max_delta_per_cycle_{0.05};
+  double max_delta_per_cycle_{0.05};       // relative / teleop path
+  double max_delta_abs_per_cycle_{0.05};   // absolute / policy path
   double command_timeout_s_{0.20};
   // After relative seed, temporarily widen max_delta for N frames to avoid
   // first-frame clamp bounce (clutch engagement feel).
