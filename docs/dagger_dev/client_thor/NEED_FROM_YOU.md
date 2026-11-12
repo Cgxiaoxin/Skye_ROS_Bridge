@@ -22,8 +22,16 @@
 export ROS_DOMAIN_ID=20
 cd docs/dagger_dev/client_thor
 bash ensure_cameras.sh   # 或 SKIP_CAMERAS=1 若相机已起
+
+# 基线对照（改动前/回滚）：
+# DAGGER_PUBLISH_MODE=raw bash run_client_dagger.sh
+
+# 默认 setpoint 微窗（P0-a）：
 bash run_client_dagger.sh
 ```
+
+`DAGGER_PUBLISH_MODE=raw|setpoint`（默认 setpoint）；`DAGGER_ERR_MAX_RAD`（默认 0.15）。
+arbiter profile 已设 `chunk_start_max_jump_rad: 0.3`（需重新 source/launch）。
 
 ## 仍可能现场要对齐的
 
