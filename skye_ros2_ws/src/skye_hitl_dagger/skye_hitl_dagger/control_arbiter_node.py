@@ -55,9 +55,14 @@ class ControlArbiterNode(Node):
         self.declare_parameter("sync_auto_republish", False)
         self.declare_parameter("sync_backoff_s", DEFAULT_SYNC_BACKOFF_S)
         self.declare_parameter("sync_max_attempts", 3)
-        self.declare_parameter("chunk_start_max_jump_rad", 0.1)
+        # Align with client HARD_ARM_JUMP (~20°): rebase only on large step0
+        # discontinuities so normal 3°@30Hz slews from last_sent are not wiped.
+        self.declare_parameter("chunk_start_max_jump_rad", 0.35)
         self.declare_parameter("chunk_freshness_fallback_s", 2.0)
         self.declare_parameter("feedback_stale_s", 0.2)
+        # Policy abs publish rate (AUTONOMOUS only). Teleop relative path does
+        # not use this timer. Default 30 Hz matches ACTION_HZ / chunk dt.
+        self.declare_parameter("policy_abs_rate_hz", 30.0)
         self.declare_parameter("gripper_rate_hz", 100.0)
         self.declare_parameter("mode_publish_hz", 5.0)
         self.declare_parameter("return_mode_command", "switch_sync")
@@ -94,6 +99,8 @@ class ControlArbiterNode(Node):
             self.get_parameter("chunk_freshness_fallback_s").value)
         self._feedback_stale = float(
             self.get_parameter("feedback_stale_s").value)
+        policy_abs_rate = max(1.0, float(
+            self.get_parameter("policy_abs_rate_hz").value))
         gripper_rate = max(1.0, float(
             self.get_parameter("gripper_rate_hz").value))
         mode_rate = max(0.1, float(self.get_parameter("mode_publish_hz").value))
@@ -218,7 +225,8 @@ class ControlArbiterNode(Node):
                 lambda msg, s=side: self._sync_progress_callback(s, msg),
                 progress_qos)
 
-        self.create_timer(1.0 / 250.0, self._joint_timer_callback)
+        self.create_timer(
+            1.0 / policy_abs_rate, self._joint_timer_callback)
         self.create_timer(1.0 / gripper_rate, self._gripper_timer_callback)
         self.create_timer(0.05, self._sync_timer_callback)
         self.create_timer(1.0 / mode_rate, self._publish_mode)
