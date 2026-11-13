@@ -1167,7 +1167,7 @@ def main() -> int:
         from remote_inference_async.dagger_chunk import (
             ARBITER_CHUNK_SIZE,
             assert_policy_chunk_radians,
-            robot_command_deg_to_stream_chunk_rad,
+            robot_command_deg_to_hold_chunk_rad,
         )
         from remote_inference_async.dagger_home import run_dagger_slow_home
 
@@ -2136,14 +2136,12 @@ def main() -> int:
                         acceleration_limited_joints: list[int] = []
                         tracking_error_joints: list[int] = []
                         # Publish exactly one arm setpoint per action period.
-                        # Non-DAgger: slew from the preceding published setpoint.
-                        # DAgger: slew from measured joint_states so /skye/policy_action
-                        # step0 stays near follower feedback (arbiter rebase threshold
-                        # is ~0.1 rad). Grippers keep immediate target semantics.
+                        # Slew from the preceding published setpoint (same envelope
+                        # as direct UniJEPA JointImp). DAgger then hold-packs that
+                        # single setpoint for ChunkPlayer (no micro-dt ramp).
+                        # Grippers keep immediate target semantics.
                         command = shaped_action.copy()
-                        slew_reference = (
-                            current if args.dagger_mode else last_sent_action
-                        )
+                        slew_reference = last_sent_action
                         command_delta = (
                             np.asarray(shaped_action[enabled_joint_indices], dtype=np.float64)
                             - np.asarray(
@@ -2192,11 +2190,7 @@ def main() -> int:
                             acceleration_limited_joints=acceleration_limited_joints,
                             tracking_error_joints=tracking_error_joints,
                             interpolation_count=1,
-                            interpolation_start=(
-                                "joint_states_feedback"
-                                if args.dagger_mode
-                                else "last_sent_action"
-                            ),
+                            interpolation_start="last_sent_action",
                             max_setpoint_delta_deg=max_setpoint_delta_deg,
                             setpoint_step_scale=setpoint_step_scale,
                         )
@@ -2238,32 +2232,30 @@ def main() -> int:
                                 gripper=gripper.diagnostics(),
                             )
                         if args.dagger_mode and dagger_pub is not None:
-                            # Stream feedback→setpoint interp (not a far hold).
-                            # dt packs the 16-step chunk into one action period so
-                            # ChunkPlayer reaches the slew-limited target before
-                            # the next republish. Slow-home still uses hold chunks.
-                            stream = robot_command_deg_to_stream_chunk_rad(
-                                current, command, steps=ARBITER_CHUNK_SIZE
+                            # Plan A: one logical 30 Hz setpoint → hold×16 for
+                            # ChunkPlayer (fixed chunk_size=16). dt=1/action_hz
+                            # matches MODEL/ACTION timeline; no feedback→target
+                            # micro-ramp. Slow-home still uses hold chunks.
+                            hold = robot_command_deg_to_hold_chunk_rad(
+                                command, steps=ARBITER_CHUNK_SIZE
                             )
-                            pub_dt = 1.0 / (
-                                float(args.action_hz) * float(ARBITER_CHUNK_SIZE)
-                            )
+                            pub_dt = 1.0 / float(args.action_hz)
                             fields = dagger_pub.publish_policy_actions(
-                                stream,
+                                hold,
                                 dt=pub_dt,
                                 policy_version=args.dagger_policy_version,
                             )
-                            peak_rad = float(np.max(np.abs(stream[:, :14])))
+                            peak_rad = float(np.max(np.abs(hold[:, :14])))
                             step0_jump_deg = float(
                                 np.max(
                                     np.abs(
-                                        np.rad2deg(stream[0, :14])
+                                        np.rad2deg(hold[0, :14])
                                         - np.asarray(current[:14], dtype=np.float64)
                                     )
                                 )
                             )
                             LOGGER.info(
-                                "DAGGER published stream PolicyActionChunk "
+                                "DAGGER published hold PolicyActionChunk "
                                 "steps=%d dt=%.4f timestep=%d peak|q|_rad=%.3f "
                                 "(~%.1f deg) step0_jump=%.2f deg",
                                 fields["chunk_size"],
@@ -2279,9 +2271,9 @@ def main() -> int:
                                 dt=pub_dt,
                                 chunk_size=fields["chunk_size"],
                                 command=_right_vector_payload(command),
-                                stream_start=_right_vector_payload(current),
+                                feedback_state=_right_vector_payload(current),
                                 step0_jump_deg=step0_jump_deg,
-                                policy_actions_radian_16d=stream.tolist(),
+                                policy_actions_radian_16d=hold.tolist(),
                             )
                         last_sent_action = command.copy()
                         pending_history_command = last_sent_action.copy()

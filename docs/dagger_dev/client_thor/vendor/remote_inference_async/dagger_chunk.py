@@ -69,8 +69,10 @@ def robot_command_deg_to_hold_chunk_rad(
     Layout matches async client state/action vectors:
     [L7_deg, R7_deg, left_gripper, right_gripper].
 
-    Used by slow-home (tiny quintic steps). Policy streaming should prefer
-    robot_command_deg_to_stream_chunk_rad so step0 stays near feedback.
+    Used by slow-home (tiny quintic steps) and Plan A policy publish: one
+    slew-limited setpoint repeated for ChunkPlayer's fixed chunk_size=16.
+    Prefer this over robot_command_deg_to_stream_chunk_rad for policy (no
+    micro-dt ramp inside one action period).
     """
     if steps <= 0:
         raise ValueError(f"steps must be positive, got {steps}")
