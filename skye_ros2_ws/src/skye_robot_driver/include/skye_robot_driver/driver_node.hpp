@@ -92,10 +92,14 @@ class DriverNode : public rclcpp::Node {
   JointArray left_maximum_{};
   JointArray right_minimum_{};
   JointArray right_maximum_{};
-  double max_delta_per_cycle_{0.05};
+  // Per-path slew limits (rad per received command frame). Absolute (DAgger
+  // policy @ ~30 Hz) and relative (teleop @ ~250 Hz) are independent so raising
+  // policy headroom does not loosen teleop.
+  double max_delta_per_cycle_relative_{0.01};
+  double max_delta_per_cycle_abs_{0.09};
   double command_timeout_s_{0.20};
-  // After relative seed, temporarily widen max_delta for N frames to avoid
-  // first-frame clamp bounce (clutch engagement feel).
+  // After relative seed, temporarily widen relative max_delta for N frames to
+  // avoid first-frame clamp bounce (clutch engagement feel).
   int teleop_seed_ramp_frames_{8};
   double teleop_seed_ramp_max_delta_scale_{3.0};
   TeleopMappingMode teleop_mapping_mode_{TeleopMappingMode::kRelative};

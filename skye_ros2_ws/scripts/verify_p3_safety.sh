@@ -23,7 +23,8 @@ if ! ros2 node list 2>/dev/null | grep -q '/skye_robot_driver'; then
     -p connect_on_startup:=false \
     -p control_mode:=imp_joint \
     -p cmd_cycle_time_ms:=4 \
-    -p max_delta_per_cycle:=0.05 \
+    -p max_delta_per_cycle_relative:=0.05 \
+    -p max_delta_per_cycle_abs:=0.09 \
     -p command_timeout_s:=0.20 \
     -r /joint_states:=/gento/joint_states \
     -r /left_joint_control:=/gento/left_joint_control \
@@ -52,7 +53,8 @@ ros2 param get /skye_robot_driver control_mode | tee /tmp/skye_p3_mode.txt
 grep -qi 'imp_joint' /tmp/skye_p3_mode.txt
 ros2 param get /skye_robot_driver cmd_cycle_time_ms | tee /tmp/skye_p3_cycle.txt
 grep -E '4|Integer' /tmp/skye_p3_cycle.txt >/dev/null
-ros2 param get /skye_robot_driver max_delta_per_cycle | grep -q '0.05'
+ros2 param get /skye_robot_driver max_delta_per_cycle_relative | grep -q '0.05'
+ros2 param get /skye_robot_driver max_delta_per_cycle_abs | grep -q '0.09'
 ros2 param get /skye_robot_driver command_timeout_s | grep -q '0.2'
 ros2 param get /skye_robot_driver left_acceleration_ratio >/dev/null
 ros2 param get /skye_robot_driver right_acceleration_ratio >/dev/null
@@ -74,7 +76,9 @@ nm -C "$WS/install/skye_robot_driver/lib/skye_robot_driver/skye_robot_driver" \
   | head -30 || true
 
 # Grep source for required P3 behaviors (defense in depth for review).
-grep -q 'max_delta_per_cycle' \
+grep -q 'max_delta_per_cycle_relative' \
+  "$WS/src/skye_robot_driver/src/driver_node.cpp"
+grep -q 'max_delta_per_cycle_abs' \
   "$WS/src/skye_robot_driver/src/driver_node.cpp"
 grep -q 'clamp_to_limits' \
   "$WS/src/skye_robot_driver/src/driver_node.cpp"

@@ -135,7 +135,9 @@ ros2 service call /gento/set_motion_rates skye_robot_driver/srv/SetMotionRates \
 | `cmd_cycle_time_ms` | `4` | `SetPDCmdCycleTime` |
 | `impedance_stiffness/damping` | 100 / 10 | 关节阻抗 K/D |
 | `cartesian_stiffness/damping` | SDK 例程默认 | 笛卡尔阻抗 K/D |
-| `max_delta_per_cycle` | `0.25` | rad/周期 |
+| `max_delta_per_cycle_relative` | `0.01` | rad/命令帧（遥操 relative；≈0.01×250Hz≈143°/s） |
+| `max_delta_per_cycle_abs` | `0.09` | rad/命令帧（策略 absolute；≈0.09×30Hz≈155°/s） |
+| ~~`max_delta_per_cycle`~~ | — | **已废弃**；勿再用（曾为 abs+relative 共用） |
 | `teleop_mapping_mode` | `relative` | `relative`=增量遥操；`absolute`=旧绝对映射 |
 | `command_timeout_s` | `0.50` | 超时 hold（按臂独立，不拖死对侧） |
 | `left/right_joint_limits_*` | 见 yaml | 超限逐轴 clamp。J4 大臂 URDF `[-2.5307, 1.0472]`（−145°~+60°） |

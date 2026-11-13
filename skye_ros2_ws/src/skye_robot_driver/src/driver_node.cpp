@@ -130,7 +130,12 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   const auto control_mode_str =
       declare_parameter<std::string>("control_mode", "imp_joint");
   const auto cmd_cycle_time_ms = declare_parameter<int>("cmd_cycle_time_ms", 4);
-  max_delta_per_cycle_ = declare_parameter<double>("max_delta_per_cycle", 0.25);
+  // Legacy shared limit removed: do not declare max_delta_per_cycle. Use the
+  // path-specific params below (see skye_robot.yaml comments).
+  max_delta_per_cycle_relative_ =
+      declare_parameter<double>("max_delta_per_cycle_relative", 0.01);
+  max_delta_per_cycle_abs_ =
+      declare_parameter<double>("max_delta_per_cycle_abs", 0.09);
   command_timeout_s_ = declare_parameter<double>("command_timeout_s", 0.50);
   teleop_seed_ramp_frames_ =
       declare_parameter<int>("teleop_seed_ramp_frames", 8);
@@ -271,9 +276,15 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
     throw std::invalid_argument(
         "state_publish_hz must be finite and greater than zero");
   }
-  if (!std::isfinite(max_delta_per_cycle_) || max_delta_per_cycle_ <= 0.0) {
+  if (!std::isfinite(max_delta_per_cycle_relative_) ||
+      max_delta_per_cycle_relative_ <= 0.0) {
     throw std::invalid_argument(
-        "max_delta_per_cycle must be finite and greater than zero");
+        "max_delta_per_cycle_relative must be finite and greater than zero");
+  }
+  if (!std::isfinite(max_delta_per_cycle_abs_) ||
+      max_delta_per_cycle_abs_ <= 0.0) {
+    throw std::invalid_argument(
+        "max_delta_per_cycle_abs must be finite and greater than zero");
   }
   if (!std::isfinite(command_timeout_s_) || command_timeout_s_ <= 0.0) {
     throw std::invalid_argument(
@@ -942,9 +953,10 @@ void DriverNode::handle_command(
     }
   }
 
-  double delta_limit = max_delta_per_cycle_;
+  double delta_limit = max_delta_per_cycle_relative_;
   if (seed_ramp_remaining > 0) {
-    delta_limit = max_delta_per_cycle_ * teleop_seed_ramp_max_delta_scale_;
+    delta_limit =
+        max_delta_per_cycle_relative_ * teleop_seed_ramp_max_delta_scale_;
     --seed_ramp_remaining;
   }
   mapped = DriverCore::limit_delta(mapped, *last_command, delta_limit);
@@ -1039,7 +1051,8 @@ void DriverNode::handle_absolute_command(
         get_logger(), *get_clock(), 1000,
         "%s absolute command clamped to joint limits", arm_name);
   }
-  mapped = DriverCore::limit_delta(mapped, *last_command, max_delta_per_cycle_);
+  mapped = DriverCore::limit_delta(
+      mapped, *last_command, max_delta_per_cycle_abs_);
   mapped = DriverCore::clamp_to_limits(mapped, minimum, maximum);
 
   if (!core_.send_position(arm, mapped)) {
