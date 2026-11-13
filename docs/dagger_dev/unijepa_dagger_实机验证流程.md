@@ -99,9 +99,20 @@ scp -r docs/dagger_dev/server5090/deploy user@<5090>:<path>/
 | 5 | **5090** | `serve_unijepa_dagger.sh` / `deploy/serve_b_levjepa.sh`，口 **5568** | 在听 |
 | 6 | **Thor** | `cd docs/dagger_dev/client_thor && bash run_client_dagger.sh` | `DAGGER mode` / `published PolicyActionChunk`；**无** Gento link |
 
-单人调试也可把 1–4、6 全堆在 **Thor 一台**（见 phase1「单人调试」）；**仍然不是你的本地 vitai 笔记本开发环境**（除非那台就是 Thor）。
+单人调试也可把 1–4、6 全堆在 **Thor 一台**（见 phase1「单人调试」）。
 
-每个 **ROS 相关终端**（Thor / 笔记本）：
+**PC 扛 driver 的 workaround**（Thor SIGSEGV 时：driver + 小臂 + arbiter 都在能到 `6.6.7.191` 的 PC 上）可用一键脚本代替上面步骤 1–3：
+
+```bash
+cd /data/Skye_ROS_Bridge                 # 以该机实际路径为准
+./scripts/pc_dagger.sh thor              # Domain=20；日志 /tmp/skye_pc_dagger/
+./scripts/pc_dagger.sh --status
+./scripts/pc_dagger.sh --stop            # 收工停本机三件套
+```
+
+相机 / `run_client_dagger.sh` 仍在 **Thor**；5090 仍只跑 serve。
+
+每个 **ROS 相关终端**（若不用 `pc_dagger.sh`）：
 
 ```bash
 export ROBOT_PROFILE=thor
@@ -112,7 +123,7 @@ cd /data/coding/tianji/Skye_ROS_Bridge   # 以该机实际路径为准
 source skye_ros2_ws/install/setup.bash
 ```
 
-收工：6→4→3→2→1（先 `return` 再停小臂，见 HITL 文档 §3.4）。
+收工：6→4→3→2→1（先 `return` 再停小臂，见 HITL 文档 §3.4）；PC 一键栈用 `pc_dagger.sh --stop`。
 
 ---
 
