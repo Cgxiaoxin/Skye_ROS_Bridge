@@ -275,7 +275,7 @@ Phase 6  可选：ZMQ/HTTP gateway；数采加权；多机每台一套执行平�
 | 本文件 | **dev-Dagger SoT**：同构接入 + 三平面 + **§0.1 部署拓扑** |
 | [`../HITL_DAgger_集成方案.md`](../HITL_DAgger_集成方案.md) | 早期总方案（动机 / 需求）；实现细节以现网 + 本文件为准 |
 | [`../superpowers/specs/2026-08-21-hitl-dagger-control-arbiter-design.md`](../superpowers/specs/2026-08-21-hitl-dagger-control-arbiter-design.md) | arbiter 已定稿设计 |
-| [`../superpowers/plans/2026-09-20-hitl-abs-split-takeover.md`](../superpowers/plans/2026-09-20-hitl-abs-split-takeover.md) | abs + 拆分接管（代码侧多已落地） |
+| [`../archive/superpowers/plans/2026-09-20-hitl-abs-split-takeover.md`](../archive/superpowers/plans/2026-09-20-hitl-abs-split-takeover.md) | abs + 拆分接管（代码侧多已落地；已归档） |
 | [`../Hint_Dagger启动使用说明.md`](../Hint_Dagger启动使用说明.md) | 现场启停（待改为同构路径 + 正式拓扑） |
 | [`../../skye_ros2_ws/src/skye_factr_teleop/dev_docs/checklist/phase7_5_dual_follower_sync_teleop_checklist.md`](../../skye_ros2_ws/src/skye_factr_teleop/dev_docs/checklist/phase7_5_dual_follower_sync_teleop_checklist.md) | 纯遥操验收基线 |
 
@@ -285,7 +285,7 @@ Phase 6  可选：ZMQ/HTTP gateway；数采加权；多机每台一套执行平�
 
 **契约与拓扑已按 §0.1 写死。下一步仍优先 Phase 1 图正确，但文档/脚本命名上就要区分「调试本机 driver」与「正式开发机 driver」，避免 Phase 4 才第一次改习惯。**
 
-1. **写 Phase 1 实施计划**（建议：`docs/superpowers/plans/2026-10-29-hitl-isomorphic-teleop-arbiter.md`）  
+1. **写 Phase 1 实施计划**（已归档：`docs/archive/superpowers/plans/2026-10-29-hitl-isomorphic-teleop-arbiter.md`）  
    - HITL launch 落点、remap 表、arbiter 参数来源  
    - 启动说明两栏：正式（Thor/Orin driver）/ 调试（本机 driver）  
    - `/teleop/state` 握手测试；纯遥操回归条目  
