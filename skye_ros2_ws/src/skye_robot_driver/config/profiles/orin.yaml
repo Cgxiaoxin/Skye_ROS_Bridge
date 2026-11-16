@@ -6,6 +6,8 @@ skye_robot_driver:
     right_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0]
     gripper_left_type: "robotiq"
     gripper_right_type: "robotiq"
+    # Robotiq RS485/Modbus：控制降到 10 Hz；数采走 SDK 直读，不依赖本发布频率。
+    gripper_rate_hz: 10.0
     gripper_invert: true
     gripper_left_invert: true
     gripper_right_invert: true

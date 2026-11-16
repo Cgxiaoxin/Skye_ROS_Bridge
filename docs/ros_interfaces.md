@@ -144,7 +144,7 @@ ros2 service call /gento/set_motion_rates skye_robot_driver/srv/SetMotionRates \
 | `gripper_left_motor_id` / `gripper_right_motor_id` | `1` / `2` | 左 ARM0+ID1；右 ARM1+ID2 |
 | `gripper_invert` | `true` | FACTR 扳机 1=开/0=闭 → 电机 0=开/1=闭；state 同样反回去给 FACTR |
 | `gripper_close_limit` | `0.93` | 电机空间闭合上限，左右相同。FACTR 按下(0)经 invert 后不会发到 1.0 |
-| `gripper_rate_hz` | `50.0` | 夹爪控制/状态发布频率（高于 30Hz 数采） |
+| `gripper_rate_hz` | `50.0`（Thor）；Orin Robotiq overlay=`10.0` | 夹爪控制/状态发布同 timer；Orin 数采走 SDK 直读可不依赖该发布频率 |
 | `gripper_feedback_timeout_ms` | `1` | 运行时 `terminal_set/get` 超时；夹爪与关节分线程，但 SDK mutex 仍串行，必须短 |
 
 `*_joint_control_abs` 是策略/HITL 的绝对关节角入口；遥操继续使用原
