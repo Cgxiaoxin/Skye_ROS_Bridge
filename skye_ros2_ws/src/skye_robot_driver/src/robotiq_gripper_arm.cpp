@@ -6,6 +6,7 @@
 #include <sstream>
 #include <thread>
 
+#include "skye_robot_driver/gripper_common.hpp"
 #include "skye_robot_driver/modbus_rtu.hpp"
 
 namespace skye_robot_driver {
@@ -178,7 +179,8 @@ bool RobotiqGripperArm::write_pending() {
   bool force_reassert = false;
   {
     std::lock_guard<std::mutex> lock(target_mutex_);
-    norm = target_;
+    // Send slewed command, not the raw teleop goal.
+    norm = commanded_;
     dirty_ = false;
     force_reassert = force_reassert_;
     force_reassert_ = false;
@@ -278,8 +280,10 @@ bool RobotiqGripperArm::start(std::string *report) {
   {
     std::lock_guard<std::mutex> lock(target_mutex_);
     target_ = 0.0;
+    commanded_ = 0.0;
     dirty_ = true;
   }
+  have_tick_time_ = false;
   if (!write_pending()) {
     if (report != nullptr) {
       *report += " open_cmd=FAIL";
@@ -294,6 +298,11 @@ bool RobotiqGripperArm::start(std::string *report) {
   {
     std::lock_guard<std::mutex> lock(fb_mutex_);
     fb_ = parsed;
+  }
+  {
+    std::lock_guard<std::mutex> lock(target_mutex_);
+    commanded_ = parsed.position;
+    target_ = parsed.position;
   }
   started_ = true;
   return true;
@@ -310,6 +319,7 @@ void RobotiqGripperArm::stop() {
   force_reassert_ = false;
   hold_lag_ticks_ = 0;
   wrote_control_this_tick_ = false;
+  have_tick_time_ = false;
 }
 
 void RobotiqGripperArm::set_target(double norm) {
@@ -325,7 +335,8 @@ void RobotiqGripperArm::set_target(double norm) {
 
 double RobotiqGripperArm::target() const {
   std::lock_guard<std::mutex> lock(target_mutex_);
-  return target_;
+  // Applied / state echo: what we are commanding the hardware toward.
+  return commanded_;
 }
 
 void RobotiqGripperArm::tick_control() {
@@ -333,27 +344,54 @@ void RobotiqGripperArm::tick_control() {
   if (!started_) {
     return;
   }
+
+  const auto now = std::chrono::steady_clock::now();
+  double dt_s = 0.1;
+  if (have_tick_time_) {
+    dt_s = std::chrono::duration<double>(now - last_tick_time_).count();
+  }
+  have_tick_time_ = true;
+  last_tick_time_ = now;
+  // Clamp pathological gaps (pause / scheduling hiccup).
+  if (!(dt_s > 0.0) || !std::isfinite(dt_s)) {
+    dt_s = 0.1;
+  }
+  dt_s = std::min(dt_s, 0.25);
+
   bool should_write = false;
   {
     std::lock_guard<std::mutex> lock(target_mutex_);
-    should_write = dirty_;
+    const double goal = target_;
+    const double goal_mm = norm_to_mm(goal);
+    const double cmd_mm = norm_to_mm(commanded_);
+    const double max_step_mm = config_.max_slew_mm_s * dt_s;
+    const double next_mm = slew_toward(cmd_mm, goal_mm, max_step_mm);
+    const double next_cmd = mm_to_norm(next_mm);
+    const bool moved = std::abs(next_cmd - commanded_) > 1e-9;
+    commanded_ = next_cmd;
+    const bool still_slewing = std::abs(commanded_ - goal) > 1e-4;
+    should_write = dirty_ || moved || still_slewing;
+    if (still_slewing || moved) {
+      dirty_ = true;
+    }
   }
+
   if (!should_write) {
     // FACTR holds a constant close trigger → set_target is a no-op after the
     // first frame (dirty stays false). Robotiq also stops on object detect and
     // will not continue closing when the object is removed unless rGTO is
-    // reasserted. If feedback still lags the held target, periodically re-pulse.
-    double target = 0.0;
+    // reasserted. If feedback still lags the held goal, periodically re-pulse.
+    double goal = 0.0;
     GripperFeedback fb;
     {
       std::lock_guard<std::mutex> lock(target_mutex_);
-      target = target_;
+      goal = target_;
     }
     {
       std::lock_guard<std::mutex> lock(fb_mutex_);
       fb = fb_;
     }
-    if (fb.valid && std::abs(fb.position - target) > kResendGapNorm) {
+    if (fb.valid && std::abs(fb.position - goal) > kResendGapNorm) {
       ++hold_lag_ticks_;
       if (hold_lag_ticks_ >= kResendEveryTicks) {
         hold_lag_ticks_ = 0;

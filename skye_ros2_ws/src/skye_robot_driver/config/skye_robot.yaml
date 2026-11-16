@@ -90,6 +90,8 @@ skye_robot_driver:
     # 速度和力矩  speed 0-255 force 0-100
     gripper_robotiq_speed: 255
     gripper_robotiq_force: 40
+    # 命令开度限速（mm/s）；0=不限速直接跳目标。Orin 10Hz 遥操建议 >0 防顿挫。
+    gripper_robotiq_max_slew_mm_s: 0.0
     gripper_robotiq_pos_min_mm: 0.0
     # Orin 闭合开度以 profiles/orin.yaml 为准（实机：左 2 / 右 13）。
     gripper_left_robotiq_pos_min_mm: 2.0

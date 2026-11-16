@@ -103,7 +103,8 @@ void validate_robotiq_arm(const RobotiqGripperArm::Config &cfg) {
   if (cfg.slave_id <= 0 || cfg.slave_id > 247 ||
       cfg.pos_max_mm <= cfg.pos_min_mm || cfg.close_limit <= 0.0 ||
       cfg.close_limit > 1.0 || cfg.modbus_timeout_ms == 0 ||
-      (cfg.terminal != 0 && cfg.terminal != 1)) {
+      (cfg.terminal != 0 && cfg.terminal != 1) ||
+      !std::isfinite(cfg.max_slew_mm_s) || cfg.max_slew_mm_s < 0.0) {
     throw std::invalid_argument("invalid robotiq gripper params");
   }
 }
@@ -204,6 +205,8 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       "gripper_right_robotiq_pos_max_mm", robotiq_pos_max_mm);
   const auto robotiq_modbus_timeout_ms = static_cast<unsigned int>(
       declare_parameter<int>("gripper_robotiq_modbus_timeout_ms", 150));
+  const auto robotiq_max_slew_mm_s =
+      declare_parameter<double>("gripper_robotiq_max_slew_mm_s", 0.0);
 
   gripper_config.left.robotiq = {
       declare_parameter<int>("gripper_left_robotiq_slave_id", 9), robotiq_speed,
@@ -212,7 +215,7 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       parse_robotiq_485_channel(declare_parameter<std::string>(
           "gripper_left_robotiq_485_channel", "485A")),
       declare_parameter<int>("gripper_left_robotiq_terminal", 0),
-      robotiq_modbus_timeout_ms};
+      robotiq_modbus_timeout_ms, robotiq_max_slew_mm_s};
   gripper_config.right.robotiq = {
       declare_parameter<int>("gripper_right_robotiq_slave_id", 9), robotiq_speed,
       robotiq_force, right_robotiq_pos_min_mm, right_robotiq_pos_max_mm,
@@ -220,7 +223,7 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       parse_robotiq_485_channel(declare_parameter<std::string>(
           "gripper_right_robotiq_485_channel", "485A")),
       declare_parameter<int>("gripper_right_robotiq_terminal", 1),
-      robotiq_modbus_timeout_ms};
+      robotiq_modbus_timeout_ms, robotiq_max_slew_mm_s};
 
   left_joint_order_ = load_joint_order(*this, "left_joint_order", kDefaultOrder);
   right_joint_order_ =

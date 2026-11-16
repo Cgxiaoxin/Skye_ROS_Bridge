@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <mutex>
 #include <string>
 
@@ -21,6 +22,8 @@ class RobotiqGripperArm : public GripperArmBackend {
     FXChnType channel{FX_CHN_485A};
     int terminal{1};
     unsigned int modbus_timeout_ms{150};
+    // Soft rate limit on commanded opening (mm/s). 0 = snap to goal (legacy).
+    double max_slew_mm_s{0.0};
   };
 
   RobotiqGripperArm(
@@ -66,7 +69,8 @@ class RobotiqGripperArm : public GripperArmBackend {
   Config config_;
   bool started_{false};
   mutable std::mutex target_mutex_;
-  double target_{0.0};
+  double target_{0.0};       // teleop goal (motor norm)
+  double commanded_{0.0};    // slewed command sent to Hand-E
   bool dirty_{false};
   mutable std::mutex fb_mutex_;
   GripperFeedback fb_{};
@@ -79,5 +83,7 @@ class RobotiqGripperArm : public GripperArmBackend {
   // (Robotiq stops on object detect and will not resume until GoTo is reasserted).
   bool force_reassert_{false};
   int hold_lag_ticks_{0};
+  bool have_tick_time_{false};
+  std::chrono::steady_clock::time_point last_tick_time_{};
 };
 }  // namespace skye_robot_driver

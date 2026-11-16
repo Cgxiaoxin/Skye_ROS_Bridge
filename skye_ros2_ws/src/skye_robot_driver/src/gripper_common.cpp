@@ -1,6 +1,7 @@
 #include "skye_robot_driver/gripper_common.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cctype>
 
 namespace skye_robot_driver {
@@ -25,6 +26,20 @@ std::optional<GripperDriverType> parse_gripper_type(const std::string &value) {
     return GripperDriverType::kRobotiq;
   }
   return std::nullopt;
+}
+
+double slew_toward(double current, double target, double max_delta) {
+  if (!(max_delta > 0.0) || !std::isfinite(max_delta)) {
+    return target;
+  }
+  if (!std::isfinite(current) || !std::isfinite(target)) {
+    return target;
+  }
+  const double delta = target - current;
+  if (std::abs(delta) <= max_delta) {
+    return target;
+  }
+  return current + std::copysign(max_delta, delta);
 }
 
 }  // namespace skye_robot_driver

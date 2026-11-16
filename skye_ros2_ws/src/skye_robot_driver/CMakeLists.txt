@@ -85,6 +85,8 @@ if(BUILD_TESTING)
   ament_add_gtest(test_feedback_messages test/test_feedback_messages.cpp)
   target_link_libraries(test_feedback_messages skye_driver_core)
   ament_target_dependencies(test_feedback_messages rclcpp sensor_msgs geometry_msgs)
+  ament_add_gtest(test_gripper_slew test/test_gripper_slew.cpp)
+  target_link_libraries(test_gripper_slew skye_driver_core)
 endif()
 
 ament_export_dependencies(rosidl_default_runtime)

@@ -21,4 +21,8 @@ struct GripperFeedback {
 
 std::optional<GripperDriverType> parse_gripper_type(const std::string &value);
 
+// Move current toward target by at most max_delta. max_delta <= 0 snaps to target
+// (legacy / disabled rate limit).
+double slew_toward(double current, double target, double max_delta);
+
 }  // namespace skye_robot_driver
