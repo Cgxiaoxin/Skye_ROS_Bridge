@@ -5,7 +5,7 @@ skye_robot_driver:
     control_mode: "idle"
     connect_on_startup: false
     enable_gripper: false
-    state_publish_hz: 250.0
-    cmd_cycle_time_ms: 4
+    state_publish_hz: 125.0
+    cmd_cycle_time_ms: 8
     left_flange_frame_id: ""
     right_flange_frame_id: ""
