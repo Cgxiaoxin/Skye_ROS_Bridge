@@ -49,7 +49,7 @@ class ControlArbiterNode(Node):
         self.declare_parameter("chunk_start_max_jump_rad", 0.1)
         self.declare_parameter("chunk_freshness_fallback_s", 2.0)
         self.declare_parameter("feedback_stale_s", 0.2)
-        self.declare_parameter("gripper_rate_hz", 100.0)
+        self.declare_parameter("gripper_rate_hz", 50.0)
         self.declare_parameter("mode_publish_hz", 5.0)
         self.declare_parameter("return_mode_command", "switch_sync")
         self.declare_parameter("joint_states_topic", "/gento/joint_states")

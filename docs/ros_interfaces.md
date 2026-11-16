@@ -132,10 +132,10 @@ ros2 service call /gento/set_motion_rates skye_robot_driver/srv/SetMotionRates \
 |------|------|------|
 | `robot_profile` | `thor` | launch 参数 / 环境变量 `ROBOT_PROFILE`：`thor`（DM4310 夹爪）或 `orin`（Robotiq Hand-E + 右 J6/J7 signs）。叠加 `config/profiles/{profile}.yaml`；见 `docs/小臂大臂启动步骤.md` |
 | `control_mode` | `imp_joint` | 启动模式（idle/position/imp_joint/imp_cart/pd） |
-| `cmd_cycle_time_ms` | `4` | `SetPDCmdCycleTime` |
+| `cmd_cycle_time_ms` | `8` | `SetPDCmdCycleTime`（125 Hz） |
 | `impedance_stiffness/damping` | 100 / 10 | 关节阻抗 K/D |
 | `cartesian_stiffness/damping` | SDK 例程默认 | 笛卡尔阻抗 K/D |
-| `max_delta_per_cycle` | `0.25` | rad/周期 |
+| `max_delta_per_cycle` | `0.02` | rad/命令帧（yaml 默认；代码 declare 默认仍为 0.25） |
 | `teleop_mapping_mode` | `relative` | `relative`=增量遥操；`absolute`=旧绝对映射 |
 | `command_timeout_s` | `0.50` | 超时 hold（按臂独立，不拖死对侧） |
 | `left/right_joint_limits_*` | 见 yaml | 超限逐轴 clamp。J4 大臂 URDF `[-2.5307, 1.0472]`（−145°~+60°） |
@@ -144,7 +144,7 @@ ros2 service call /gento/set_motion_rates skye_robot_driver/srv/SetMotionRates \
 | `gripper_left_motor_id` / `gripper_right_motor_id` | `1` / `2` | 左 ARM0+ID1；右 ARM1+ID2 |
 | `gripper_invert` | `true` | FACTR 扳机 1=开/0=闭 → 电机 0=开/1=闭；state 同样反回去给 FACTR |
 | `gripper_close_limit` | `0.93` | 电机空间闭合上限，左右相同。FACTR 按下(0)经 invert 后不会发到 1.0 |
-| `gripper_rate_hz` | `100.0` | 夹爪控制/状态发布频率 |
+| `gripper_rate_hz` | `50.0` | 夹爪控制/状态发布频率（高于 30Hz 数采） |
 | `gripper_feedback_timeout_ms` | `1` | 运行时 `terminal_set/get` 超时；夹爪与关节分线程，但 SDK mutex 仍串行，必须短 |
 
 `*_joint_control_abs` 是策略/HITL 的绝对关节角入口；遥操继续使用原

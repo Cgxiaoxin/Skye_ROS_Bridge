@@ -71,7 +71,7 @@ skye_robot_driver:
     gripper_right_invert: true
     gripper_kp: 3.0
     gripper_kd: 0.12
-    gripper_rate_hz: 100.0
+    gripper_rate_hz: 50.0  # >30Hz 数采；低于旧 100 以减负载
     gripper_feedback_timeout_ms: 1
     # 0.0~1.6  最大1.6 大臂夹爪闭合位置，及范围
     gripper_pos_min: 0.0
