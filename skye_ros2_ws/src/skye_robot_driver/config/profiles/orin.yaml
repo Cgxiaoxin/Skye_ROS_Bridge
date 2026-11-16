@@ -10,9 +10,9 @@ skye_robot_driver:
     gripper_rate_hz: 20.0
     gripper_robotiq_interp_hz: 100.0
     # 0-255：0-满速，闭合要快
-    gripper_robotiq_speed: 255          # 保持满速，闭合要快
+    gripper_robotiq_speed: 100          # 保持满速，闭合要快
     # ~150 mm/s → 全行程约 0.33s；100Hz 内环每拍约 1.5mm，满速追小步更顺。
-    gripper_robotiq_max_slew_mm_s: 100.0
+    gripper_robotiq_max_slew_mm_s: 250.0
     gripper_invert: true
     gripper_left_invert: true
     gripper_right_invert: true
