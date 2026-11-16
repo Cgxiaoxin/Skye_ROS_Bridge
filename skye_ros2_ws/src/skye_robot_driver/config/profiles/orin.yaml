@@ -6,9 +6,12 @@ skye_robot_driver:
     right_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0]
     gripper_left_type: "robotiq"
     gripper_right_type: "robotiq"
-    # Robotiq RS485/Modbus：控制/发布 10 Hz（触觉 30fps 独立；数采若 SDK 直读不依赖本发布）。
-    gripper_rate_hz: 10.0
-    # ~100 mm/s → 全行程约 0.5s；10Hz 下每拍最多 ~10mm，避免满速点到点顿挫。
+    # 状态/applied 发布 20 Hz；Robotiq 命令内环 100 Hz 做限速线性插值密轨迹下发。
+    gripper_rate_hz: 20.0
+    gripper_robotiq_interp_hz: 100.0
+    # 0-255：0-满速，闭合要快
+    gripper_robotiq_speed: 255          # 保持满速，闭合要快
+    # ~150 mm/s → 全行程约 0.33s；100Hz 内环每拍约 1.5mm，满速追小步更顺。
     gripper_robotiq_max_slew_mm_s: 100.0
     gripper_invert: true
     gripper_left_invert: true

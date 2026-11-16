@@ -12,8 +12,10 @@
 namespace skye_robot_driver {
 namespace {
 
-// Feedback is Modbus-heavy; keep sparse so control writes stay responsive.
-constexpr int kFeedbackEveryTicks = 20;
+// Feedback is Modbus-heavy. With split timers, publish/feedback runs ~20 Hz, so
+// read every publish tick. Combined high-rate timers still skip most ticks via
+// wrote_control_this_tick_ / this stride when both share one timer.
+constexpr int kFeedbackEveryTicks = 1;
 // ~0.8 mm; coalesce tiny FACTR streams into larger Hand-E steps at full speed.
 constexpr int kMinPosDeltaCounts = 4;
 // Re-assert GoTo while held target lags feedback (object stall → freed gap).

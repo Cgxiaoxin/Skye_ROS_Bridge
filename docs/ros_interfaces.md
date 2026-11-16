@@ -144,8 +144,10 @@ ros2 service call /gento/set_motion_rates skye_robot_driver/srv/SetMotionRates \
 | `gripper_left_motor_id` / `gripper_right_motor_id` | `1` / `2` | 左 ARM0+ID1；右 ARM1+ID2 |
 | `gripper_invert` | `true` | FACTR 扳机 1=开/0=闭 → 电机 0=开/1=闭；state 同样反回去给 FACTR |
 | `gripper_close_limit` | `0.93` | 电机空间闭合上限，左右相同。FACTR 按下(0)经 invert 后不会发到 1.0 |
-| `gripper_rate_hz` | `50.0`（Thor）；Orin Robotiq overlay=`10.0` | 夹爪控制/状态发布同 timer；Orin 数采若走 SDK 直读可不依赖本发布频率 |
-| `gripper_robotiq_max_slew_mm_s` | `0.0`（关）；Orin=`100.0` | Robotiq 命令开度限速（mm/s），抑制低频点到点顿挫；0=直跳目标 |
+| `gripper_rate_hz` | `50.0`（Thor）；Orin=`20.0` | 夹爪 state/applied 发布（及未拆分时的控制）频率 |
+| `gripper_robotiq_interp_hz` | `0`（同 rate）；Orin=`100.0` | Robotiq 命令内环：限速线性插值后的 Modbus 下发频率；>rate 时与发布拆成双 timer |
+| `gripper_robotiq_speed` | `255`；Orin overlay 显式 `255` | Hand-E 硬件速度 0–255；要快闭合保持满速 |
+| `gripper_robotiq_max_slew_mm_s` | `0.0`（关）；Orin=`150.0` | 命令开度限速（mm/s）；配合 interp 内环密化轨迹；0=直跳目标 |
 | `gripper_feedback_timeout_ms` | `1` | 运行时 `terminal_set/get` 超时；夹爪与关节分线程，但 SDK mutex 仍串行，必须短 |
 
 `*_joint_control_abs` 是策略/HITL 的绝对关节角入口；遥操继续使用原

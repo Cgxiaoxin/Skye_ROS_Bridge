@@ -64,6 +64,8 @@ class DriverNode : public rclcpp::Node {
   void publish_gripper_action_applied();
   void publish_gripper_state();
   void tick_gripper();
+  void tick_gripper_command();
+  void tick_gripper_publish();
   void check_command_timeout();
   void handle_hold_current(
       const std::shared_ptr<Trigger::Request> request,
@@ -166,6 +168,8 @@ class DriverNode : public rclcpp::Node {
   rclcpp::TimerBase::SharedPtr state_timer_;
   rclcpp::TimerBase::SharedPtr timeout_timer_;
   rclcpp::TimerBase::SharedPtr gripper_timer_;
+  // Robotiq dense command stream (linear/slew interp); null when combined timer used.
+  rclcpp::TimerBase::SharedPtr gripper_cmd_timer_;
 };
 
 }  // namespace skye_robot_driver

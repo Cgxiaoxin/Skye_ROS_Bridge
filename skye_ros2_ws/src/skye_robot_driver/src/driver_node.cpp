@@ -153,6 +153,10 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
   const auto enable_gripper = declare_parameter<bool>("enable_gripper", true);
   const auto gripper_rate_hz =
       declare_parameter<double>("gripper_rate_hz", 100.0);
+  // Robotiq only: dense Modbus command rate via slew/linear interp.
+  // 0 = same as gripper_rate_hz (single timer). Publish/feedback stay on gripper_rate_hz.
+  const auto gripper_robotiq_interp_hz =
+      declare_parameter<double>("gripper_robotiq_interp_hz", 0.0);
   const auto gripper_invert_default =
       declare_parameter<bool>("gripper_invert", true);
   gripper_invert_left_ = declare_parameter<bool>(
@@ -278,6 +282,11 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
     if (!std::isfinite(gripper_rate_hz) || gripper_rate_hz <= 0.0) {
       throw std::invalid_argument(
           "gripper_rate_hz must be finite and greater than zero");
+    }
+    if (!std::isfinite(gripper_robotiq_interp_hz) ||
+        gripper_robotiq_interp_hz < 0.0) {
+      throw std::invalid_argument(
+          "gripper_robotiq_interp_hz must be finite and >= 0");
     }
     if (gripper_config.left.type == GripperDriverType::kDm4310) {
       validate_dm4310_arm(gripper_config.left.dm);
@@ -469,20 +478,45 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
         connect_config.right_acc_ratio, connect_config.cmd_cycle_time_ms);
 
     if (enable_gripper) {
-      const auto gripper_period =
+      const bool any_robotiq =
+          std::string(gripper_.type_name(DriverCore::Arm::kLeft)) ==
+              "robotiq" ||
+          std::string(gripper_.type_name(DriverCore::Arm::kRight)) ==
+              "robotiq";
+      double cmd_hz = gripper_rate_hz;
+      if (any_robotiq && std::isfinite(gripper_robotiq_interp_hz) &&
+          gripper_robotiq_interp_hz > 0.0) {
+        cmd_hz = gripper_robotiq_interp_hz;
+      }
+      const auto publish_period =
           std::chrono::duration<double>(1.0 / gripper_rate_hz);
-      gripper_timer_ = create_wall_timer(
-          std::chrono::duration_cast<std::chrono::nanoseconds>(gripper_period),
-          [this]() { tick_gripper(); }, gripper_callback_group_);
+      const bool split_cmd =
+          any_robotiq && cmd_hz > gripper_rate_hz + 1e-6;
+      if (split_cmd) {
+        const auto cmd_period = std::chrono::duration<double>(1.0 / cmd_hz);
+        gripper_cmd_timer_ = create_wall_timer(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(cmd_period),
+            [this]() { tick_gripper_command(); }, gripper_callback_group_);
+        gripper_timer_ = create_wall_timer(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                publish_period),
+            [this]() { tick_gripper_publish(); }, gripper_callback_group_);
+      } else {
+        gripper_timer_ = create_wall_timer(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                publish_period),
+            [this]() { tick_gripper(); }, gripper_callback_group_);
+      }
       RCLCPP_INFO(
           get_logger(),
           "Executor: control+gripper callback groups (MultiThreaded, 2). "
-          "Gripper enabled: L=%s R=%s invert L/R=%s/%s rate=%.1f Hz | %s",
+          "Gripper enabled: L=%s R=%s invert L/R=%s/%s publish=%.1f Hz "
+          "cmd=%.1f Hz%s | %s",
           gripper_.type_name(DriverCore::Arm::kLeft),
           gripper_.type_name(DriverCore::Arm::kRight),
           gripper_invert_left_ ? "true" : "false",
           gripper_invert_right_ ? "true" : "false",
-          gripper_rate_hz,
+          gripper_rate_hz, cmd_hz, split_cmd ? " (interp split)" : "",
           gripper_.start_report().c_str());
       if (gripper_.start_report().find("fb=NONE") != std::string::npos ||
           gripper_.start_report().find("activated=FAIL") != std::string::npos) {
@@ -1184,7 +1218,21 @@ void DriverNode::tick_gripper() {
   if (!gripper_enabled_) {
     return;
   }
+  tick_gripper_command();
+  tick_gripper_publish();
+}
+
+void DriverNode::tick_gripper_command() {
+  if (!gripper_enabled_) {
+    return;
+  }
   gripper_.tick_control();
+}
+
+void DriverNode::tick_gripper_publish() {
+  if (!gripper_enabled_) {
+    return;
+  }
   publish_gripper_action_applied();
   gripper_.tick_feedback();
   publish_gripper_state();
