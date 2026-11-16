@@ -19,8 +19,8 @@ SYS_TTY = Path("/sys/bus/usb-serial/devices")
 def robot_profile(explicit=None):
     value = explicit or os.environ.get("ROBOT_PROFILE")
     if not value:
-        marvin = Path(os.environ.get("MARVIN_WS", str(ROOT / "marvin_ws")))
-        for path in (marvin / ".skye/robot_profile", marvin / "robot_profile"):
+        skye_local = Path(os.environ.get("SKYE_LOCAL", str(ROOT / ".skye")))
+        for path in (skye_local / "robot_profile", ROOT / "robot_profile"):
             if path.is_file():
                 value = path.read_text().strip()
                 break

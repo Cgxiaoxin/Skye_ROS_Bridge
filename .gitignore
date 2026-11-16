@@ -59,22 +59,14 @@ docs/dagger_dev/client_thor/vendor/**/.pytest_cache/
 # 5090 deploy 权重/现场树仍本地解压，勿 push
 docs/dagger_dev/server5090/deploy/
 
-# 本机主臂 FTDI 绑定（bind_leader_arms.py）
-marvin_ws/.skye/
-
-# 本机 robot profile（set_robot_profile.sh；.skye 不可写时的回退）
-marvin_ws/robot_profile
+# 本机落点（robot_profile / 主臂 FTDI 绑定；bind_leader_arms.py / set_robot_profile.sh）
+.skye/
+robot_profile
 
 # 调试运行输出（scripts/debug/logs/.gitignore 已忽略内容）
 scripts/debug/*.log
 scripts/debug/logs/*
 !scripts/debug/logs/.gitignore
-
-# Hydra / 运行日志（勿提交）
-marvin_ws/outputs/
-marvin_ws/tele_operation/outputs/
-marvin_ws/.runtime/
-marvin_ws/tele_operation/.idea/
 
 # 本地临时 ROS 日志目录（调试用，勿提交）
 .ros_log_tmp/
@@ -85,5 +77,6 @@ marvin_ws/tele_operation/.idea/
 # Codegraph 本地索引（勿提交）
 .codegraph/
 
-# Marvin 安装版本号（本地生成，勿提交）
+# Marvin 安装版本号（本地生成，勿提交；旧 Docker 小臂流程遗留）
 scripts/marvin_install.version
+

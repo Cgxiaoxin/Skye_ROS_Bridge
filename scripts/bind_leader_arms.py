@@ -31,11 +31,16 @@ PORT_LINE = re.compile(
 def repo_root() -> Path:
     here = Path(__file__).resolve().parent
     root = here.parent
-    if (root / "skye_ros2_ws").is_dir() or (root / "marvin_ws").is_dir():
+    if (root / "skye_ros2_ws").is_dir():
         return root
-    if Path("/marvin_ws").is_dir():
-        return Path("/")
-    sys.exit("找不到仓库根目录（需要 skye_ros2_ws 或 marvin_ws）")
+    sys.exit("找不到仓库根目录（需要 skye_ros2_ws）")
+
+
+def skye_local_dir(root: Path) -> Path:
+    override = os.environ.get("SKYE_LOCAL", "").strip()
+    if override:
+        return Path(override)
+    return root / ".skye"
 
 
 def resolve_profile() -> str:
@@ -78,16 +83,6 @@ def host_install_paths(root: Path, profile: str) -> tuple[Path, Path] | None:
     else:
         left = share / "grav_comp_m6_left.yaml"
         right = share / "grav_comp_m6_right.yaml"
-    return left, right
-
-
-def marvin_config_paths(root: Path, profile: str) -> tuple[Path, Path] | None:
-    marvin = root / "marvin_ws" if (root / "marvin_ws").is_dir() else Path("/marvin_ws")
-    if not marvin.is_dir():
-        return None
-    cfg = marvin / "configs" / profile
-    left = cfg / "grav_comp_m6_left.yaml"
-    right = cfg / "grav_comp_m6_right.yaml"
     return left, right
 
 
@@ -229,24 +224,20 @@ def collect_targets(
             or install[1].resolve() != host[1].resolve()
         ):
             targets.append(("skye_factr_teleop install", install[0], install[1]))
-    marvin = marvin_config_paths(root, profile)
-    if marvin and (marvin[0].is_file() or marvin[1].is_file()):
-        targets.append(("marvin_ws configs", marvin[0], marvin[1]))
     return targets
 
 
 def apply(root: Path, left: str, right: str, dry: bool) -> None:
     profile = resolve_profile()
     targets = collect_targets(root, profile)
-    marvin = root / "marvin_ws" if (root / "marvin_ws").is_dir() else Path("/marvin_ws")
-    env = marvin / ".skye" / "leader_arms.env"
-    yml = marvin / ".skye" / "leader_arms.yaml"
+    local = skye_local_dir(root)
+    env = local / "leader_arms.env"
+    yml = local / "leader_arms.yaml"
 
     print("\n将写入:")
     print(f"  profile={profile}")
-    if marvin.is_dir():
-        print(f"  {env}")
-        print(f"  {yml}")
+    print(f"  {env}")
+    print(f"  {yml}")
     if not targets:
         sys.exit(
             f"未找到可写配置（profile={profile}）。"
@@ -259,9 +250,8 @@ def apply(root: Path, left: str, right: str, dry: bool) -> None:
         print("[dry-run] 未写盘")
         return
 
-    if marvin.is_dir():
-        write_env(env, left, right)
-        write_yaml_map(yml, left, right)
+    write_env(env, left, right)
+    write_yaml_map(yml, left, right)
 
     for label, left_cfg, right_cfg in targets:
         for path, port in ((left_cfg, left), (right_cfg, right)):
@@ -283,12 +273,11 @@ def apply(root: Path, left: str, right: str, dry: bool) -> None:
 
     print("\n已写入。重启小臂 launch 即可（robot_profile 须与绑定一致）:")
     print(f"  export ROBOT_PROFILE={profile}")
+    print(f"  # 本 shell 立即生效: source {env}")
     print(
         "  ros2 launch skye_factr_teleop start_teleop_m6_dual.launch.py "
         f"robot_profile:={profile}"
     )
-    if marvin.is_dir():
-        print(f"  # 旧 Docker 流程另: source {env}")
 
 
 def main() -> None:

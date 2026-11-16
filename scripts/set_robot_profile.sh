@@ -6,7 +6,7 @@
 #   ./scripts/set_robot_profile.sh thor
 #
 # Resolution order everywhere:
-#   ROBOT_PROFILE env > marvin_ws/.skye/robot_profile > marvin_ws/robot_profile > thor
+#   ROBOT_PROFILE env > <repo>/.skye/robot_profile > <repo>/robot_profile > thor
 
 set -euo pipefail
 
@@ -23,8 +23,7 @@ validate_robot_profile "${PROFILE}" || exit 1
 PROFILE="${PROFILE,,}"
 
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-MARVIN_WS="${MARVIN_WS:-${REPO_ROOT}/marvin_ws}"
-PROFILE_FILE="$(robot_profile_write_path "${MARVIN_WS}")"
+PROFILE_FILE="$(robot_profile_write_path "${REPO_ROOT}")"
 
 mkdir -p "$(dirname "${PROFILE_FILE}")"
 echo "${PROFILE}" > "${PROFILE_FILE}"

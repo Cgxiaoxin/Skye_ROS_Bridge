@@ -34,45 +34,31 @@ _REMAPS = [
 
 
 def _default_robot_profile() -> str:
-    """Prefer env; then marvin_ws/.skye/robot_profile; else thor."""
+    """Prefer env; then <repo>/.skye/robot_profile; else thor."""
     env = os.environ.get("ROBOT_PROFILE", os.environ.get("MARVIN_PROFILE", "")).strip().lower()
     if env in ("thor", "orin"):
         return env
     candidates = []
-    marvin = os.environ.get("MARVIN_WS", "").strip()
-    if marvin:
-        candidates.append(os.path.join(marvin, ".skye", "robot_profile"))
+    skye_local = os.environ.get("SKYE_LOCAL", "").strip()
+    if skye_local:
+        candidates.append(os.path.join(skye_local, "robot_profile"))
+    share_to_repo = os.path.abspath(
+        os.path.join(
+            get_package_share_directory("skye_robot_driver"),
+            "..",
+            "..",
+            "..",
+            "..",
+        )
+    )
     candidates.extend(
         [
-            "/marvin_ws/.skye/robot_profile",
-            "/marvin_ws/robot_profile",
-            os.path.join(os.getcwd(), "marvin_ws", ".skye", "robot_profile"),
-            os.path.join(os.getcwd(), "marvin_ws", "robot_profile"),
-            os.path.join(os.getcwd(), "..", "marvin_ws", ".skye", "robot_profile"),
-            os.path.join(os.getcwd(), "..", "marvin_ws", "robot_profile"),
-            os.path.abspath(
-                os.path.join(
-                    get_package_share_directory("skye_robot_driver"),
-                    "..",
-                    "..",
-                    "..",
-                    "..",
-                    "marvin_ws",
-                    ".skye",
-                    "robot_profile",
-                )
-            ),
-            os.path.abspath(
-                os.path.join(
-                    get_package_share_directory("skye_robot_driver"),
-                    "..",
-                    "..",
-                    "..",
-                    "..",
-                    "marvin_ws",
-                    "robot_profile",
-                )
-            ),
+            os.path.join(os.getcwd(), ".skye", "robot_profile"),
+            os.path.join(os.getcwd(), "robot_profile"),
+            os.path.join(os.getcwd(), "..", ".skye", "robot_profile"),
+            os.path.join(os.getcwd(), "..", "robot_profile"),
+            os.path.join(share_to_repo, ".skye", "robot_profile"),
+            os.path.join(share_to_repo, "robot_profile"),
         ]
     )
     for path in candidates:
@@ -186,7 +172,7 @@ def generate_launch_description():
                 "robot_profile",
                 default_value=_default_robot_profile(),
                 description="Machine profile: thor (DM4310) | orin (Robotiq). "
-                "Default: ROBOT_PROFILE env or marvin_ws/.skye/robot_profile, else thor.",
+                "Default: ROBOT_PROFILE env or <repo>/.skye/robot_profile, else thor.",
             ),
             DeclareLaunchArgument(
                 "robotiq_dual_gripper",

@@ -60,15 +60,17 @@ for src in "${launch_files[@]}"; do
   echo "  launch: $(basename "${src}")"
 done
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SKYE_LOCAL="${SKYE_LOCAL:-${REPO_ROOT}/.skye}"
 PROFILE="$(
   if [[ -n "${ROBOT_PROFILE:-}" ]]; then
     echo "${ROBOT_PROFILE,,}"
   elif [[ -n "${MARVIN_PROFILE:-}" ]]; then
     echo "${MARVIN_PROFILE,,}"
-  elif [[ -f "${MARVIN_WS}/.skye/robot_profile" ]]; then
-    tr -d '[:space:]' < "${MARVIN_WS}/.skye/robot_profile" | tr '[:upper:]' '[:lower:]'
-  elif [[ -f "${MARVIN_WS}/robot_profile" ]]; then
-    tr -d '[:space:]' < "${MARVIN_WS}/robot_profile" | tr '[:upper:]' '[:lower:]'
+  elif [[ -f "${SKYE_LOCAL}/robot_profile" ]]; then
+    tr -d '[:space:]' < "${SKYE_LOCAL}/robot_profile" | tr '[:upper:]' '[:lower:]'
+  elif [[ -f "${REPO_ROOT}/robot_profile" ]]; then
+    tr -d '[:space:]' < "${REPO_ROOT}/robot_profile" | tr '[:upper:]' '[:lower:]'
   else
     echo "thor"
   fi

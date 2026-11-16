@@ -15,7 +15,7 @@ Skye_ROS_Bridge/
 ├── skye_ros2_ws/            # 主线工作区
 │   └── src/skye_robot_driver/
 ├── scripts/sync_gento_sdk.sh
-├── marvin_ws/               # 旧工程（参考，非主线）
+├── .skye/                   # 本机落点（gitignore：profile / 主臂串口）
 └── 遥操高频优化路线.md      # QoS / 高频优化参考
 ```
 
@@ -25,9 +25,8 @@ Skye_ROS_Bridge/
 
 FACTR 对接 / 现场启停：`docs/小臂大臂启动步骤.md`  
 主机起驱动：`./scripts/start_skye_for_factr.sh`（默认 `ROS_DOMAIN_ID=21` + FastDDS 关 SHM）  
-小臂 Docker：`./scripts/run_marvin_m6_impedance.sh`（挂载 `marvin_ws` + `/scripts`）  
-换主臂串口：`python3 /scripts/bind_leader_arms.py`（见 `docs/新主臂串口绑定.md`）  
-小臂 `marvin_ws/install`（clone 后缺失）：`GITLAB_TOKEN=... ./scripts/bootstrap_marvin_install.sh`
+小臂（主机包）：`bash scripts/teleop.sh` / `skye_factr_teleop`（见 `docs/marvin_dev/`）  
+换主臂串口：`python3 scripts/bind_leader_arms.py`（见 `docs/新主臂串口绑定.md`）
 
 核验：
 - P1：`skye_ros2_ws/scripts/verify_p1_interfaces.sh`

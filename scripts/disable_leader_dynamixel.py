@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Disable torque on both FACTR leader Dynamixel chains (Torque Enable addr 64 = 0).
 
-Loads ports from marvin_ws/.skye/leader_arms.env when present, else from the
+Loads ports from <repo>/.skye/leader_arms.env when present, else from the
 environment (ROBOT_LEADER_DYNAMIXEL_PORT_LEFT / _RIGHT).
 
 Hold the leaders before running — arms will drop when torque is off.
@@ -40,8 +40,15 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def _load_binding_env(marvin_ws: Path) -> None:
-    path = marvin_ws / ".skye" / "leader_arms.env"
+def _skye_local_dir(repo: Path) -> Path:
+    override = os.environ.get("SKYE_LOCAL", "").strip()
+    if override:
+        return Path(override)
+    return repo / ".skye"
+
+
+def _load_binding_env(skye_local: Path) -> None:
+    path = skye_local / "leader_arms.env"
     if not path.is_file():
         return
     for raw in path.read_text(encoding="utf-8").splitlines():
@@ -126,17 +133,16 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    marvin_ws = Path(os.environ.get("MARVIN_WS") or (_repo_root() / "marvin_ws"))
-    _load_binding_env(marvin_ws)
-    _fill_ports_from_profile_if_missing(_repo_root())
+    repo = _repo_root()
+    _load_binding_env(_skye_local_dir(repo))
+    _fill_ports_from_profile_if_missing(repo)
 
     try:
         import dynamixel_sdk  # noqa: F401
     except ImportError:
         print(
             "ERROR: dynamixel_sdk not importable in this Python "
-            f"({sys.executable}). Install dynamixel_sdk on the host or run via "
-            "leader_arm_gate.sh with MARVIN_WS PYTHONPATH configured.",
+            f"({sys.executable}). Install ros-humble-dynamixel-sdk on the host.",
             file=sys.stderr,
         )
         return 2

@@ -177,7 +177,7 @@ def test_dry_run_does_not_change_latency_or_load_ros(usb, monkeypatch, capsys):
 
 def test_robot_configuration_has_no_silent_thor_fallback(monkeypatch, tmp_path):
     monkeypatch.delenv("ROBOT_PROFILE", raising=False)
-    monkeypatch.setenv("MARVIN_WS", str(tmp_path))
+    monkeypatch.setenv("SKYE_LOCAL", str(tmp_path / ".skye"))
     with pytest.raises(RuntimeError, match="configure"):
         teleop.robot_profile()
     (tmp_path / ".skye").mkdir()

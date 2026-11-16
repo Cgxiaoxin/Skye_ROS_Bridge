@@ -7,8 +7,8 @@
 #   ./scripts/start_skye_for_factr.sh orin
 #   ./scripts/start_skye_for_factr.sh          # fallback: env / machine file / thor
 #
-# Priority: CLI name > ROBOT_PROFILE env > marvin_ws/.skye/robot_profile
-#           > marvin_ws/robot_profile > thor
+# Priority: CLI name > ROBOT_PROFILE env > <repo>/.skye/robot_profile
+#           > <repo>/robot_profile > thor
 # Extra ros2 launch args may follow the profile name.
 
 set -euo pipefail
@@ -18,10 +18,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=lib/robot_profile.sh
 source "${SCRIPT_DIR}/lib/robot_profile.sh"
 
-MARVIN_WS="${MARVIN_WS:-${REPO_ROOT}/marvin_ws}"
 apply_robot_profile_arg "$@"
 set -- "${_ROBOT_PROFILE_REMAINING[@]}"
-ROBOT_PROFILE="$(resolve_robot_profile "${MARVIN_WS}")"
+ROBOT_PROFILE="$(resolve_robot_profile "${REPO_ROOT}")"
 validate_robot_profile "${ROBOT_PROFILE}" || exit 1
 export ROBOT_PROFILE
 WS="${REPO_ROOT}/skye_ros2_ws"

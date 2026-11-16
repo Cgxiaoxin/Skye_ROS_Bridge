@@ -24,7 +24,7 @@ def test_safe_teardown_rms_container_then_disables(tmp_path):
     disable_script = Path(tmp_path) / "scripts" / "disable_leader_dynamixel.py"
     disable_script.parent.mkdir(parents=True)
     disable_script.write_text("# stub\n")
-    (Path(tmp_path) / "marvin_ws").mkdir()
+    (Path(tmp_path) / ".skye").mkdir()
 
     with patch("skye_operator_ui.teardown.subprocess.run") as run:
         run.return_value = MagicMock(returncode=0, stdout="", stderr="")
@@ -37,6 +37,7 @@ def test_safe_teardown_rms_container_then_disables(tmp_path):
     assert docker_disable[0:3] == ["docker", "run", "--rm"]
     assert "test-image:tag" in docker_disable
     assert "/scripts/disable_leader_dynamixel.py" in docker_disable
+    assert "SKYE_LOCAL=/skye_local" in docker_disable
     assert notes == []
 
 
@@ -53,7 +54,7 @@ def test_safe_teardown_falls_back_to_host_python(tmp_path):
     disable_script = Path(tmp_path) / "scripts" / "disable_leader_dynamixel.py"
     disable_script.parent.mkdir(parents=True)
     disable_script.write_text("# stub\n")
-    (Path(tmp_path) / "marvin_ws").mkdir()
+    (Path(tmp_path) / ".skye").mkdir()
 
     rm_ok = MagicMock(returncode=0, stdout="", stderr="")
     docker_fail = MagicMock(returncode=1, stdout="", stderr="image missing")
@@ -143,7 +144,7 @@ def test_teardown_host_disable_default(tmp_path, monkeypatch):
     disable_script = Path(tmp_path) / "scripts" / "disable_leader_dynamixel.py"
     disable_script.parent.mkdir(parents=True)
     disable_script.write_text("# stub\n")
-    (Path(tmp_path) / "marvin_ws").mkdir()
+    (Path(tmp_path) / ".skye").mkdir()
 
     cfg = {"teardown": {"disable_leader": True, "docker_rm": False}}
     calls = []
@@ -166,7 +167,7 @@ def test_teardown_teleop_mode_defaults_host_path(tmp_path, monkeypatch):
     disable_script = Path(tmp_path) / "scripts" / "disable_leader_dynamixel.py"
     disable_script.parent.mkdir(parents=True)
     disable_script.write_text("# stub\n")
-    (Path(tmp_path) / "marvin_ws").mkdir()
+    (Path(tmp_path) / ".skye").mkdir()
     calls = []
 
     def fake_run(argv, **kwargs):

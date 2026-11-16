@@ -138,13 +138,13 @@ def _disable_leader(
         logger.warning(msg)
         return msg
 
-    marvin_ws = Path(repo_root) / "marvin_ws"
+    skye_local = Path(repo_root) / ".skye"
     scripts_dir = Path(repo_root) / "scripts"
 
     if via_docker:
         note = _disable_via_docker(
             image=image,
-            marvin_ws=marvin_ws,
+            skye_local=skye_local,
             scripts_dir=scripts_dir,
             timeout_s=timeout_s,
         )
@@ -152,13 +152,13 @@ def _disable_leader(
             return None
         logger.warning("docker 去使能失败，尝试主机 Python: %s", note)
 
-    return _disable_on_host(script, marvin_ws=marvin_ws, timeout_s=timeout_s)
+    return _disable_on_host(script, skye_local=skye_local, timeout_s=timeout_s)
 
 
 def _disable_via_docker(
     *,
     image: str,
-    marvin_ws: Path,
+    skye_local: Path,
     scripts_dir: Path,
     timeout_s: float,
 ) -> str | None:
@@ -173,13 +173,13 @@ def _disable_via_docker(
         "-v",
         "/dev:/dev",
         "-v",
-        f"{marvin_ws}:/marvin_ws",
+        f"{skye_local}:/skye_local:ro",
         "-v",
         f"{scripts_dir}:/scripts:ro",
         "-e",
-        "MARVIN_WS=/marvin_ws",
+        "SKYE_LOCAL=/skye_local",
         "-w",
-        "/marvin_ws",
+        "/scripts",
         image,
         "python3",
         "/scripts/disable_leader_dynamixel.py",
@@ -210,12 +210,12 @@ def _disable_via_docker(
 def _disable_on_host(
     script: Path,
     *,
-    marvin_ws: Path,
+    skye_local: Path,
     timeout_s: float,
 ) -> str | None:
     argv = [sys.executable or "python3", str(script)]
     env = os.environ.copy()
-    env.setdefault("MARVIN_WS", str(marvin_ws))
+    env.setdefault("SKYE_LOCAL", str(skye_local))
     try:
         result = subprocess.run(
             argv,

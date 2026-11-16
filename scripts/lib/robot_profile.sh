@@ -4,8 +4,8 @@
 # Priority (highest first):
 #   1) explicit CLI / caller override (pass as $1 to apply_robot_profile_arg)
 #   2) ROBOT_PROFILE env
-#   3) marvin_ws/.skye/robot_profile
-#   4) marvin_ws/robot_profile   (fallback when .skye is not writable)
+#   3) <repo>/.skye/robot_profile
+#   4) <repo>/robot_profile   (fallback when .skye is not writable)
 #   5) thor
 #
 # Known profiles today: thor | orin
@@ -58,18 +58,19 @@ validate_robot_profile() {
   esac
 }
 
+# $1 = repo root (directory that contains .skye/).
 resolve_robot_profile() {
-  local marvin_ws="${1:?marvin_ws path required}"
+  local repo_root="${1:?repo root path required}"
   if [[ -n "${ROBOT_PROFILE:-}" ]]; then
     echo "${ROBOT_PROFILE,,}"
     return
   fi
   local value=""
-  value="$(_robot_profile_read_file "${marvin_ws}/.skye/robot_profile")" && {
+  value="$(_robot_profile_read_file "${repo_root}/.skye/robot_profile")" && {
     echo "${value}"
     return
   }
-  value="$(_robot_profile_read_file "${marvin_ws}/robot_profile")" && {
+  value="$(_robot_profile_read_file "${repo_root}/robot_profile")" && {
     echo "${value}"
     return
   }
@@ -95,14 +96,15 @@ apply_robot_profile_arg() {
 }
 
 # Best writable path for persisting profile on this machine.
+# $1 = repo root.
 robot_profile_write_path() {
-  local marvin_ws="${1:?marvin_ws path required}"
-  local skye_dir="${marvin_ws}/.skye"
+  local repo_root="${1:?repo root path required}"
+  local skye_dir="${repo_root}/.skye"
   local skye_file="${skye_dir}/robot_profile"
   if mkdir -p "${skye_dir}" 2>/dev/null && \
      (umask 022; : > "${skye_file}") 2>/dev/null; then
     echo "${skye_file}"
     return
   fi
-  echo "${marvin_ws}/robot_profile"
+  echo "${repo_root}/robot_profile"
 }

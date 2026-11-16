@@ -64,7 +64,7 @@ done
 if [[ -n "${PROFILE_ARG}" ]]; then
   apply_robot_profile_arg "${PROFILE_ARG}"
 fi
-ROBOT_PROFILE="$(resolve_robot_profile "${REPO_ROOT}/marvin_ws")"
+ROBOT_PROFILE="$(resolve_robot_profile "${REPO_ROOT}")"
 validate_robot_profile "${ROBOT_PROFILE}" || exit 1
 export ROBOT_PROFILE
 

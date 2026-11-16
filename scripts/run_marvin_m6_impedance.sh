@@ -34,7 +34,7 @@ MARVIN_WS="${MARVIN_WS:-${REPO_ROOT}/marvin_ws}"
 source "${SCRIPT_DIR}/lib/robot_profile.sh"
 apply_robot_profile_arg "$@"
 set -- "${_ROBOT_PROFILE_REMAINING[@]}"
-ROBOT_PROFILE="$(resolve_robot_profile "${MARVIN_WS}")"
+ROBOT_PROFILE="$(resolve_robot_profile "${REPO_ROOT}")"
 validate_robot_profile "${ROBOT_PROFILE}" || exit 1
 export ROBOT_PROFILE
 
@@ -57,8 +57,9 @@ USE_LEFT_GRIPPER="${USE_LEFT_GRIPPER:-false}"
 USE_RIGHT_GRIPPER="${USE_RIGHT_GRIPPER:-false}"
 
 # Pass either a full /dev path or a /dev/serial/by-id basename.
-# 优先读 bind_leader_arms.py 写入的绑定（换臂：python3 /scripts/bind_leader_arms.py）
-BINDING_ENV="${MARVIN_WS}/.skye/leader_arms.env"
+# 优先读 bind_leader_arms.py 写入的绑定（换臂：python3 scripts/bind_leader_arms.py）
+SKYE_LOCAL="${SKYE_LOCAL:-${REPO_ROOT}/.skye}"
+BINDING_ENV="${SKYE_LOCAL}/leader_arms.env"
 if [[ -f "${BINDING_ENV}" ]]; then
   # shellcheck disable=SC1090
   source "${BINDING_ENV}"
