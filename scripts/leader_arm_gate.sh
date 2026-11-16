@@ -56,11 +56,9 @@ if ! _source_ros; then
 fi
 
 if ! ros2 node list 2>/dev/null | grep -qx "/${NODE}"; then
-  if [[ "$ACTION" == "off" ]]; then
-    # Already absent — treat as gated off for UI bookkeeping.
-    exit 0
-  fi
-  echo "missing /${NODE}; cannot enable soft gate (start dual teleop session first)" >&2
+  # Soft-gate needs the live FACTR node. Do NOT exit 0 on missing node for
+  # "off" — that made the UI flip "关左/右臂" while sync still reached the arm.
+  echo "missing /${NODE}; cannot soft-gate (start dual teleop session first; check ROS_DOMAIN_ID/ROBOT_PROFILE=${PROFILE})" >&2
   exit 1
 fi
 

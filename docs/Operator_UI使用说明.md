@@ -75,7 +75,7 @@ google-chrome --app=http://127.0.0.1:8765
 
 ## 同步前关单侧小臂（遥操数采）
 
-仅 **遥操数采** 面板、会话 **READY/RUNNING** 且向导允许操作时出现。DAgger 面板无此控件。会话启动仍按 playbook **双臂上电**（经 `teleop.sh start`）；关臂为**软门控**：进程保持存活，向 `/mode/<side>/leader_gate` 发 `off`，该侧忽略全局 sync/teleop 并关闭力矩（`scripts/leader_arm_gate.sh`），不改编排、不杀 sibling。
+仅 **遥操数采** 面板、会话 **READY/RUNNING** 且向导允许操作时出现。DAgger 面板无此控件。会话启动仍按 playbook **双臂上电**（经 `teleop.sh start`）；关臂为**软门控**：进程保持存活，Operator UI 直接向 `/mode/<side>/leader_gate` 发 `off`（与 teleop 同 ROS domain），该侧忽略全局 sync/teleop 并关闭力矩；手动排查仍可用 `scripts/leader_arm_gate.sh`。不改编排、不杀 sibling。
 
 在 **「同步」** 按钮正下方：
 
@@ -87,8 +87,8 @@ google-chrome --app=http://127.0.0.1:8765
 **操作顺序（可选）**：开始会话 →（可选）关一侧或两侧 → **同步** → **开启遥操** → 录制等。
 
 - 点 **关左臂/关右臂** 关闭一侧前，浏览器会确认：**请托住该侧小臂，去使能后会下落**。同步前可再点同一按钮复能该侧。
-- **同步后锁定**：本会话已成功 **同步**，或遥操状态进入 `TELEOP_SYNCING` / `SYNCED` / `TELEOP` 后，关臂按钮灰掉不可再改；**结束会话** 后 `leader_arms` 恢复双开、未锁定。
-- 关/复能脚本失败时 API 报错，UI 不翻转「开/关」状态。
+- **同步后锁定**：遥操状态进入 `TELEOP_SYNCING` / `SYNCED` / `TELEOP` 后，关臂按钮灰掉不可再改（仅点同步但预检失败、仍为 `IDLE` 时不锁定，可继续关单侧）；**结束会话** 后 `leader_arms` 恢复双开、未锁定。
+- 关/复能发布失败时 API 报错，UI 不翻转「开/关」状态。日志应出现 `[left] leader gate OFF：忽略 sync/teleop`。
 - **开启遥操** 仅在小臂状态为 `SYNCED` 时可点（无 follower 对齐步骤）。
 
 ## 同步校正面板

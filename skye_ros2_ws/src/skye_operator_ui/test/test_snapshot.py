@@ -204,13 +204,13 @@ def test_dispatch_plan_align_right():
     assert plan == ("string", "/mode/align_follower", "align_follower_right")
 
 
-def test_dispatch_plan_leader_script():
+def test_dispatch_plan_leader_gate():
     from skye_operator_ui.ros_bridge import dispatch_plan
     from skye_operator_ui.session_state import UiMode
 
     assert dispatch_plan("leader_left_off", UiMode.teleop_record) == (
-        "script",
-        "left",
+        "leader_gate",
+        "left|/mode/left/leader_gate",
         "off",
     )
 

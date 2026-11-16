@@ -41,12 +41,16 @@ _TRIGGER_OPS: dict[str, str] = {
     "stop_motion": "/gento/stop_motion",
 }
 
-_LEADER_SCRIPT_OPS: dict[str, tuple[str, str]] = {
-    "leader_left_off": ("left", "off"),
-    "leader_left_on": ("left", "on"),
-    "leader_right_off": ("right", "off"),
-    "leader_right_on": ("right", "on"),
+# Soft-gate: publish on the operator_ui ROS node (same domain as teleop).
+# Do not shell out to ros2 topic pub — missing-node + wrong DOMAIN used to
+# flip UI bookkeeping while the live FACTR node never saw /mode/*/leader_gate.
+_LEADER_GATE_OPS: dict[str, tuple[str, str, str]] = {
+    "leader_left_off": ("left", "/mode/left/leader_gate", "off"),
+    "leader_left_on": ("left", "/mode/left/leader_gate", "on"),
+    "leader_right_off": ("right", "/mode/right/leader_gate", "off"),
+    "leader_right_on": ("right", "/mode/right/leader_gate", "on"),
 }
+_LEADER_GATE_PUBLISH_REPEATS = 5
 
 _RECORDER_SERVICES: dict[UiMode, dict[str, str]] = {
     UiMode.teleop_record: {
@@ -66,12 +70,13 @@ def dispatch_plan(
     *,
     align_payload: str | None = None,
 ) -> tuple[str, str, str] | None:
-    """Pure dispatch mapping: (kind, target, payload). kind is string|trigger|script."""
+    """Pure dispatch mapping: (kind, target, payload). kind is string|trigger|leader_gate."""
     if op == "align_start":
         return ("string", "/mode/align_follower", align_payload or "align_follower")
-    if op in _LEADER_SCRIPT_OPS:
-        side, action = _LEADER_SCRIPT_OPS[op]
-        return ("script", side, action)
+    if op in _LEADER_GATE_OPS:
+        side, topic, action = _LEADER_GATE_OPS[op]
+        # target carries "side|topic" so dispatch can update bookkeeping + publish.
+        return ("leader_gate", f"{side}|{topic}", action)
     if op in _STRING_OPS:
         topic, payload = _STRING_OPS[op]
         return ("string", topic, payload)
@@ -350,25 +355,20 @@ class RosBridge:
 
             kind, target, payload = plan
             if kind == "string":
-                ok, reason = self._publish_string(target, payload)
-                if ok and op == "switch_sync":
-                    self._leader_gate.note_sync_dispatched()
-                return ok, reason
+                # Lock only when teleop actually enters SYNCING/SYNCED/TELEOP
+                # (see note_teleop_state). Locking on mere switch_sync publish
+                # froze 关左/右臂 after a failed preflight while left kept syncing.
+                return self._publish_string(target, payload)
             if kind == "trigger":
                 return self._call_trigger(target, op)
-            if kind == "script":
-                ok, reason = self._script_runner(
-                    self._repo_root,
-                    target,
-                    payload,
-                    container=self._leader_gate_container,
-                    timeout_s=self._leader_gate_timeout_s,
-                    image=self._leader_gate_image,
-                    robot_profile=self._robot_profile,
-                )
+            if kind == "leader_gate":
+                if self._leader_gate.snapshot().get("locked"):
+                    return False, "已锁定，无法开关小臂"
+                side, topic = target.split("|", 1)
+                ok, reason = self._publish_leader_gate(topic, payload)
                 if not ok:
-                    return False, reason
-                if not self._leader_gate.set_enabled(target, payload == "on"):
+                    return ok, reason
+                if not self._leader_gate.set_enabled(side, payload == "on"):
                     return False, "已锁定，无法开关小臂"
                 return True, ""
             return False, "内部错误：未知派发类型"
@@ -461,12 +461,37 @@ class RosBridge:
 
     def _get_string_publisher(self, topic: str) -> Any:
         if topic not in self._string_publishers:
+            from rclpy.qos import (
+                DurabilityPolicy,
+                HistoryPolicy,
+                QoSProfile,
+                ReliabilityPolicy,
+            )
             from std_msgs.msg import String
 
+            # Match skye_factr_teleop event_qos() so /mode/*/leader_gate connects.
+            qos = QoSProfile(
+                history=HistoryPolicy.KEEP_LAST,
+                depth=10,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.VOLATILE,
+            )
             self._string_publishers[topic] = self._node.create_publisher(
-                String, topic, 10
+                String, topic, qos
             )
         return self._string_publishers[topic]
+
+    def _publish_leader_gate(self, topic: str, data: str) -> tuple[bool, str]:
+        """Repeat VOLATILE pubs so the live FACTR node is likely to see one."""
+        from std_msgs.msg import String
+
+        pub = self._get_string_publisher(topic)
+        msg = String()
+        msg.data = data
+        for _ in range(_LEADER_GATE_PUBLISH_REPEATS):
+            pub.publish(msg)
+            time.sleep(0.02)
+        return True, ""
 
     def _get_trigger_client(self, service: str) -> Any:
         if service not in self._trigger_clients:

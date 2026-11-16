@@ -233,71 +233,48 @@ def test_stop_recorder_if_active_swallows_errors():
     assert "no service" in reason
 
 
-def test_dispatch_leader_script_flips_gate_only_on_success():
+def test_dispatch_leader_gate_publishes_and_updates_bookkeeping():
     bridge = _bare_bridge()
     bridge._ui_mode = UiMode.teleop_record
-    calls = []
+    published = []
 
-    def runner(
-        repo_root,
-        side,
-        action,
-        *,
-        container,
-        timeout_s,
-        image=None,
-        robot_profile=None,
-    ):
-        calls.append(
-            (repo_root, side, action, container, timeout_s, image, robot_profile)
-        )
+    def publish_gate(topic, data):
+        published.append((topic, data))
         return True, ""
 
-    bridge._script_runner = runner
-    bridge._robot_profile = "orin"
+    bridge._publish_leader_gate = publish_gate
 
     ok, reason = bridge.dispatch("leader_left_off")
 
     assert ok is True
     assert reason == ""
-    assert calls == [
-        (
-            "/repo",
-            "left",
-            "off",
-            "skye_marvin_m6",
-            15.0,
-            "marvin-m6-ros2:e5a9d8fd",
-            "orin",
-        )
-    ]
+    assert published == [("/mode/left/leader_gate", "off")]
     assert bridge._leader_gate.snapshot()["left_enabled"] is False
 
 
-def test_dispatch_leader_script_failure_does_not_flip_gate():
+def test_dispatch_leader_gate_failure_does_not_flip_gate():
     bridge = _bare_bridge()
     bridge._ui_mode = UiMode.teleop_record
-    bridge._script_runner = lambda *args, **kwargs: (False, "script failed")
+    bridge._publish_leader_gate = lambda *args, **kwargs: (False, "gate publish failed")
 
     ok, reason = bridge.dispatch("leader_right_off")
 
     assert ok is False
-    assert reason == "script failed"
+    assert reason == "gate publish failed"
     assert bridge._leader_gate.snapshot()["right_enabled"] is True
 
 
-def test_dispatch_rejects_nested_command_while_script_in_flight():
+def test_dispatch_rejects_nested_command_while_gate_in_flight():
     bridge = _bare_bridge()
     bridge._ui_mode = UiMode.teleop_record
     nested_result = None
-    bridge._publish_string = lambda topic, data: (True, "")
 
-    def runner(*args, **kwargs):
+    def publish_gate(topic, data):
         nonlocal nested_result
         nested_result = bridge.dispatch("switch_stop")
         return True, ""
 
-    bridge._script_runner = runner
+    bridge._publish_leader_gate = publish_gate
 
     ok, reason = bridge.dispatch("leader_left_off")
 
@@ -323,15 +300,15 @@ def test_dispatch_align_start_uses_gate_payload_and_rejects_none():
     assert published == [("/mode/align_follower", "align_follower_left")]
 
 
-def test_dispatch_switch_sync_and_teleop_callback_lock_gate():
+def test_dispatch_switch_sync_does_not_lock_until_teleop_state():
     bridge = _bare_bridge()
     bridge._ui_mode = UiMode.teleop_record
     bridge._publish_string = lambda topic, data: (True, "")
 
     assert bridge.dispatch("switch_sync") == (True, "")
-    assert bridge._leader_gate.snapshot()["locked"] is True
+    # Failed preflight leaves IDLE — operator must still be able to 关左臂.
+    assert bridge._leader_gate.snapshot()["locked"] is False
 
-    bridge._leader_gate.reset()
     bridge._teleop_state_callback(SimpleNamespace(data="SYNCED"))
     assert bridge._leader_gate.snapshot()["locked"] is True
 
