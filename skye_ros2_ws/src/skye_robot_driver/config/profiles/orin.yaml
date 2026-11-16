@@ -6,12 +6,13 @@ skye_robot_driver:
     right_joint_signs: [1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0]
     gripper_left_type: "robotiq"
     gripper_right_type: "robotiq"
-    # 状态/applied 发布 20 Hz；Robotiq 命令内环 100 Hz 做限速线性插值密轨迹下发。
+    # 状态/applied 发布 20 Hz；命令内环 100 Hz（小步 slew / 大行程 one-shot 复检）。
     gripper_rate_hz: 20.0
     gripper_robotiq_interp_hz: 100.0
-    # 0-255：0-满速，闭合要快
-    gripper_robotiq_speed: 100          # 保持满速，闭合要快
-    # ~150 mm/s → 全行程约 0.33s；100Hz 内环每拍约 1.5mm，满速追小步更顺。
+    # 大行程 one-shot 用满速；Hand-E 内部连续轨迹 → 又快又顺。
+    gripper_robotiq_speed: 255
+    gripper_robotiq_one_shot_delta_mm: 3.0
+    # 仅 |Δ|<3mm 的扳机微调限速；开合大行程走 one-shot，不再切碎路点。
     gripper_robotiq_max_slew_mm_s: 250.0
     gripper_invert: true
     gripper_left_invert: true

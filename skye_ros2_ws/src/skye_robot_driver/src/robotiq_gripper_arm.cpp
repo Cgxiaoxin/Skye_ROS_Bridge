@@ -366,8 +366,11 @@ void RobotiqGripperArm::tick_control() {
     const double goal = target_;
     const double goal_mm = norm_to_mm(goal);
     const double cmd_mm = norm_to_mm(commanded_);
-    const double max_step_mm = config_.max_slew_mm_s * dt_s;
-    const double next_mm = slew_toward(cmd_mm, goal_mm, max_step_mm);
+    // Large teleop open/close: one-shot final opening so Hand-E runs a continuous
+    // profile (fast + smooth). Tiny trigger tracking still uses max_slew_mm_s.
+    const double next_mm = next_robotiq_command_mm(
+        cmd_mm, goal_mm, config_.max_slew_mm_s, dt_s,
+        config_.one_shot_delta_mm);
     const double next_cmd = mm_to_norm(next_mm);
     const bool moved = std::abs(next_cmd - commanded_) > 1e-9;
     commanded_ = next_cmd;

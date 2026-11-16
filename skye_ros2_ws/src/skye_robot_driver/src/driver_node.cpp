@@ -104,7 +104,8 @@ void validate_robotiq_arm(const RobotiqGripperArm::Config &cfg) {
       cfg.pos_max_mm <= cfg.pos_min_mm || cfg.close_limit <= 0.0 ||
       cfg.close_limit > 1.0 || cfg.modbus_timeout_ms == 0 ||
       (cfg.terminal != 0 && cfg.terminal != 1) ||
-      !std::isfinite(cfg.max_slew_mm_s) || cfg.max_slew_mm_s < 0.0) {
+      !std::isfinite(cfg.max_slew_mm_s) || cfg.max_slew_mm_s < 0.0 ||
+      !std::isfinite(cfg.one_shot_delta_mm) || cfg.one_shot_delta_mm < 0.0) {
     throw std::invalid_argument("invalid robotiq gripper params");
   }
 }
@@ -211,6 +212,9 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       declare_parameter<int>("gripper_robotiq_modbus_timeout_ms", 150));
   const auto robotiq_max_slew_mm_s =
       declare_parameter<double>("gripper_robotiq_max_slew_mm_s", 0.0);
+  // |Δopening| >= this → one Modbus goal (Hand-E continuous profile). 0 = off.
+  const auto robotiq_one_shot_delta_mm =
+      declare_parameter<double>("gripper_robotiq_one_shot_delta_mm", 3.0);
 
   gripper_config.left.robotiq = {
       declare_parameter<int>("gripper_left_robotiq_slave_id", 9), robotiq_speed,
@@ -219,7 +223,8 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       parse_robotiq_485_channel(declare_parameter<std::string>(
           "gripper_left_robotiq_485_channel", "485A")),
       declare_parameter<int>("gripper_left_robotiq_terminal", 0),
-      robotiq_modbus_timeout_ms, robotiq_max_slew_mm_s};
+      robotiq_modbus_timeout_ms, robotiq_max_slew_mm_s,
+      robotiq_one_shot_delta_mm};
   gripper_config.right.robotiq = {
       declare_parameter<int>("gripper_right_robotiq_slave_id", 9), robotiq_speed,
       robotiq_force, right_robotiq_pos_min_mm, right_robotiq_pos_max_mm,
@@ -227,7 +232,8 @@ DriverNode::DriverNode(const rclcpp::NodeOptions &options)
       parse_robotiq_485_channel(declare_parameter<std::string>(
           "gripper_right_robotiq_485_channel", "485A")),
       declare_parameter<int>("gripper_right_robotiq_terminal", 1),
-      robotiq_modbus_timeout_ms, robotiq_max_slew_mm_s};
+      robotiq_modbus_timeout_ms, robotiq_max_slew_mm_s,
+      robotiq_one_shot_delta_mm};
 
   left_joint_order_ = load_joint_order(*this, "left_joint_order", kDefaultOrder);
   right_joint_order_ =

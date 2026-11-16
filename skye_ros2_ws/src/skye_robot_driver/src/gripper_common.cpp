@@ -42,4 +42,21 @@ double slew_toward(double current, double target, double max_delta) {
   return current + std::copysign(max_delta, delta);
 }
 
+double next_robotiq_command_mm(
+    double current_mm, double goal_mm, double max_slew_mm_s, double dt_s,
+    double one_shot_delta_mm) {
+  if (!std::isfinite(current_mm) || !std::isfinite(goal_mm)) {
+    return goal_mm;
+  }
+  const double err = std::abs(goal_mm - current_mm);
+  if (one_shot_delta_mm > 0.0 && std::isfinite(one_shot_delta_mm) &&
+      err >= one_shot_delta_mm) {
+    return goal_mm;
+  }
+  if (!(dt_s > 0.0) || !std::isfinite(dt_s)) {
+    return goal_mm;
+  }
+  return slew_toward(current_mm, goal_mm, max_slew_mm_s * dt_s);
+}
+
 }  // namespace skye_robot_driver

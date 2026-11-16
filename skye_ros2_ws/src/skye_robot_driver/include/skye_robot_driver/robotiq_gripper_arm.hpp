@@ -24,6 +24,8 @@ class RobotiqGripperArm : public GripperArmBackend {
     unsigned int modbus_timeout_ms{150};
     // Soft rate limit on commanded opening (mm/s). 0 = snap to goal (legacy).
     double max_slew_mm_s{0.0};
+    // |goal-cmd| >= this (mm) → one Modbus target (Hand-E profiles). 0 = off.
+    double one_shot_delta_mm{3.0};
   };
 
   RobotiqGripperArm(

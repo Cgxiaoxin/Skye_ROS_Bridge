@@ -146,8 +146,9 @@ ros2 service call /gento/set_motion_rates skye_robot_driver/srv/SetMotionRates \
 | `gripper_close_limit` | `0.93` | 电机空间闭合上限，左右相同。FACTR 按下(0)经 invert 后不会发到 1.0 |
 | `gripper_rate_hz` | `50.0`（Thor）；Orin=`20.0` | 夹爪 state/applied 发布（及未拆分时的控制）频率 |
 | `gripper_robotiq_interp_hz` | `0`（同 rate）；Orin=`100.0` | Robotiq 命令内环：限速线性插值后的 Modbus 下发频率；>rate 时与发布拆成双 timer |
-| `gripper_robotiq_speed` | `255`；Orin overlay 显式 `255` | Hand-E 硬件速度 0–255；要快闭合保持满速 |
-| `gripper_robotiq_max_slew_mm_s` | `0.0`（关）；Orin=`150.0` | 命令开度限速（mm/s）；配合 interp 内环密化轨迹；0=直跳目标 |
+| `gripper_robotiq_speed` | `255`；Orin overlay 显式 `255` | Hand-E 硬件速度 0–255；大行程 one-shot 建议满速 |
+| `gripper_robotiq_one_shot_delta_mm` | `3.0`；`0`=关 | \|开度差\|≥此值(mm)一次下发最终目标（Hand-E 自平滑）；小步仍可走 slew |
+| `gripper_robotiq_max_slew_mm_s` | `0.0`（关）；Orin=`250.0` | 仅小于 one_shot 阈值的微调限速（mm/s）；0=小步也直跳 |
 | `gripper_feedback_timeout_ms` | `1` | 运行时 `terminal_set/get` 超时；夹爪与关节分线程，但 SDK mutex 仍串行，必须短 |
 
 `*_joint_control_abs` 是策略/HITL 的绝对关节角入口；遥操继续使用原
