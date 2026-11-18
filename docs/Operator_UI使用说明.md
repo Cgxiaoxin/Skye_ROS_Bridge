@@ -12,6 +12,8 @@
 - [ ] Thor 单臂路径一次（同步前「关左臂」或「关右臂」→ sync → 遥操 → 短录）
 - [ ] Orin 单臂路径一次（同上；确认 sync 后关臂按钮灰掉、两侧都关时「同步」不可点）
 
+单臂冒烟时可顺带确认：关侧后 `/{side}_leader_arm/current_state` 无新帧；开侧 TELEOP 下无因 0.5s 阈值误报的 `Follower state expired`（应以 2.0s 为准）。
+
 完成后请在本节勾选并补记日期/操作员。
 
 ---
@@ -76,6 +78,10 @@ google-chrome --app=http://127.0.0.1:8765
 ## 同步前关单侧小臂（遥操数采）
 
 仅 **遥操数采** 面板、会话 **READY/RUNNING** 且向导允许操作时出现。DAgger 面板无此控件。会话启动仍按 playbook **双臂上电**（经 `teleop.sh start`）；关臂为**软门控**：进程保持存活，Operator UI 直接向 `/mode/<side>/leader_gate` 发 `off`（与 teleop 同 ROS domain），该侧忽略全局 sync/teleop 并关闭力矩；手动排查仍可用 `scripts/leader_arm_gate.sh`。不改编排、不杀 sibling。
+
+关侧软门控会**静默**该侧控制循环：不再发布 `/{side}_leader_arm/current_state`，也不再向共用 `/teleop/state` 发 `IDLE`，避免干扰开侧遥操状态。复能后恢复发布。
+
+开侧进入 **TELEOP** 后，大臂反馈过期阈值使用 `runtime.teleop_state_timeout`（默认 / Orin 配置为 **2.0s**）；同步与 HOLD 仍用 `runtime.state_timeout`（Orin **0.50s**）。若日志出现 `Follower state expired ... limit=2.000s mode=TELEOP`，再查大臂 `/gento/<side>_joint_states` 是否真断流。
 
 在 **「同步」** 按钮正下方：
 
