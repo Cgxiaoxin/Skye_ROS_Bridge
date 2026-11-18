@@ -637,7 +637,7 @@ def test_joint_move_holds_but_does_not_grant_teleop(make_node):
     assert len(rig.trajectories) == 2
 
 
-@pytest.mark.parametrize("mode", ["sync", "hold", "teleop"])
+@pytest.mark.parametrize("mode", ["sync", "hold"])
 def test_stale_follower_stops_all_follower_modes(make_node, mode):
     rig = make_node()
     node = rig.node
@@ -647,14 +647,53 @@ def test_stale_follower_stops_all_follower_modes(make_node, mode):
         rig.trajectories[0].finished = True
         rig.clock.now += 0.002
         node._tick()
-    if mode == "teleop":
-        settle(rig)
-        node._on_teleop(String(data="switch_teleop"))
     rig.clock.now += 0.3
     node._tick()
     assert node.core.mode == ControlMode.IDLE
     assert not rig.hardware.torque_enabled
     assert node._command_pub.messages == []
+
+
+@pytest.mark.parametrize("mode", ["sync", "hold"])
+def test_stale_follower_stops_sync_and_hold(make_node, mode):
+    rig = make_node(parameters={"state_timeout": 0.5, "teleop_state_timeout": 2.0})
+    node = rig.node
+    node._on_follower(packet(stamp=rig.clock.now))
+    node._on_sync(String(data="switch_sync"))
+    if mode == "hold":
+        rig.trajectories[0].finished = True
+        rig.clock.now += 0.002
+        node._on_follower(packet(stamp=rig.clock.now))
+        node._tick()
+    rig.clock.now += 0.6  # > state_timeout 0.5
+    node._tick()
+    assert node.core.mode == ControlMode.IDLE
+    assert not rig.hardware.torque_enabled
+
+
+def test_teleop_allows_follower_age_between_state_and_teleop_timeout(make_node):
+    rig = make_node(parameters={"state_timeout": 0.5, "teleop_state_timeout": 2.0})
+    node = rig.node
+    node._on_follower(packet(stamp=rig.clock.now))
+    node._on_sync(String(data="switch_sync"))
+    rig.trajectories[0].finished = True
+    rig.clock.now += 0.002
+    node._on_follower(packet(stamp=rig.clock.now))
+    node._tick()
+    settle(rig)
+    node._on_teleop(String(data="switch_teleop"))
+    assert node.core.mode == ControlMode.TELEOP
+
+    # 1.0s > state_timeout but < teleop_state_timeout → stay TELEOP
+    rig.clock.now += 1.0
+    node._tick()
+    assert node.core.mode == ControlMode.TELEOP
+
+    # 2.1s from last follower sample → stop
+    rig.clock.now += 1.2
+    node._tick()
+    assert node.core.mode == ControlMode.IDLE
+    assert not rig.hardware.torque_enabled
 
 
 def test_receive_timeout_survives_paused_ros_clock(make_node, monkeypatch):

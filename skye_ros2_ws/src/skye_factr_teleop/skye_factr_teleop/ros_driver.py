@@ -266,6 +266,7 @@ class SkyeFactrTeleopNode(Node):
                 for name in ("max_velocity", "max_acceleration", "max_jerk")
             }
         self._max_age = runtime.state_timeout
+        self._teleop_max_age = runtime.teleop_state_timeout
         self._future_tolerance = runtime.future_tolerance
         self._allow_unnamed = runtime.allow_unnamed_joint_states
         prefix = "l" if self.side == "left" else "r"
@@ -393,7 +394,18 @@ class SkyeFactrTeleopNode(Node):
         phase = self.core.mode.name
         try:
             if self._follower_session_active and not self._fresh_follower():
-                self.get_logger().warning("Follower state expired; stopping")
+                sample = self._follower
+                age = (None if sample is None
+                       else self._monotonic() - sample.received_at)
+                stamp_age = (None if sample is None
+                             else self._ros_now() - sample.stamp)
+                limit = self._follower_age_limit()
+                self.get_logger().warning(
+                    "Follower state expired; stopping "
+                    f"(age={age if age is not None else float('nan'):.3f}s "
+                    f"stamp_age={stamp_age if stamp_age is not None else float('nan'):.3f}s "
+                    f"limit={limit:.3f}s mode={self.core.mode.name})"
+                )
                 self._on_stop(None)
                 return
             cycle_time = self._monotonic()
@@ -418,14 +430,20 @@ class SkyeFactrTeleopNode(Node):
             allow_unnamed=self._allow_unnamed,
         )
 
+    def _follower_age_limit(self):
+        if self.core is not None and self.core.mode == ControlMode.TELEOP:
+            return self._teleop_max_age
+        return self._max_age
+
     def _fresh_follower(self):
         sample = self._follower
         if sample is None:
             return False
+        limit = self._follower_age_limit()
         age = self._monotonic() - sample.received_at
         stamp_age = self._ros_now() - sample.stamp
-        return (0 <= age <= self._max_age
-                and -self._future_tolerance <= stamp_age <= self._max_age)
+        return (0 <= age <= limit
+                and -self._future_tolerance <= stamp_age <= limit)
 
     def _on_follower(self, message):
         if self._closed:
