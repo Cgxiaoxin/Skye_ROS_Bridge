@@ -388,6 +388,8 @@ class SkyeFactrTeleopNode(Node):
     def _tick(self):
         if self._closed:
             return
+        if self._leader_gated_off:
+            return
         phase = self.core.mode.name
         try:
             if self._follower_session_active and not self._fresh_follower():
@@ -446,9 +448,10 @@ class SkyeFactrTeleopNode(Node):
                     self._follower_session_active = False
                     self.core.stop()
                     self._leader_gated_off = True
+                    self._published_state = None
                     self.get_logger().info(
-                        f"[{self.side}] leader gate OFF：忽略 sync/teleop，力矩已关闭")
-                self._publish_state()
+                        f"[{self.side}] leader gate OFF：忽略 sync/teleop，"
+                        f"力矩已关闭，控制发布已静默")
                 return
             if self._leader_gated_off:
                 self._leader_gated_off = False
@@ -616,6 +619,8 @@ class SkyeFactrTeleopNode(Node):
         return message
 
     def _publish_state(self):
+        if self._leader_gated_off:
+            return
         state = self.core.mode.name
         if state != self._published_state and self.context.ok():
             previous = self._published_state

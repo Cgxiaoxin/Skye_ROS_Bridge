@@ -233,6 +233,41 @@ def test_leader_gate_off_mutes_sync_and_keeps_process_alive(make_node, side):
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
+def test_leader_gate_off_silences_tick_and_teleop_state(make_node, side):
+    rig = make_node(side)
+    node = rig.node
+    node._on_follower(packet(side, stamp=rig.clock.now))
+    # Clear startup IDLE publish recorded by fixture replacement timing:
+    # after construction, fixture swaps pubs; call gate off from clean counters.
+    node._current_pub = Recorder()
+    node._state_pub = Recorder()
+
+    node._on_leader_gate(String(data="off"))
+    assert node._leader_gated_off
+    assert node._state_pub.messages == []  # must not publish while gated
+
+    before_current = len(node._current_pub.messages)
+    for _ in range(5):
+        rig.clock.now += 0.01
+        node._tick()
+    assert len(node._current_pub.messages) == before_current
+    assert node._state_pub.messages == []
+    assert not node._closed
+
+    node._on_sync(String(data="switch_sync"))
+    assert node.core.mode == ControlMode.IDLE
+
+    node._on_leader_gate(String(data="on"))
+    assert not node._leader_gated_off
+    assert node._state_pub.messages[-1].data == "IDLE"
+
+    rig.clock.now += 0.01
+    node._on_follower(packet(side, stamp=rig.clock.now))
+    node._tick()
+    assert len(node._current_pub.messages) > before_current
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
 def test_gravity_test_node_has_isolated_interface_and_stops(make_node, side):
     rig = make_node(side, gravity_test={
         "joint_id": 6,
