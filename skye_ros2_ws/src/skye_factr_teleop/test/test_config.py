@@ -100,6 +100,33 @@ def test_runtime_state_policy_remains_optional(tmp_path):
     assert runtime.state_timeout == 0.4
     assert runtime.future_tolerance == 0.1
     assert runtime.allow_unnamed_joint_states
+    assert runtime.teleop_state_timeout == 2.0
+
+
+def test_runtime_teleop_state_timeout_default_is_two(tmp_path):
+    document = _calibrated_document()
+    runtime = load_config(_write(tmp_path, document), require_runtime=True).runtime
+    assert runtime.teleop_state_timeout == 2.0
+
+
+def test_runtime_teleop_state_timeout_can_be_set(tmp_path):
+    document = _calibrated_document()
+    document["runtime"] = {
+        "state_timeout": 0.5,
+        "teleop_state_timeout": 2.0,
+        "future_tolerance": 0.05,
+    }
+    runtime = load_config(_write(tmp_path, document), require_runtime=True).runtime
+    assert runtime.state_timeout == 0.5
+    assert runtime.teleop_state_timeout == 2.0
+
+
+@pytest.mark.parametrize("value", [0.0, -1.0, float("nan")])
+def test_runtime_teleop_state_timeout_must_be_positive(tmp_path, value):
+    document = _calibrated_document()
+    document["runtime"] = {"teleop_state_timeout": value}
+    with pytest.raises(ConfigError, match="teleop_state_timeout"):
+        load_config(_write(tmp_path, document), require_runtime=True)
 
 
 @pytest.mark.parametrize("field", ["max_velocity", "max_acceleration", "max_jerk"])

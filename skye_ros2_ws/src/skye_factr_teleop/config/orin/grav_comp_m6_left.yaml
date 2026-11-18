@@ -108,4 +108,5 @@ controller:
 # Orin：互斥回调下 JointState 处理偶发延迟，放宽跟随态过期阈值（默认 0.25）。
 runtime:
   state_timeout: 0.50
+  teleop_state_timeout: 2.0
   future_tolerance: 0.05

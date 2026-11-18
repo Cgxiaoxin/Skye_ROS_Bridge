@@ -171,6 +171,7 @@ class RuntimeConfig:
     state_timeout: float = 0.25
     future_tolerance: float = 0.05
     allow_unnamed_joint_states: bool = False
+    teleop_state_timeout: float = 2.0
 
 
 @dataclass(frozen=True)
@@ -284,11 +285,21 @@ def _controller(value: Any) -> ControllerConfig:
 def _runtime(value: Any) -> RuntimeConfig:
     path = "runtime"
     data = _map(value, path)
-    _only(data, {"state_timeout", "future_tolerance", "allow_unnamed_joint_states"}, path)
+    _only(
+        data,
+        {
+            "state_timeout",
+            "future_tolerance",
+            "allow_unnamed_joint_states",
+            "teleop_state_timeout",
+        },
+        path,
+    )
     return RuntimeConfig(
         _positive(data.get("state_timeout", 0.25), f"{path}.state_timeout"),
         _positive(data.get("future_tolerance", 0.05), f"{path}.future_tolerance"),
         _bool(data.get("allow_unnamed_joint_states", False), f"{path}.allow_unnamed_joint_states"),
+        _positive(data.get("teleop_state_timeout", 2.0), f"{path}.teleop_state_timeout"),
     )
 
 
